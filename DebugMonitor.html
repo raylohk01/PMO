@@ -1,0 +1,215 @@
+<!-- ========================================== -->
+<!-- [DebugMonitor.html] 升級版：含檔案來源監控   -->
+<!-- ========================================== -->
+<style>
+  #debug-monitor-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 150px;
+    background-color: #1a1a1a;
+    color: #00ff66;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    z-index: 999999;
+    border-top: 3px solid #17a2b8;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    transition: height 0.3s ease;
+  }
+  #debug-monitor-panel.minimized {
+    height: 32px !important;
+  }
+  .debug-header {
+    background-color: #252526;
+    color: #fff;
+    padding: 4px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+  }
+  .debug-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+  }
+  .debug-line {
+    margin-bottom: 4px;
+    line-height: 1.4;
+    word-break: break-all;
+  }
+  .debug-time { color: #777; }
+  .debug-file { 
+    background: #333; 
+    color: #ffc107; 
+    padding: 1px 5px; 
+    border-radius: 3px; 
+    font-weight: bold; 
+    margin-right: 5px;
+  }
+  .debug-gs-file { 
+    background: #0d6efd; 
+    color: #fff; 
+    padding: 1px 5px; 
+    border-radius: 3px; 
+    font-weight: bold; 
+    margin-right: 5px;
+  }
+  .debug-click { color: #ff9800; }
+  .debug-api { color: #00e5ff; font-weight: bold; }
+  .debug-btn {
+    background: #444;
+    color: #fff;
+    border: none;
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 5px;
+  }
+  .debug-btn:hover { background: #666; }
+</style>
+
+<div id="debug-monitor-panel">
+  <div class="debug-header" onclick="toggleDebugPanel(event)">
+    <span>📡 <b>系統實時呼叫監控面板 (Debug Monitor v2)</b></span>
+    <div>
+      <button class="debug-btn" onclick="clearDebugLog(event)">🧹 清空記錄</button>
+      <button class="debug-btn" id="btn-toggle-panel" onclick="toggleDebugPanel(event)">➖ 最小化</button>
+    </div>
+  </div>
+  <div class="debug-body" id="debug-log-container">
+    <div class="debug-line"><span class="debug-time">[系統]</span> <span style="color:#aaa;">監控面板已升級，開始監控檔案與 API 來源...</span></div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // 💡 後端 API 與 .gs 檔案對照地圖 (可隨時擴充)
+    var gsFileMap = {
+      'api_saveUser': 'UserLogic.gs',
+      'api_getUserList': 'UserLogic.gs',
+      'api_createProject': 'ProjectLogic.gs',
+      'api_getProjectList': 'ProjectLogic.gs',
+      'api_dispatchWorkflowStep': 'DeptKanbanLogic.gs',
+      'api_getDeptOperationData': 'DeptKanbanLogic.gs',
+      'api_getAnalyticsData': 'AnalyticsLogic.gs',
+      'api_importData': 'DataImportLogic.gs'
+    };
+
+    // 💡 自動推算前端事件發生的 HTML 檔案模組
+    function detectHtmlFile(targetEl) {
+      if (!targetEl) return 'Scripts.html';
+      var modal = targetEl.closest('.modal');
+      if (modal) {
+        var modalId = modal.id;
+        if (modalId === 'userModal' || modalId === 'newProjectModal') return 'ModalsUI.html';
+      }
+      var section = targetEl.closest('div[id]');
+      if (section) {
+        var id = section.id;
+        if (id.includes('admin') || id.includes('user')) return 'AdminUI.html';
+        if (id.includes('kanban') || id.includes('dept')) return 'DeptKanbanUI.html';
+        if (id.includes('analytics')) return 'AnalyticsUI.html';
+      }
+      return 'Scripts.html';
+    }
+
+    // 印出 Log 視窗
+    window.logToMonitor = function(type, sourceFile, tag, message, data) {
+      var container = document.getElementById('debug-log-container');
+      if (!container) return;
+
+      var now = new Date();
+      var timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+      var line = document.createElement('div');
+      line.className = 'debug-line';
+
+      var dataStr = data !== undefined ? ' 📦 Payload: ' + JSON.stringify(data) : '';
+
+      if (type === 'CLICK') {
+        line.innerHTML = '<span class="debug-time">[' + timeStr + ']</span> ' +
+                         '<span class="debug-file">📄 ' + sourceFile + '</span> ' +
+                         '<span class="debug-click">🖱️ [' + tag + ']</span> ' + message + dataStr;
+      } else if (type === 'API') {
+        line.innerHTML = '<span class="debug-time">[' + timeStr + ']</span> ' +
+                         '<span class="debug-gs-file">⚙️ ' + sourceFile + '</span> ' +
+                         '<span class="debug-api">🚀 [呼叫 API]</span> <b>' + message + '()</b>' + dataStr;
+      }
+
+      container.appendChild(line);
+      container.scrollTop = container.scrollHeight;
+    };
+
+    // 1. 全域點擊監聽 (按鈕 & 檔案識別)
+    document.addEventListener('click', function(e) {
+      var target = e.target.closest('button, a, input[type="button"], input[type="submit"]');
+      if (target) {
+        if (target.closest('#debug-monitor-panel')) return;
+
+        var sourceFile = detectHtmlFile(target);
+        var btnText = target.innerText.trim() || target.value || target.id || '未命名按鈕';
+        var onclickAttr = target.getAttribute('onclick') || '無 inline onclick';
+        logToMonitor('CLICK', sourceFile, '按鈕點擊', '點擊了 [' + btnText + '] | 觸發: ' + onclickAttr);
+      }
+    }, true);
+
+    // 2. 攔截 google.script.run (API & .gs 檔案識別)
+    function setupScriptRunProxy() {
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        setTimeout(setupScriptRunProxy, 100);
+        return;
+      }
+
+      function createProxyRunner(runnerInstance) {
+        return new Proxy(runnerInstance, {
+          get: function(target, propKey) {
+            var origMember = target[propKey];
+            if (propKey === 'withSuccessHandler' || propKey === 'withFailureHandler') {
+              return function(fn) {
+                return createProxyRunner(origMember.call(target, fn));
+              };
+            }
+            if (typeof origMember === 'function') {
+              return function() {
+                var args = Array.prototype.slice.call(arguments);
+                // 查詢該 API 對應的 .gs 檔名
+                var gsFile = gsFileMap[propKey] || 'Code.gs';
+                logToMonitor('API', gsFile, '後端呼叫', propKey, args.length === 1 ? args[0] : args);
+                return origMember.apply(target, args);
+              };
+            }
+            return origMember;
+          }
+        });
+      }
+
+      window.google.script.run = createProxyRunner(google.script.run);
+    }
+
+    setupScriptRunProxy();
+  })();
+
+  function toggleDebugPanel(e) {
+    if (e) e.stopPropagation();
+    var panel = document.getElementById('debug-monitor-panel');
+    var btn = document.getElementById('btn-toggle-panel');
+    if (panel.classList.contains('minimized')) {
+      panel.classList.remove('minimized');
+      btn.innerText = '➖ 最小化';
+    } else {
+      panel.classList.add('minimized');
+      btn.innerText = '➕ 展開';
+    }
+  }
+
+  function clearDebugLog(e) {
+    if (e) e.stopPropagation();
+    var container = document.getElementById('debug-log-container');
+    if (container) container.innerHTML = '<div class="debug-line"><span class="debug-time">[系統]</span> <span style="color:#aaa;">記錄已清空。</span></div>';
+  }
+</script>

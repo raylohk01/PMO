@@ -90,29 +90,45 @@ function api_saveUser(userObj) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
 
-    const idxEmpId = headers.findIndex(h => h.includes('empid') || h.includes('emp_id'));
-    const idxEmail = headers.findIndex(h => h === 'email');
-    const idxName = headers.findIndex(h => h === 'name' || h === 'username');
-    const idxDept = headers.findIndex(h => h === 'department' || h === 'team');
-    const idxRole = headers.findIndex(h => h === 'role');
+    // 動態尋找各欄位在 Sheet 中的正確 index
+    const idxEmpId  = headers.findIndex(h => h.includes('empid') || h.includes('emp_id'));
+    const idxEmail  = headers.findIndex(h => h === 'email');
+    const idxName   = headers.findIndex(h => h === 'name' || h === 'username');
+    const idxDept   = headers.findIndex(h => h === 'department' || h === 'team');
+    const idxRole   = headers.findIndex(h => h === 'role');
+    const idxActive = headers.findIndex(h => h === 'isactive');
     const idxStatus = headers.findIndex(h => h === 'status');
 
+    const isActive = (userObj.status === 'Active');
+
     let rowIndex = -1;
-    for(let i = 1; i < data.length; i++) {
-      if(String(data[i][idxEmpId]).trim() === String(userObj.empId).trim()) {
+    for (let i = 1; i < data.length; i++) {
+      if (idxEmpId !== -1 && String(data[i][idxEmpId]).trim() === String(userObj.empId).trim()) {
         rowIndex = i + 1;
         break;
       }
     }
 
-    if(rowIndex > 0) {
-      sheet.getRange(rowIndex, idxEmail + 1).setValue(userObj.email);
-      sheet.getRange(rowIndex, idxName + 1).setValue(userObj.name);
-      sheet.getRange(rowIndex, idxDept + 1).setValue(userObj.department);
-      sheet.getRange(rowIndex, idxRole + 1).setValue(userObj.role);
-      sheet.getRange(rowIndex, idxStatus + 1).setValue(userObj.status);
+    if (rowIndex > 0) {
+      // 💡 1. 編輯既有資料：依動態欄位逐一更新
+      if (idxEmail !== -1)  sheet.getRange(rowIndex, idxEmail + 1).setValue(userObj.email);
+      if (idxName !== -1)   sheet.getRange(rowIndex, idxName + 1).setValue(userObj.name);
+      if (idxDept !== -1)   sheet.getRange(rowIndex, idxDept + 1).setValue(userObj.department);
+      if (idxRole !== -1)   sheet.getRange(rowIndex, idxRole + 1).setValue(userObj.role);
+      if (idxActive !== -1) sheet.getRange(rowIndex, idxActive + 1).setValue(isActive);
+      if (idxStatus !== -1) sheet.getRange(rowIndex, idxStatus + 1).setValue(userObj.status);
     } else {
-      sheet.appendRow([userObj.empId, userObj.email, userObj.name, userObj.department, userObj.role, userObj.status]);
+      // 💡 2. 新增資料：物理性嚴格對齊 A ~ G 欄位順序！
+      // A: email | B: name | C: department | D: role | E: isActive | F: empId | G: status
+      sheet.appendRow([
+        userObj.email,        // A 欄
+        userObj.name,         // B 欄
+        userObj.department,   // C 欄
+        userObj.role,         // D 欄
+        isActive,             // E 欄
+        userObj.empId,        // F 欄
+        userObj.status        // G 欄
+      ]);
     }
     return { success: true, message: '儲存成功' };
   } catch(e) {

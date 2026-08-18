@@ -607,3 +607,76 @@ function api_manageProjectStatus(payloadInput, optionalAction) {
     return { success: false, message: '❌ 操作被系統攔截: ' + e.message };
   }
 }
+
+function api_saveUser(input) {
+  try {
+    verifyAuth(['Admin', 'Management']);
+
+    // 💡 捕捉傳進來的原始資料型態與內容
+    const rawInputType = Array.isArray(input) ? 'Array (陣列)' : typeof input;
+    const rawInputJson = JSON.stringify(input);
+
+    let empId = '', email = '', name = '', department = '', role = '', status = 'Active';
+
+    if (Array.isArray(input)) {
+      empId = String(input[0] || '').trim();
+      email = String(input[1] || '').trim();
+      name = String(input[2] || '').trim();
+      department = String(input[3] || '').trim();
+      role = String(input[4] || '').trim();
+      status = String(input[5] || 'Active').trim();
+    } else if (input && typeof input === 'object') {
+      empId = String(input.empId || input.empID || '').trim();
+      email = String(input.email || '').trim();
+      name = String(input.name || '').trim();
+      department = String(input.department || input.dept || '').trim();
+      role = String(input.role || '').trim();
+      status = String(input.status || 'Active').trim();
+    }
+
+    const isActive = (status === 'Active');
+
+    // 精準 A ~ G 欄位陣列
+    const rowData = [
+      email,        // A 欄
+      name,         // B 欄
+      department,   // C 欄
+      role,         // D 欄
+      isActive,     // E 欄
+      empId,        // F 欄
+      status        // G 欄
+    ];
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Users');
+    const data = sheet.getDataRange().getValues();
+    let targetRowIndex = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][5]).trim() === empId) {
+        targetRowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (targetRowIndex > 0) {
+      sheet.getRange(targetRowIndex, 1, 1, 7).setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+    }
+
+    // 💡 將完整的 Debug 報告回傳給前端視窗顯示
+    return {
+      success: true,
+      debug_report: {
+        received_type: rawInputType,
+        received_data: rawInputJson,
+        parsed_empId: empId,
+        parsed_email: email,
+        written_rowData: rowData
+      }
+    };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}

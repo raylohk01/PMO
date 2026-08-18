@@ -702,35 +702,61 @@ function renderTemplateStepCards() {
     if (userModalInstance) userModalInstance.show();
   }
 
-  function saveUser() {
-    var empId = document.getElementById('u_empId').value.trim();
-    var email = document.getElementById('u_email').value.trim();
-    var name = document.getElementById('u_name').value.trim();
-    var dept = document.getElementById('u_dept').value;
-    var role = document.getElementById('u_role').value;
-    var status = document.getElementById('u_status').value;
-
-    if (!empId || !email || !dept || !role) return alert('請填寫所有必填欄位！');
-
-    var btn = document.querySelector('#userModal .btn-primary');
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 儲存中...';
+  // ==========================================
+// 2. 成員儲存 (對齊 empId 結構與物理防護)
+// ==========================================
+function saveUser() {
+  var btn = document.querySelector('#userModal .modal-footer button.btn-primary');
+  if (btn) {
+    if (btn.disabled) return;
     btn.disabled = true;
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        resetSaveButton();
-        if (res && res.success) {
-          alert('同事權限資料儲存成功！');
-          if (userModalInstance) userModalInstance.hide();
-          loadAdminView(); 
-        } else { alert('儲存失敗: ' + (res ? res.message : '未知錯誤')); }
-      })
-      .withFailureHandler(function(err) {
-        resetSaveButton();
-        alert('系統發生嚴重錯誤: ' + err.message);
-      })
-      .api_saveUser({ empId: empId, email: email, name: name, department: dept, role: role, status: status });
+    btn.style.pointerEvents = 'none';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 儲存中...';
   }
+
+  var empId = document.getElementById('u_empId').value.trim();
+  var email = document.getElementById('u_email').value.trim();
+  var name = document.getElementById('u_name').value.trim();
+  var dept = document.getElementById('u_dept').value;
+  var role = document.getElementById('u_role').value;
+  var status = document.getElementById('u_status').value;
+
+  if (!empId || !email || !name || !dept || !role || !status) {
+    unlockBtn(btn, '<i class="fas fa-save"></i> 儲存資料');
+    return showAlert('⚠️ 請填寫完整同事成員資料！', 'warning');
+  }
+
+  // 💡 對齊後端 Users 表欄位資料包裹格式
+  var userData = {
+    empId: empId,
+    email: email,
+    name: name,
+    department: dept,
+    role: role,
+    status: status
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      unlockBtn(btn, '<i class="fas fa-save"></i> 儲存資料');
+      if (res && res.success) {
+        showAlert('🎉 同事 [' + name + '] 資料儲存成功！', 'success');
+        var modalEl = document.getElementById('userModal');
+        if (modalEl) {
+          var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+          if (modal) modal.hide();
+        }
+        if (typeof fetchUserList === 'function') fetchUserList();
+      } else {
+        showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      unlockBtn(btn, '<i class="fas fa-save"></i> 儲存資料');
+      showAlert('❌ 後端執行失敗: ' + (err ? err.message : '網絡連線異常'), 'danger');
+    })
+    .api_saveUser(userData);
+}
 
   function openNewProjectModal() {
     document.getElementById('newProjectForm').reset();
@@ -838,63 +864,81 @@ function renderTemplateStepCards() {
     }
   }
 
-  function submitNewProject() {
-    var jobNumber = document.getElementById('np_jobNumber').value.trim();
-    var client = document.getElementById('np_client').value.trim();
-    var selectedPM = document.getElementById('np_pmSelect').value;
-    if(!jobNumber || !client || !selectedPM) return alert('請填寫專案編號、客戶名稱與負責 PM！');
-
-    var rows = document.querySelectorAll('.deliv-item-row');
-    if(rows.length === 0) return alert('請至少新增一個子項目！');
-    
-    var deliverables = [];
-    var hasError = false;
-
-    rows.forEach(function(row) {
-      var select = row.querySelector('.deliv-template');
-      var nameInput = row.querySelector('.deliv-name');
-      var selectedOption = select.options[select.selectedIndex];
-
-      if(!selectedOption.value || !nameInput.value) {
-        hasError = true;
-      } else {
-        deliverables.push({
-          templateName: selectedOption.value,
-          templateJson: selectedOption.getAttribute('data-json'),
-          name: nameInput.value.trim()
-        });
-      }
-    });
-
-    if(hasError) return alert('請完整選擇範本並填寫任務名稱！');
-
-    var payload = {
-      jobNumber: jobNumber,
-      client: client,
-      salesName: document.getElementById('np_sales').value.trim(),
-      pmName: selectedPM,
-      tentativeDate: document.getElementById('np_tentativeDate').value,
-      deadline: document.getElementById('np_deadline').value,
-      deliverables: deliverables
-    };
-
-    var btn = event.target;
-    var originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 建立中...';
+  // ==========================================
+// 1. 專案開案 (物理防連點鎖定版)
+// ==========================================
+function submitNewProject() {
+  // 💡 第 0 毫秒：立刻抓住按鈕並進行物理鎖定
+  var btn = document.querySelector('#newProjectModal .modal-footer button.btn-primary');
+  if (btn) {
+    if (btn.disabled) return; // 若已在上鎖狀態，直接攔截不執行
     btn.disabled = true;
-
-    google.script.run.withSuccessHandler(function(res) {
-      btn.innerHTML = originalText;
-      btn.disabled = false;
-      if(res.success) {
-        alert('🎉 專案開案成功！');
-        if (newProjectModalInstance) newProjectModalInstance.hide();
-        if(typeof fetchDepartmentsAndInit === 'function') loadIndividualView(currentUser.email);
-      } else {
-        alert('建立失敗: ' + res.message);
-      }
-    }).api_createProject(payload);
+    btn.style.pointerEvents = 'none';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 建立中...';
   }
+
+  var jobNum = document.getElementById('np_jobNumber').value.trim();
+  var client = document.getElementById('np_client').value.trim();
+  var sales = document.getElementById('np_sales').value.trim();
+  var pmSelect = document.getElementById('np_pmSelect');
+  var pm = pmSelect ? pmSelect.value : '';
+  var deadline = document.getElementById('np_deadline').value;
+
+  // 防禦驗證：若未填寫，必須先解鎖按鈕再跳提示
+  if (!jobNum || !client || !sales || !pm || !deadline) {
+    unlockBtn(btn, '確認建立專案');
+    return showAlert('⚠️ 請填寫完整專案基本資訊！', 'warning');
+  }
+
+  var deliverables = [];
+  var delRows = document.querySelectorAll('.deliverable-row');
+  delRows.forEach(function(row) {
+    var template = row.querySelector('.del-template') ? row.querySelector('.del-template').value : '';
+    var name = row.querySelector('.del-name') ? row.querySelector('.del-name').value.trim() : '';
+    if (name) deliverables.push({ template: template, name: name });
+  });
+
+  var payload = {
+    jobNumber: jobNum,
+    client: client,
+    sales: sales,
+    pm: pm,
+    deadline: deadline,
+    tentativeDate: document.getElementById('np_tentativeDate') ? document.getElementById('np_tentativeDate').value : '',
+    deliverables: deliverables
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      unlockBtn(btn, '確認建立專案'); // 收到回應解鎖
+      if (res && res.success) {
+        showAlert('🎉 專案 [' + jobNum + '] 開案成功！', 'success');
+        var modalEl = document.getElementById('newProjectModal');
+        if (modalEl) {
+          var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+          if (modal) modal.hide();
+        }
+        var form = document.getElementById('newProjectForm');
+        if (form) form.reset();
+        if (typeof loadMyTasksView === 'function') loadMyTasksView();
+      } else {
+        showAlert('❌ 開案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      unlockBtn(btn, '確認建立專案'); // 異常解鎖
+      showAlert('❌ 後端執行失敗: ' + (err ? err.message : '網絡連線異常'), 'danger');
+    })
+    .api_createProject(payload);
+}
+
+// 輔助解鎖函數
+function unlockBtn(btn, originalText) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.innerHTML = originalText;
+}
 
   function searchHistory() {
     var tbody = document.getElementById('historyTableBody');
@@ -938,4 +982,103 @@ function renderTemplateStepCards() {
       tbody.innerHTML = html;
     }).api_getCompletedProjects(keyword, startDate, endDate);
   }
+
+  /**
+ * 鎖定按鈕並顯示 Loading 狀態，防止重複點擊
+ * @param {string|HTMLElement} btnInput - 按鈕 ID 或 DOM 物件
+ * @param {string} loadingText - 鎖定時顯示的文字
+ */
+function lockButton(btnInput, loadingText) {
+  loadingText = loadingText || '處理中...';
+  var btn = typeof btnInput === 'string' ? document.getElementById(btnInput) : btnInput;
+  if (!btn) return;
+  
+  // 記錄原始內容以便後續恢復
+  if (!btn.getAttribute('data-original-html')) {
+    btn.setAttribute('data-original-html', btn.innerHTML);
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> ' + loadingText;
+}
+
+/**
+ * 解鎖按鈕恢復正常可點擊狀態
+ * @param {string|HTMLElement} btnInput - 按鈕 ID 或 DOM 物件
+ */
+function unlockButton(btnInput) {
+  var btn = typeof btnInput === 'string' ? document.getElementById(btnInput) : btnInput;
+  if (!btn) return;
+
+  var origHtml = btn.getAttribute('data-original-html');
+  if (origHtml) {
+    btn.innerHTML = origHtml;
+  }
+  btn.disabled = false;
+}
+
+window.saveUser = function() {
+  var btn = document.querySelector('#userModal .modal-footer button.btn-primary');
+  
+  // 💡 物理上鎖，防止重複點擊
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.style.pointerEvents = 'none';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 儲存中...';
+  }
+
+  var empId = document.getElementById('u_empId') ? document.getElementById('u_empId').value.trim() : '';
+  var email = document.getElementById('u_email') ? document.getElementById('u_email').value.trim() : '';
+  var name = document.getElementById('u_name') ? document.getElementById('u_name').value.trim() : '';
+  var dept = document.getElementById('u_dept') ? document.getElementById('u_dept').value : '';
+  var role = document.getElementById('u_role') ? document.getElementById('u_role').value : '';
+  var status = document.getElementById('u_status') ? document.getElementById('u_status').value : '';
+
+  if (!empId || !email || !name || !dept || !role || !status) {
+    unlockUserBtn(btn, '<i class="fas fa-save"></i> 儲存資料');
+    return showAlert('⚠️ 請填寫完整同事成員資料！', 'warning');
+  }
+
+  var payload = {
+    empId: empId,
+    email: email,
+    name: name,
+    department: dept,
+    role: role,
+    status: status
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      unlockUserBtn(btn, '<i class="fas fa-save"></i> 儲存資料');
+      if (res && res.success) {
+        // 🎉 乾淨的 Alert Box 通知
+        showAlert('🎉 同事 [' + name + '] 權限資料儲存成功！', 'success');
+
+        var modalEl = document.getElementById('userModal');
+        if (modalEl) {
+          var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+          if (modal) modal.hide();
+        }
+
+        if (typeof fetchUserList === 'function') fetchUserList();
+      } else {
+        showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      unlockUserBtn(btn, '<i class="fas fa-save"></i> 儲存資料');
+      showAlert('❌ 後端執行失敗: ' + (err ? err.message : '網絡連線異常'), 'danger');
+    })
+    .api_saveUser(payload);
+};
+
+// 輔助解鎖按鈕函數
+function unlockUserBtn(btn, originalHtml) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.innerHTML = originalHtml;
+}
+
 </script>
