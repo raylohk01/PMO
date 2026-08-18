@@ -1,0 +1,166 @@
+<!-- ========================================== -->
+<!-- [AdminUI.html] 工作流範本管理、回收箱與 QA 測試模組 -->
+<!-- ========================================== -->
+
+<!-- 系統管理標題區塊 -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">⚙️ 系統管理面板</h4>
+</div>
+
+<!-- 🧪 專屬 QA 測試面板 (預設隱藏，僅限管理員) -->
+<div id="qaTestingPanel" class="card mb-4 border-info shadow-sm" style="display: none;">
+  <div class="card-header bg-info text-white d-flex justify-content-between align-items-center py-2">
+    <h5 class="mb-0 fs-6"><i class="fas fa-vial me-2"></i>QA 自動化測試控制台</h5>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">點擊下方按鈕，系統將自動建立虛擬資料進行核心功能演練，並於測試後自動銷毀靶材。</p>
+    
+    <div class="d-flex flex-wrap gap-2">
+      <!-- 按鈕 1：已經完成的暫停與 Log 測試 -->
+      <button type="button" class="btn btn-outline-primary btn-sm fw-bold" onclick="runSingleTest('Test_PauseLog', this)">
+        1️⃣ 測試：專案暫停與 Log 寫入
+      </button>
+
+      <!-- 按鈕 2：移至回收箱與還原 (預留) -->
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="runSingleTest('Test_RecycleBin', this)">
+        2️⃣ 測試：移至回收箱與還原 (待開發)
+      </button>
+
+      <!-- 按鈕 3：指派任務與通知 (預留) -->
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="runSingleTest('Test_AssignTask', this)">
+        3️⃣ 測試：任務指派與通知 (待開發)
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 範本管理區塊 -->
+<div id="templateConfigBlock" class="mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="text-secondary"><i class="fas fa-layer-group me-2"></i>工作流範本庫管理</h3>
+    <button class="btn btn-primary" onclick="openTemplateModal()"><i class="fas fa-plus me-1"></i> 新增視覺化範本</button>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-dark">
+            <tr>
+              <th>範本名稱</th>
+              <th>步驟流程鏈</th>
+              <th class="text-end pe-3">操作</th>
+            </tr>
+          </thead>
+          <tbody id="templateTableBody">
+            <tr><td colspan="3" class="text-center text-muted py-3">載入範本中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 專案回收箱區塊 -->
+<div id="recycleBinBlock" class="mb-5">
+  <h3 class="text-danger mb-3"><i class="fas fa-trash-alt me-2"></i>專案回收箱 (Recycle Bin)</h3>
+  <div class="card shadow-sm border-danger border-opacity-25">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>專案編號</th>
+              <th>客戶名稱</th>
+              <th>負責 PM</th>
+              <th class="text-end pe-3">操作</th>
+            </tr>
+          </thead>
+          <tbody id="recycleBinTableBody">
+            <tr><td colspan="4" class="text-center text-muted py-3">回收箱目前沒有專案</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 範本編輯 Modal -->
+<div class="modal fade" id="templateEditModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content shadow-lg">
+      <div class="modal-header bg-primary text-white py-2">
+        <h5 class="modal-title fs-6" id="tmplModalTitle"><i class="fas fa-edit me-1"></i> 編輯工作流範本</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <div class="mb-3 bg-white p-3 rounded border">
+          <label class="form-label fw-bold text-dark">範本名稱 (Template Name)</label>
+          <input type="text" class="form-control" id="tmpl_name" placeholder="例如: 標準 Advertorial / 短影片">
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold text-primary mb-0"><i class="fas fa-list-ol me-1"></i> 步驟關卡設定</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTemplateStep()"><i class="fas fa-plus me-1"></i> 新增關卡步驟</button>
+        </div>
+
+        <div id="tmpl_stepsContainer"></div>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" onclick="saveTemplateFromModal()"><i class="fas fa-save me-1"></i> 儲存範本</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 💡 1. 權限控管 (主動追蹤模式)：等待 currentUser 成功載入
+(function checkAdminPermission() {
+  var retryCount = 0;
+  
+  // 每 0.5 秒檢查一次
+  var checkTimer = setInterval(function() {
+    
+    // 如果系統已經成功抓到使用者的資料了
+    if (typeof currentUser !== 'undefined' && currentUser) {
+      clearInterval(checkTimer); // 停止追蹤
+      
+      // 檢查是否為管理員
+      var isManager = (currentUser.role === 'Management' || currentUser.email.includes('raylo') || currentUser.department === 'Management');
+      
+      if (isManager) {
+        var qaPanel = document.getElementById('qaTestingPanel');
+        if (qaPanel) {
+          qaPanel.style.display = 'block'; // ✨ 解鎖顯示 QA 面板！
+        }
+      }
+    }
+    
+    retryCount++;
+    if (retryCount > 20) {
+      clearInterval(checkTimer); // 如果等了 10 秒還是沒抓到使用者資料，就放棄避免卡死
+    }
+  }, 500);
+})();
+
+// 💡 2. 測試派發中樞 (維持不變)
+function runSingleTest(testName, btnElement) {
+  var originalText = btnElement.innerHTML;
+  btnElement.innerHTML = '⏳ 測試執行中...';
+  btnElement.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btnElement.innerHTML = originalText;
+      btnElement.disabled = false;
+      alert(res.message);
+    })
+    .withFailureHandler(function(err) {
+      btnElement.innerHTML = originalText;
+      btnElement.disabled = false;
+      alert('系統請求失敗: ' + err.message);
+    })
+    .api_runSingleTest(testName);
+}
+</script>

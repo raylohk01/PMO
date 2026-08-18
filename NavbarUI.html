@@ -1,0 +1,50 @@
+<!-- ========================================== -->
+<!-- [NavbarUI.html] 頂部導覽列與選單模組 -->
+<!-- ========================================== -->
+
+<div id="simulateBanner">
+  <i class="fas fa-user-secret"></i> ⚠️ 正在模擬身分：<span id="simTargetName"></span> (<span id="simTargetRole"></span>)
+  <button class="btn btn-sm btn-light ms-3 fw-bold text-danger" onclick="exitSimulation()">退出模擬</button>
+</div>
+
+<nav class="navbar navbar-expand-lg sticky-top">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold me-4" href="#"><i class="fas fa-project-diagram me-1"></i> HK01 PMO</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon" style="filter: invert(1);"></span>
+    </button>
+    
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item" id="nav_tasks">
+          <a class="nav-link fw-bold" href="#" onclick="switchSection('individualSection')">我的任務</a>
+        </li>
+        <li class="nav-item" id="nav_clientReview">
+          <a class="nav-link fw-bold" href="#" onclick="switchSection('clientReviewSection')">客戶追蹤</a>
+        </li>
+        <li class="nav-item" id="nav_deptKanban">
+          <a class="nav-link fw-bold" href="#" onclick="switchSection('deptHeadSection')">部門看板</a>
+        </li>
+        <li class="nav-item" id="nav_management">
+          <a class="nav-link text-info fw-bold" href="#" onclick="switchSection('analyticsSection')">全局管理</a>
+        </li>
+        <li class="nav-item" id="nav_history">
+          <a class="nav-link text-info fw-bold" href="#" onclick="switchSection('historySection')"><i class="fas fa-archive me-1"></i>專案歷史</a>
+        </li>
+        <li class="nav-item" id="nav_admin">
+          <a class="nav-link text-warning fw-bold" href="#" onclick="switchSection('adminSection')"><i class="fas fa-cog me-1"></i>系統設定</a>
+        </li>
+      </ul>
+      
+      <div class="d-flex align-items-center">
+        <button class="btn btn-sm btn-light text-primary fw-bold me-3 rounded-pill shadow-sm px-3" onclick="openNewProjectModal()">
+          <i class="fas fa-plus"></i> 新增專案
+        </button>
+        <span class="navbar-text text-white" id="userInfo">
+          <i class="fas fa-spinner fa-spin"></i> 載入身分中...
+        </span>
+      </div>
+
+    </div>
+  </div>
+</nav>

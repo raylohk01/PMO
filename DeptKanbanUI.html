@@ -1,0 +1,517 @@
+<!-- ========================================== -->
+<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (選單樣式完全修復版) -->
+<!-- ========================================== -->
+
+<div id="deptHeadSection" class="section-container" style="display: none;">
+  
+  <!-- 💡 1. 頂部工具列：部門視角與時間過濾 -->
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-body p-3 bg-white rounded">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        
+        <div class="d-flex align-items-center gap-3">
+          <div class="d-flex align-items-center gap-2">
+            <h4 class="fw-bold text-primary mb-0"><i class="fas fa-columns me-2"></i>部門營運指揮中心</h4>
+            <span id="op_deptBadge" class="badge bg-primary fs-6">Editorial</span>
+          </div>
+
+          <!-- 💡 切換部門下拉選單（給予明確寬度與 Bootstrap 樣式） -->
+          <div class="d-flex align-items-center gap-2" id="op_deptSelectorBox" style="min-width: 220px;">
+            <label class="small text-muted fw-bold text-nowrap">切換部門：</label>
+            <select class="form-select form-select-sm border-primary fw-bold text-dark" style="width: 150px; cursor: pointer;" id="op_deptSelect" onchange="switchDeptKanbanView(this.value)">
+              <option value="Editorial" selected>Editorial</option>
+              <option value="PM">PM</option>
+              <option value="Creative">Creative</option>
+              <option value="Design">Design</option>
+              <option value="AdOps">AdOps</option>
+              <option value="Sales">Sales</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 時間過濾按鈕群 -->
+        <div class="d-flex align-items-center flex-wrap gap-2">
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-primary" id="btn_op_TODAY" onclick="changeOpTimeRange('TODAY')">今天</button>
+            <button type="button" class="btn btn-outline-primary" id="btn_op_LAST_5_DAYS" onclick="changeOpTimeRange('LAST_5_DAYS')">過去5天</button>
+            <button type="button" class="btn btn-outline-primary active" id="btn_op_NEXT_14_DAYS" onclick="changeOpTimeRange('NEXT_14_DAYS')">未來14天 (預設)</button>
+            <button type="button" class="btn btn-outline-primary" id="btn_op_LAST_30_DAYS" onclick="changeOpTimeRange('LAST_30_DAYS')">過去30天</button>
+          </div>
+
+          <div class="d-flex align-items-center gap-1" style="font-size:0.85em;">
+            <input type="date" class="form-control form-control-sm" id="op_startDate">
+            <span>至</span>
+            <input type="date" class="form-control form-control-sm" id="op_endDate">
+            <button class="btn btn-sm btn-primary py-1 px-2" onclick="applyOpCustomDateRange()"><i class="fas fa-search"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💡 2. 頂部 KPI 統計卡片 -->
+  <div class="row g-2 mb-3">
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 border-start border-4 border-danger cursor-pointer" onclick="filterOpTasksByKpi('OVERDUE')">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">🚨 已到期 (Overdue)</small>
+            <h4 class="fw-bold text-danger mb-0" id="op_kpi_overdue">0</h4>
+          </div>
+          <i class="fas fa-exclamation-circle fa-2x text-danger opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 border-start border-4 border-warning cursor-pointer" onclick="filterOpTasksByKpi('DUE_SOON')">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">⚠️ 即將到期 (48h內)</small>
+            <h4 class="fw-bold text-warning mb-0" id="op_kpi_dueSoon">0</h4>
+          </div>
+          <i class="fas fa-clock fa-2x text-warning opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 border-start border-4 border-info cursor-pointer" onclick="filterOpTasksByKpi('UNASSIGNED')">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">📥 待分配 (Unassigned)</small>
+            <h4 class="fw-bold text-info mb-0" id="op_kpi_unassigned">0</h4>
+          </div>
+          <i class="fas fa-user-plus fa-2x text-info opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 border-start border-4 border-success cursor-pointer" onclick="filterOpTasksByKpi('ON_TRACK')">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">🟢 穩步推進 (On Track)</small>
+            <h4 class="fw-bold text-success mb-0" id="op_kpi_onTrack">0</h4>
+          </div>
+          <i class="fas fa-check-circle fa-2x text-success opacity-25"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💡 3. 同仁產能與負載面板 -->
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-body p-2 bg-white rounded">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="fw-bold text-dark small"><i class="fas fa-users-cog text-primary me-1"></i> 組員產能與工作量分析 (點擊可篩選個人任務)：</span>
+        <button class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="filterOpTasksByMember(null)">顯示全部組員</button>
+      </div>
+      <div id="op_memberCapacityArea" class="d-flex flex-wrap gap-2">
+        <span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💡 4. 動態產能日曆 -->
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-body p-2 bg-white rounded">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-bold text-dark small"><i class="fas fa-calendar-alt text-info me-1"></i> 部門產能日曆 (點擊卡片開啟工作流, 🖊️ 可快捷調整死線至空檔日)</span>
+        <div class="d-flex gap-2 align-items-center" style="font-size:0.75em;">
+          <span class="badge bg-success">🟢 產能空檔日</span>
+          <span class="badge bg-warning text-dark">🟡 正常排程</span>
+          <span class="badge bg-danger">🔴 任務過載</span>
+        </div>
+      </div>
+      <div id="op_calendarGrid" class="row g-1 text-center" style="font-size:0.8em;">
+        <div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💡 5. 三欄式營運操作區 -->
+  <div class="row g-3">
+    <!-- 🚨 風險與待分配調度區 -->
+    <div class="col-md-4">
+      <div class="card shadow-sm border-0 border-top border-4 border-danger h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-exclamation-triangle text-danger me-1"></i> 逾期 / 待分配任務</span>
+          <span class="badge bg-danger" id="op_countRisk">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 500px; overflow-y: auto;" id="op_riskContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🏃 部門進行中任務區 -->
+    <div class="col-md-4">
+      <div class="card shadow-sm border-0 border-top border-4 border-primary h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-running text-primary me-1"></i> 部門進行中任務</span>
+          <span class="badge bg-primary" id="op_countActive">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 500px; overflow-y: auto;" id="op_activeContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🔮 未來管線區 -->
+    <div class="col-md-4">
+      <div class="card shadow-sm border-0 border-top border-4 border-info h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-forward text-info me-1"></i> 未來預備管線 (前置阻礙監控)</span>
+          <span class="badge bg-info text-dark" id="op_countPipeline">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 500px; overflow-y: auto;" id="op_pipelineContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  var currentOpDept = '';
+  var currentOpTimeRange = 'NEXT_14_DAYS';
+  var selectedOpMember = null;
+  var selectedOpKpiFilter = null;
+  var rawOpData = null;
+
+  function loadDeptHeadView(dept, simEmail) {
+    var section = document.getElementById('deptHeadSection');
+    if (section) section.style.display = 'block';
+
+    if (dept && typeof dept === 'string' && dept.trim() !== '') {
+      currentOpDept = dept.trim();
+    } else if (typeof currentUser !== 'undefined' && currentUser && currentUser.department) {
+      currentOpDept = currentUser.department.trim();
+    } else {
+      currentOpDept = 'Editorial';
+    }
+
+    var badgeEl = document.getElementById('op_deptBadge');
+    if (badgeEl) badgeEl.innerText = currentOpDept;
+
+    var selectEl = document.getElementById('op_deptSelect');
+    if (selectEl) {
+      for (var i = 0; i < selectEl.options.length; i++) {
+        if (selectEl.options[i].value.toLowerCase() === currentOpDept.toLowerCase()) {
+          selectEl.selectedIndex = i;
+          break;
+        }
+      }
+    }
+
+    fetchDeptOperationData();
+  }
+
+  function switchDeptKanbanView(dept) {
+    if (!dept) return;
+    currentOpDept = dept;
+    var badgeEl = document.getElementById('op_deptBadge');
+    if (badgeEl) badgeEl.innerText = dept;
+    fetchDeptOperationData();
+  }
+
+  function changeOpTimeRange(range) {
+    currentOpTimeRange = range;
+    ['TODAY', 'LAST_5_DAYS', 'NEXT_14_DAYS', 'LAST_30_DAYS'].forEach(function(r) {
+      var btn = document.getElementById('btn_op_' + r);
+      if (btn) btn.classList.toggle('active', r === range);
+    });
+    fetchDeptOperationData();
+  }
+
+  function applyOpCustomDateRange() {
+    var start = document.getElementById('op_startDate').value;
+    var end = document.getElementById('op_endDate').value;
+    if (!start || !end) return alert('請選擇完整日期區間！');
+    fetchDeptOperationData('CUSTOM', start, end);
+  }
+
+  function fetchDeptOperationData(customType, start, end) {
+    var areaCap = document.getElementById('op_memberCapacityArea');
+    var areaCal = document.getElementById('op_calendarGrid');
+    var areaRisk = document.getElementById('op_riskContainer');
+    var areaActive = document.getElementById('op_activeContainer');
+    var areaPipe = document.getElementById('op_pipelineContainer');
+
+    if (areaCap) areaCap.innerHTML = '<span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>';
+    if (areaCal) areaCal.innerHTML = '<div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>';
+    if (areaRisk) areaRisk.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>';
+    if (areaActive) areaActive.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>';
+    if (areaPipe) areaPipe.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>';
+
+    var pRange = customType || currentOpTimeRange;
+    var pStart = start || '';
+    var pEnd = end || '';
+    var targetDept = currentOpDept || 'Editorial';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          console.error('API Error:', res);
+          alert('載入指揮中心數據失敗：' + (res ? res.message : '未知錯誤'));
+          return;
+        }
+        rawOpData = res.data;
+
+        var elOverdue = document.getElementById('op_kpi_overdue');
+        var elDueSoon = document.getElementById('op_kpi_dueSoon');
+        var elUnassigned = document.getElementById('op_kpi_unassigned');
+        var elOnTrack = document.getElementById('op_kpi_onTrack');
+
+        if (elOverdue) elOverdue.innerText = res.data.kpi ? res.data.kpi.overdue : 0;
+        if (elDueSoon) elDueSoon.innerText = res.data.kpi ? res.data.kpi.dueSoon : 0;
+        if (elUnassigned) elUnassigned.innerText = res.data.kpi ? res.data.kpi.unassigned : 0;
+        if (elOnTrack) elOnTrack.innerText = res.data.kpi ? res.data.kpi.onTrack : 0;
+
+        renderMemberCapacityChips(res.data.capacityList || []);
+        renderCapacityCalendar(res.data.calendarMap || {}, res.data.calendarTasks || []);
+        renderOpColumns();
+      })
+      .withFailureHandler(function(err) {
+        console.error('GAS Fail:', err);
+        alert('後端執行出錯: ' + (err ? err.message : '網絡連線異常'));
+      })
+      .api_getDeptOperationData(targetDept, pRange, pStart, pEnd);
+  }
+
+  function renderMemberCapacityChips(list) {
+    var area = document.getElementById('op_memberCapacityArea');
+    if (!area) return;
+
+    if (!list || list.length === 0) {
+      area.innerHTML = '<span class="text-muted small">該部門無活躍組員數據</span>';
+      return;
+    }
+
+    var html = '';
+    list.forEach(function(m) {
+      var isSel = selectedOpMember === m.name;
+      var btnClass = isSel ? 'btn-dark' : 'btn-outline-primary';
+
+      html += '<button class="btn btn-xs ' + btnClass + ' py-1 px-2 d-flex align-items-center gap-1" onclick="filterOpTasksByMember(\'' + m.name + '\')">' +
+        '<strong>' + m.name + '</strong>' +
+        '<span class="badge bg-primary text-white">' + m.inProgress + ' 進行中</span>' +
+        '<span class="badge bg-success text-white">' + m.completed + ' 完成</span>' +
+        (m.revisions > 0 ? '<span class="badge bg-danger text-white">' + m.revisions + ' 修改</span>' : '') +
+      '</button>';
+    });
+
+    area.innerHTML = html;
+  }
+
+  function filterOpTasksByMember(memberName) {
+    selectedOpMember = selectedOpMember === memberName ? null : memberName;
+    renderMemberCapacityChips(rawOpData ? rawOpData.capacityList : []);
+    renderOpColumns();
+  }
+
+  function filterOpTasksByKpi(type) {
+    selectedOpKpiFilter = selectedOpKpiFilter === type ? null : type;
+    renderOpColumns();
+  }
+
+  function renderCapacityCalendar(calMap, tasksList) {
+    var grid = document.getElementById('op_calendarGrid');
+    if (!grid) return;
+
+    var html = '';
+    var today = new Date();
+    
+    for (var i = 0; i < 14; i++) {
+      var d = new Date();
+      d.setDate(today.getDate() + i);
+      var dateStr = d.toISOString().split('T')[0];
+      var displayDate = (d.getMonth() + 1) + '/' + d.getDate();
+      var dayName = ['日','一','二','三','四','五','六'][d.getDay()];
+
+      var dayTasks = (tasksList || []).filter(function(t){ return t.deadline === dateStr; });
+      var taskCount = dayTasks.length;
+
+      var bgClass = 'bg-success bg-opacity-10 border-success';
+      var badgeClass = 'bg-success';
+      var statusText = '🟢 空檔';
+
+      if (taskCount >= 3) {
+        bgClass = 'bg-danger bg-opacity-10 border-danger';
+        badgeClass = 'bg-danger';
+        statusText = '🔴 ' + taskCount + '件';
+      } else if (taskCount > 0) {
+        bgClass = 'bg-warning bg-opacity-10 border-warning';
+        badgeClass = 'bg-warning text-dark';
+        statusText = '🟡 ' + taskCount + '件';
+      }
+
+      var tasksHtml = '';
+      dayTasks.forEach(function(t) {
+        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+        var label = t.assignee ? t.assignee : '⚠️未分配';
+        tasksHtml += '<div class="bg-white border rounded p-1 mb-1 text-truncate shadow-xs" style="font-size:0.75em; cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')" title="' + t.client + ' - ' + t.taskName + '">' +
+          '<strong>' + t.jobNumber + '</strong>: ' + label +
+          ' <a href="#" onclick="event.stopPropagation(); promptQuickShiftDeadline(\'' + t.deliverableId + '\', ' + t.stepNumber + ')" class="text-secondary ms-1" title="快捷改期"><i class="fas fa-pen"></i></a>' +
+        '</div>';
+      });
+
+      html += '<div class="col">' +
+        '<div class="card h-100 border ' + bgClass + ' shadow-xs">' +
+          '<div class="card-header p-1 bg-white fw-bold d-flex justify-content-between" style="font-size:0.7em;">' +
+            '<span>' + displayDate + ' (' + dayName + ')</span>' +
+            '<span class="badge ' + badgeClass + '" style="font-size:0.65em;">' + taskCount + '</span>' +
+          '</div>' +
+          '<div class="card-body p-1" style="min-height: 60px;">' +
+            (tasksHtml || '<small class="text-muted opacity-50" style="font-size:0.65em;">無作業</small>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    grid.innerHTML = html;
+  }
+
+  function renderOpColumns() {
+    if (!rawOpData) return;
+
+    var riskContainer = document.getElementById('op_riskContainer');
+    var activeContainer = document.getElementById('op_activeContainer');
+    var pipelineContainer = document.getElementById('op_pipelineContainer');
+
+    var riskList = rawOpData.riskTasks || [];
+    var activeList = rawOpData.activeTasks || [];
+    var pipelineList = rawOpData.pipelineTasks || [];
+
+    if (selectedOpMember) {
+      riskList = riskList.filter(function(t){ return t.assignee === selectedOpMember; });
+      activeList = activeList.filter(function(t){ return t.assignee === selectedOpMember; });
+    }
+
+    var elCntRisk = document.getElementById('op_countRisk');
+    var elCntAct = document.getElementById('op_countActive');
+    var elCntPipe = document.getElementById('op_countPipeline');
+
+    if (elCntRisk) elCntRisk.innerText = riskList.length + ' 件';
+    if (elCntAct) elCntAct.innerText = activeList.length + ' 件';
+    if (elCntPipe) elCntPipe.innerText = pipelineList.length + ' 件';
+
+    // 1. 風險與待分配欄
+    if (riskList.length === 0) {
+      if (riskContainer) riskContainer.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>目前無逾期或待分配風險！</div>';
+    } else {
+      var rHtml = '';
+      riskList.forEach(function(t) {
+        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+        var badge = t.isOverdue ? '<span class="badge bg-danger me-1">🚨 逾期</span>' : '<span class="badge bg-info text-dark me-1">📥 待分配</span>';
+
+        var optHtml = '<option value="">選擇指派同仁...</option>';
+        (rawOpData.capacityList || []).forEach(function(m) {
+          optHtml += '<option value="' + m.name + '">' + m.name + ' (' + m.inProgress + '件進行中)</option>';
+        });
+
+        rHtml += 
+        '<div class="card mb-2 border-start border-4 border-danger shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+          '<div class="card-body p-2" style="font-size:0.85em;">' +
+            '<div class="d-flex justify-content-between align-items-center mb-1">' +
+              '<div>' + badge + '<small class="text-muted fw-bold">' + t.jobNumber + '</small></div>' +
+              '<small class="text-danger fw-bold"><i class="fas fa-clock"></i> 死線: ' + t.deadline + '</small>' +
+            '</div>' +
+            '<h6 class="fw-bold mb-1 text-dark">' + t.client + ' - ' + t.taskName + '</h6>' +
+            '<div class="text-muted mb-2">關卡: <strong class="text-primary">' + t.stepName + '</strong></div>' +
+            '<div class="border-top pt-2" onclick="event.stopPropagation();">' +
+              '<div class="input-group input-group-sm">' +
+                '<select class="form-select form-select-sm" id="assign_select_' + t.deliverableId + '_' + t.stepNumber + '">' + optHtml + '</select>' +
+                '<button class="btn btn-warning fw-bold" onclick="quickDispatchMember(\'' + t.deliverableId + '\', ' + t.stepNumber + ')">派案</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+      if (riskContainer) riskContainer.innerHTML = rHtml;
+    }
+
+    // 2. 進行中欄
+    if (activeList.length === 0) {
+      if (activeContainer) activeContainer.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2"></i><br>無進行中任務。</div>';
+    } else {
+      var aHtml = '';
+      activeList.forEach(function(t) {
+        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+        aHtml += 
+        '<div class="card mb-2 border-start border-4 border-primary shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+          '<div class="card-body p-2" style="font-size:0.85em;">' +
+            '<div class="d-flex justify-content-between align-items-center mb-1">' +
+              '<span class="badge bg-primary">' + t.stepName + '</span>' +
+              '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
+            '</div>' +
+            '<h6 class="fw-bold mb-1 text-dark">' + t.client + ' - ' + t.taskName + '</h6>' +
+            '<div class="d-flex justify-content-between text-muted mb-2">' +
+              '<span>負責人: <strong>[' + (t.assignee || '未指派') + ']</strong></span>' +
+              '<span class="text-dark fw-bold"><i class="fas fa-clock text-primary"></i> ' + t.deadline + '</span>' +
+            '</div>' +
+            '<div class="text-end border-top pt-1">' +
+              '<button class="btn btn-xs btn-outline-primary py-0 px-2" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">操作 / 提交</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+      if (activeContainer) activeContainer.innerHTML = aHtml;
+    }
+
+    // 3. 未來管線欄
+    if (pipelineList.length === 0) {
+      if (pipelineContainer) pipelineContainer.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-calendar-check fa-2x mb-2"></i><br>未來尚無前置流轉任務。</div>';
+    } else {
+      var pHtml = '';
+      pipelineList.forEach(function(t) {
+        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+        pHtml += 
+        '<div class="card mb-2 border-start border-4 border-info shadow-sm">' +
+          '<div class="card-body p-2" style="font-size:0.85em;">' +
+            '<div class="d-flex justify-content-between align-items-center mb-1">' +
+              '<span class="badge bg-info text-dark">預計流入: ' + t.stepName + '</span>' +
+              '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
+            '</div>' +
+            '<h6 class="fw-bold mb-1 text-dark">' + t.client + ' - ' + t.taskName + '</h6>' +
+            '<div class="text-muted mb-2">當前卡在: <strong class="text-danger">' + t.currentFrontStep + ' (' + t.frontAssignee + ')</strong></div>' +
+            '<div class="d-flex justify-content-between align-items-center border-top pt-1">' +
+              '<small class="text-muted"><i class="fas fa-hourglass-half text-info"></i> 預計到達: ' + t.estimatedArrival + '</small>' +
+              '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="nudgeDepartment(\'' + t.frontDept + '\', \'' + t.taskName + '\', \'' + t.estimatedArrival + '\')"><i class="fas fa-paper-plane"></i> 催辦前置</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      });
+      if (pipelineContainer) pipelineContainer.innerHTML = pHtml;
+    }
+  }
+
+  function quickDispatchMember(deliverableId, stepNumber) {
+    var sel = document.getElementById('assign_select_' + deliverableId + '_' + stepNumber);
+    if (!sel || !sel.value) return alert('請選擇要指派的同仁！');
+
+    var assignee = sel.value;
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        alert('派案成功！已指派給 ' + assignee);
+        fetchDeptOperationData();
+      } else {
+        alert('派案失敗: ' + (res ? res.message : '未知錯誤'));
+      }
+    }).api_dispatchWorkflowStep('', deliverableId, stepNumber, assignee, currentOpDept);
+  }
+
+  function promptQuickShiftDeadline(deliverableId, stepNumber) {
+    var newDate = prompt('請輸入新的關卡死線 (yyyy-MM-dd)：', new Date().toISOString().split('T')[0]);
+    if (newDate) {
+      google.script.run.withSuccessHandler(function(res) {
+        if (res && res.success) {
+          alert('死線調整成功！');
+          fetchDeptOperationData();
+        } else { alert('調整失敗: ' + (res ? res.message : '未知錯誤')); }
+      }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim());
+    }
+  }
+</script>

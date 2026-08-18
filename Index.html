@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <title>HK01 PMO Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <style>
+    body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .navbar { background-color: #005088; }
+    .navbar-brand, .nav-link, .navbar-text { color: #ffffff !important; }
+    .section-container { display: none; margin-top: 20px; margin-bottom: 40px; }
+    .loader { display: flex; justify-content: center; align-items: center; height: 50vh; }
+    #simulateBanner {
+      display: none; background-color: #dc3545; color: white; text-align: center;
+      padding: 8px; font-weight: bold; position: sticky; top: 0; z-index: 1050; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .row-frozen { background-color: #f8f9fa; opacity: 0.7; }
+    .color-picker { width: 40px; height: 35px; padding: 0; border: none; cursor: pointer; }
+    .task-card-clickable { cursor: pointer; transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out; }
+    .task-card-clickable:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 導覽列組件 -->
+  <?!= include('NavbarUI'); ?>
+
+  <div class="container-fluid px-4 py-3">
+    <div id="mainLoader" class="loader">
+      <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+    </div>
+
+    <!-- 2. 我的任務看板組件 -->
+    <?!= include('MyTasksUI'); ?>
+    
+    <!-- 3. 客戶追蹤組件 -->
+    <?!= include('ClientReviewUI'); ?>
+
+    <!-- 4. 專案歷史組件 -->
+    <?!= include('HistoryUI'); ?>
+    
+    <!-- 5. 營運導向部門指揮中心組件 -->
+    <?!= include('DeptKanbanUI'); ?>
+
+    <!-- 6. 全局管理統計分析組件 -->
+<?!= include('AnalyticsUI'); ?>
+
+    <!-- 7. 系統設定組件 -->
+    <div id="adminSection" class="section-container">
+      <?!= include('AdminUI'); ?>
+
+      <div id="deptConfigBlock" style="display: none;" class="mb-5">
+        <h3 class="text-secondary mb-3"><i class="fas fa-palette"></i> 部門與標籤顏色設定</h3>
+        <div class="card shadow-sm border-info">
+          <div class="card-body">
+            <div class="row align-items-center mb-3">
+              <div class="col-md-4">
+                <input type="text" id="newDeptName" class="form-control" placeholder="輸入新部門名稱...">
+              </div>
+              <div class="col-md-2">
+                <input type="color" id="newDeptColor" class="form-control color-picker" value="#0dcaf0" title="選擇代表顏色">
+              </div>
+              <div class="col-md-3">
+                <button class="btn btn-outline-info" onclick="saveDepartment()"><i class="fas fa-plus"></i> 新增 / 更新</button>
+              </div>
+            </div>
+            <hr>
+            <div id="deptBadgesArea">
+              <span class="text-muted"><i class="fas fa-spinner fa-spin"></i> 載入部門資料中...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="text-secondary"><i class="fas fa-users-cog"></i> 系統權限/成員管理</h3>
+        <div>
+          <button id="addUserBtn" class="btn btn-primary" onclick="openUserModal()"><i class="fas fa-plus"></i> 新增/編輯同事</button>
+        </div>
+      </div>
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-dark">
+                <tr><th>員工編號 (PK)</th><th>Email</th><th>姓名</th><th>部門 (Team)</th><th>系統角色 (Role)</th><th>狀態</th><th>操作</th></tr>
+              </thead>
+              <tbody id="userTableBody">
+                <tr><td colspan="7" class="text-center">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Modal、工作流與 JavaScript 腳本模組 -->
+  <?!= include('ModalsUI'); ?>
+  <?!= include('WorkflowUI'); ?>
+  <?!= include('Scripts'); ?>
+
+</body>
+</html>

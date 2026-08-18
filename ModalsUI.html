@@ -1,0 +1,116 @@
+<!-- ========================================== -->
+<!-- [ModalsUI.html] 系統彈出視窗模組 (新增專案 & 權限) -->
+<!-- ========================================== -->
+
+<!-- 1. 新增專案 Modal -->
+<div class="modal fade" id="newProjectModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content shadow-lg">
+      <div class="modal-header bg-primary text-white py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-plus-circle"></i> 建立新專案</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      
+      <div class="modal-body bg-light">
+        <form id="newProjectForm">
+          <h6 class="text-primary border-bottom pb-2 mb-3"><i class="fas fa-info-circle"></i> 1. 基本資訊</h6>
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">專案編號 (Job No.)</label>
+              <input type="text" class="form-control form-control-sm" id="np_jobNumber" required placeholder="例如: A26-1002">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">客戶名稱 (Client)</label>
+              <input type="text" class="form-control form-control-sm" id="np_client" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">負責 Sales</label>
+              <input type="text" class="form-control form-control-sm" id="np_sales" placeholder="例: Alex" required>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">負責 PM</label>
+              <select class="form-select form-select-sm" id="np_pmSelect" required>
+                <option value="" disabled selected>載入 PM 中...</option>
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">暫定開始日</label>
+              <input type="date" class="form-control form-control-sm" id="np_tentativeDate">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">總上線死線 (Deadline)</label>
+              <input type="date" class="form-control form-control-sm" id="np_deadline" required>
+            </div>
+          </div>
+
+          <h6 class="text-primary border-bottom pb-2 mb-3 d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-tasks"></i> 2. 子項目設定 (Deliverables)</span>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addDeliverableRow()"><i class="fas fa-plus"></i> 新增一項</button>
+          </h6>
+          <div id="np_deliverablesArea"></div>
+        </form>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="submitNewProject()">確認建立專案</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. 成員權限 Modal -->
+<div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="userModalTitle">權限設定</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="userForm">
+          <div class="mb-3">
+            <label class="form-label fw-bold text-primary">員工編號 (唯一識別碼)</label>
+            <input type="text" class="form-control" id="u_empId" required placeholder="例如: E001">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Email (登入帳號)</label>
+            <input type="email" class="form-control" id="u_email" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">同事姓名</label>
+            <input type="text" class="form-control" id="u_name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">所屬部門 (Team)</label>
+            <select class="form-select" id="u_dept" required>
+              <option value="">載入部門中...</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">系統權限角色 (Role)</label>
+            <select class="form-select" id="u_role" required>
+              <option value="">請選擇權限級別...</option>
+              <option value="Admin">Admin (最高權限)</option>
+              <option value="Management">Management (管理層總覽)</option>
+              <option value="Team Head">Team Head (部門看板檢視)</option>
+              <option value="Member">Member (一般員工)</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold text-danger">帳號狀態</label>
+            <select class="form-select" id="u_status" required>
+              <option value="Active">🟢 啟用 (Active)</option>
+              <option value="Frozen">🔴 凍結 (Frozen / 離職)</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary" onclick="saveUser()"><i class="fas fa-save"></i> 儲存資料</button>
+      </div>
+    </div>
+  </div>
+</div>

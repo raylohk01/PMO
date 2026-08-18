@@ -1,0 +1,941 @@
+<!-- ========================================== -->
+<!-- [Scripts.html] 全局前端邏輯與 AJAX 控制模組 -->
+<!-- ========================================== -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  var currentUser = null;
+  var originalUser = null; 
+  var globalDepartments = {}; 
+  var userModalInstance = null; 
+  var newProjectModalInstance = null;
+  var templateEditModalInstance = null;
+  var availableTemplates = [];
+  var workloadChartInstance = null;
+  var deliverableCounter = 1;
+  var currentTemplateSteps = [];
+  var cachedDeptList = [];
+
+  document.addEventListener("DOMContentLoaded", function() {
+    var userEl = document.getElementById('userModal');
+    if (userEl) userModalInstance = new bootstrap.Modal(userEl);
+
+    var npEl = document.getElementById('newProjectModal');
+    if (npEl) newProjectModalInstance = new bootstrap.Modal(npEl);
+
+    var tmplEl = document.getElementById('templateEditModal');
+    if (tmplEl) templateEditModalInstance = new bootstrap.Modal(tmplEl);
+
+    fetchDepartmentsAndInit();
+  });
+
+function switchSection(sectionId) {
+    hideAllSections();
+    var target = document.getElementById(sectionId);
+    if (target) target.style.display = 'block';
+    
+    try {
+      if (sectionId === 'adminSection' && typeof loadAdminView === 'function') loadAdminView();
+      if (sectionId === 'clientReviewSection' && typeof loadClientReviewView === 'function') loadClientReviewView();
+      if (sectionId === 'historySection' && typeof searchHistory === 'function') searchHistory();
+      if (sectionId === 'analyticsSection' && typeof loadAnalyticsView === 'function') loadAnalyticsView();
+      
+      if (sectionId === 'deptHeadSection') {
+        var deptToPass = (typeof currentUser !== 'undefined' && currentUser && currentUser.department) ? currentUser.department : 'Editorial';
+        if (typeof loadDeptHeadView === 'function') {
+          loadDeptHeadView(deptToPass, currentUser ? currentUser.email : '');
+        }
+      }
+    } catch(e) {
+      console.error('switchSection error:', e);
+    }
+  }
+
+  function fetchDepartmentsAndInit() {
+    google.script.run.withSuccessHandler(function(userRes) {
+      if (userRes && userRes.success) {
+        originalUser = userRes.data;
+        initDashboard(userRes.data);
+        
+        google.script.run.withSuccessHandler(function(res) {
+          if (res && res.success) {
+            globalDepartments = {};
+            res.data.forEach(function(d) { globalDepartments[d.name] = d.colorHex; });
+            renderDepartmentOptions(res.data);
+            renderDepartmentBadges(res.data);
+          }
+        }).api_getDepartments();
+
+      } else { 
+        alert("無法獲取使用者資訊，請重新整理頁面。"); 
+      }
+    }).api_getCurrentUser();
+  }
+
+  function renderDepartmentOptions(depts) {
+    var select = document.getElementById('u_dept');
+    if (!select) return;
+    var html = '<option value="">請選擇部門...</option>';
+    depts.forEach(function(d) { html += '<option value="' + d.name + '">' + d.name + '</option>'; });
+    select.innerHTML = html;
+  }
+
+  function renderDepartmentBadges(depts) {
+    var area = document.getElementById('deptBadgesArea');
+    if (!area) return;
+    var html = '';
+    depts.forEach(function(d) {
+      html += '<span class="badge rounded-pill me-2 mb-2 p-2" style="background-color: ' + d.colorHex + '; cursor:pointer; font-size: 0.9em;" onclick="fillDeptForm(\'' + d.name + '\', \'' + d.colorHex + '\')">' +
+                 d.name + ' <i class="fas fa-edit ms-1 text-light opacity-50"></i>' +
+               '</span>';
+    });
+    area.innerHTML = html || '<span class="text-muted">尚無部門資料</span>';
+  }
+
+  function fillDeptForm(name, color) {
+    document.getElementById('newDeptName').value = name;
+    document.getElementById('newDeptColor').value = color;
+  }
+
+  function saveDepartment() {
+    var name = document.getElementById('newDeptName').value;
+    var colorHex = document.getElementById('newDeptColor').value;
+    if (!name) return alert('請輸入部門名稱');
+    
+    var btn = document.querySelector('#deptConfigBlock .btn-outline-info');
+    var originalBtnHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 更新中...';
+    btn.disabled = true;
+    
+    google.script.run.withSuccessHandler(function(res) {
+      btn.innerHTML = originalBtnHTML;
+      btn.disabled = false;
+      if (res.success) {
+        document.getElementById('newDeptName').value = '';
+        google.script.run.withSuccessHandler(function(deptRes) {
+          if (deptRes && deptRes.success) {
+            globalDepartments = {};
+            deptRes.data.forEach(function(d) { globalDepartments[d.name] = d.colorHex; });
+            renderDepartmentOptions(deptRes.data);
+            renderDepartmentBadges(deptRes.data);
+            loadAdminView(); 
+          }
+        }).api_getDepartments();
+      } else alert(res.message);
+    }).api_saveDepartment({ name: name, colorHex: colorHex });
+  }
+
+  function getDeptColor(deptName) { return globalDepartments[deptName] || '#6c757d'; }
+
+  function initDashboard(user) {
+    currentUser = user;
+    document.getElementById('mainLoader').style.display = 'none';
+    hideAllSections();
+    
+    var userName = user.name || user.email || 'User';
+    var userRole = user.role || 'Member';
+    var userDept = user.department || 'General';
+    document.getElementById('userInfo').innerHTML = '<i class="fas fa-user-circle"></i> ' + userName + ' (' + userRole + ' - ' + userDept + ')';
+
+    document.getElementById('individualSection').style.display = 'block';
+    loadIndividualView(user.email);
+
+    var canClient = ['Sales', 'PM', 'Admin', 'Management'].includes(userRole);
+    var canDept = ['Team Head', 'Admin', 'Management'].includes(userRole);
+    var canManage = ['Management', 'Admin'].includes(userRole);
+    var canAdmin = ['Management', 'Admin', 'Team Head'].includes(userRole);
+
+    if (document.getElementById('nav_clientReview')) document.getElementById('nav_clientReview').style.display = canClient ? 'block' : 'none';
+    if (document.getElementById('nav_deptKanban')) document.getElementById('nav_deptKanban').style.display = canDept ? 'block' : 'none';
+    if (document.getElementById('nav_management')) document.getElementById('nav_management').style.display = canManage ? 'block' : 'none';
+    if (document.getElementById('nav_admin')) document.getElementById('nav_admin').style.display = canAdmin ? 'block' : 'none';
+  }
+
+  function hideAllSections() { 
+    document.querySelectorAll('.section-container').forEach(function(sec) { sec.style.display = 'none'; }); 
+  }
+
+  function simulateUser(email, name, dept, role) {
+    if (!confirm('確定要模擬 ' + (name || email) + ' (' + role + ') 嗎？')) return;
+    document.getElementById('simulateBanner').style.display = 'block';
+    document.getElementById('simTargetName').innerText = name || email;
+    document.getElementById('simTargetRole').innerText = role;
+    initDashboard({ email: email, name: name, department: dept, role: role }); 
+  }
+
+  function exitSimulation() {
+    document.getElementById('simulateBanner').style.display = 'none';
+    google.script.run.withSuccessHandler(function(userRes) {
+      if (userRes && userRes.success) {
+        originalUser = userRes.data;
+        initDashboard(userRes.data);
+      }
+    }).api_getCurrentUser();
+  }
+
+  function loadIndividualView(simEmail) {
+    document.getElementById('urgentTasksArea').innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 讀取任務中...</div>';
+    document.getElementById('onTrackTasksArea').innerHTML = '';
+    document.getElementById('upcomingTasksArea').innerHTML = '';
+    document.getElementById('pausedTasksArea').innerHTML = '';
+    document.getElementById('pmAlertArea').innerHTML = '';
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success) return alert('載入失敗: ' + (res ? res.message : '未知錯誤'));
+      var data = res.data;
+
+      document.getElementById('countOverdue').innerText = data.overdue.length;
+      document.getElementById('countDueSoon').innerText = data.dueSoon.length;
+      document.getElementById('countOnTrack').innerText = data.onTrack.length;
+      document.getElementById('countUpcoming').innerText = data.upcoming.length;
+      if(document.getElementById('countPaused')) {
+        document.getElementById('countPaused').innerText = (data.paused || []).length;
+      }
+
+      if(data.actionRequired && data.actionRequired.length > 0) {
+        var alertHtml = '';
+        data.actionRequired.forEach(function(alert) {
+          alertHtml += '<div class="alert alert-danger shadow-sm d-flex justify-content-between align-items-center">' +
+            '<span><strong>🚨 ' + alert.jobNumber + ' (' + alert.client + ')</strong>: ' + alert.message + '</span>' +
+            '<button class="btn btn-sm btn-danger fw-bold" onclick="window.openWorkflow(\'' + alert.jobNumber + '\')">進入處理</button>' +
+          '</div>';
+        });
+        document.getElementById('pmAlertArea').innerHTML = alertHtml;
+      }
+
+      var renderCards = function(tasks, containerId, borderClass) {
+        var container = document.getElementById(containerId);
+        if(!container) return;
+        if(!tasks || tasks.length === 0) {
+          container.innerHTML = '<div class="col-12 text-muted mb-2">此區塊目前沒有任務。</div>';
+          return;
+        }
+        var html = '';
+        tasks.forEach(function(t) {
+          var badgeClass = t.status === 'Paused' ? 'bg-warning text-dark' : (t.status === 'Pending Start' ? 'bg-secondary' : 'bg-primary');
+          var dateColor = t.daysLeft < 0 ? 'text-danger fw-bold' : (t.daysLeft <= 3 ? 'text-warning fw-bold' : 'text-success');
+          
+          var assigneeInfo = t.assignee 
+            ? '<span class="text-dark fw-bold">[' + t.assignee + ']</span>' 
+            : '<span class="badge bg-warning text-dark ms-1"><i class="fas fa-exclamation-triangle"></i> 待分配</span>';
+
+          var pauseBadge = t.status === 'Paused' ? '<span class="badge bg-warning text-dark ms-1">已暫停</span>' : '';
+
+          var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+
+          html += 
+          '<div class="col-md-4 mb-3">' +
+            '<div class="card h-100 shadow-sm border-start border-4 ' + borderClass + ' task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+              '<div class="card-body pb-2">' +
+                '<div class="d-flex justify-content-between align-items-center mb-1">' +
+                  '<div><span class="badge ' + badgeClass + '">' + t.type + '</span>' + pauseBadge + '</div>' +
+                  '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
+                '</div>' +
+                '<h6 class="card-title fw-bold text-dark mb-1">' + t.client + '</h6>' +
+                '<p class="card-text mb-2 text-truncate" title="' + t.taskName + '">' + t.taskName + '</p>' +
+                
+                '<div class="p-2 mb-2 rounded bg-light" style="font-size: 0.82em;">' +
+                  '<div><i class="fas fa-caret-right text-info"></i> 階段：<strong class="text-info">' + t.currentStepName + '</strong> ' + assigneeInfo + '</div>' +
+                  '<div class="mt-1 text-muted d-flex justify-content-between">' +
+                    '<span><i class="fas fa-user-tie"></i> PM: ' + (t.pmName || '未指定') + '</span>' +
+                    '<span><i class="fas fa-shopping-cart"></i> Sales: ' + (t.salesName || '未指定') + '</span>' +
+                  '</div>' +
+                '</div>' +
+
+                '<div class="d-flex justify-content-between align-items-center border-top pt-2" style="font-size: 0.85em;">' +
+                  '<span class="' + dateColor + '"><i class="fas fa-clock"></i> 死線: ' + t.deadline + '</span>' +
+                  '<button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">操作</button>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        });
+        container.innerHTML = html;
+      };
+
+      var urgentTasks = [].concat(data.overdue, data.dueSoon);
+      renderCards(urgentTasks, 'urgentTasksArea', 'border-danger');
+      renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
+      renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
+      renderCards(data.paused, 'pausedTasksArea', 'border-warning');
+    }).api_getDashboardData(simEmail);
+  }
+
+  function loadDeptHeadView(dept, simEmail) {
+    var taskListEl = document.getElementById('deptTaskList');
+    if(!taskListEl) return;
+    taskListEl.innerHTML = '<li class="list-group-item text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 載入部門看板中...</li>';
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        taskListEl.innerHTML = '<li class="list-group-item text-danger">載入失敗: ' + (res ? res.message : '未知錯誤') + '</li>';
+        return;
+      }
+
+      var tasks = res.data.tasks;
+      var workload = res.data.workload;
+
+      if (tasks.length === 0) {
+        taskListEl.innerHTML = '<li class="list-group-item text-center text-muted py-4">🎉 目前該部門沒有相關任務！</li>';
+      } else {
+        var html = '';
+        tasks.forEach(function(t) {
+          var statusBadge = t.status === 'In Progress' ? '<span class="badge bg-success me-1">進行中</span>' : '<span class="badge bg-warning text-dark me-1">待啟動</span>';
+          var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+
+          html += 
+          '<li class="list-group-item d-flex justify-content-between align-items-center py-3" style="cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+            '<div>' +
+              '<div class="mb-1">' +
+                statusBadge +
+                '<span class="badge bg-primary me-1">' + t.type + '</span>' +
+                '<strong class="text-dark">' + t.jobNumber + ' - ' + t.client + '</strong>' +
+              '</div>' +
+              '<div class="text-muted small">' +
+                '任務：<strong>' + t.deliverableName + '</strong>｜階段：<span class="text-info fw-bold">' + t.stepName + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="text-end">' +
+              '<span class="badge bg-light text-dark border mb-1"><i class="fas fa-user text-secondary"></i> PM: ' + t.pmName + '</span><br>' +
+              '<button class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.8em;" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">檢視</button>' +
+            '</div>' +
+          '</li>';
+        });
+        taskListEl.innerHTML = html;
+      }
+
+      renderWorkloadChart(workload);
+
+    }).api_getDeptKanbanData(currentUser.department);
+  }
+
+  function renderWorkloadChart(workloadMap) {
+    var chartEl = document.getElementById('workloadChart');
+    if (!chartEl) return;
+    var ctx = chartEl.getContext('2d');
+    var labels = Object.keys(workloadMap);
+    var dataValues = Object.values(workloadMap);
+
+    if (workloadChartInstance) workloadChartInstance.destroy();
+
+    workloadChartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels.length > 0 ? labels : ['無任務'],
+        datasets: [{
+          label: '相關任務數',
+          data: dataValues.length > 0 ? dataValues : [0],
+          backgroundColor: 'rgba(13, 110, 253, 0.75)',
+          borderColor: 'rgba(13, 110, 253, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+      }
+    });
+  }
+
+  function loadAdminView() {
+    var currentRole = currentUser ? currentUser.role : 'Member';
+    var canEdit = ['Admin', 'Management'].includes(currentRole);
+    
+    if (document.getElementById('templateConfigBlock')) document.getElementById('templateConfigBlock').style.display = canEdit ? 'block' : 'none';
+    if (document.getElementById('recycleBinBlock')) document.getElementById('recycleBinBlock').style.display = canEdit ? 'block' : 'none';
+
+    if (canEdit) {
+      loadTemplateAdminView();
+      loadRecycleBinView();
+    }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success) return alert('載入成員失敗');
+      var html = '';
+      
+      var currentDept = currentUser ? currentUser.department : 'General';
+      var isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(currentRole) || (currentRole === 'Team Head' && currentDept === 'PM');
+      
+      if (document.getElementById('addUserBtn')) document.getElementById('addUserBtn').style.display = canEdit ? 'inline-block' : 'none';
+      if (document.getElementById('deptConfigBlock')) document.getElementById('deptConfigBlock').style.display = canEdit ? 'block' : 'none';
+
+      res.data.forEach(function(u) {
+        if (!isSuperManager && u.department !== currentDept) return;
+        var empIdVal = u.empId || u.empid || u.empID || u.empld || ''; 
+        var statusVal = u.status || 'Active';
+        var isFrozen = statusVal === 'Frozen';
+        var statusBadge = isFrozen ? '<span class="badge bg-danger">Frozen</span>' : '<span class="badge bg-success">Active</span>';
+        var rowClass = isFrozen ? 'row-frozen' : '';
+
+        var actionHtml = '';
+        if (canEdit) {
+          actionHtml += '<button class="btn btn-sm btn-outline-primary" onclick="editUser(\'' + empIdVal + '\', \'' + u.email + '\', \'' + u.name + '\', \'' + u.department + '\', \'' + u.role + '\', \'' + statusVal + '\')"><i class="fas fa-edit"></i></button>';
+        }
+        if (currentUser && u.email === currentUser.email) {
+          actionHtml += '<button class="btn btn-sm btn-secondary ms-1" disabled><i class="fas fa-user-check"></i> 本人</button>';
+        } else {
+          actionHtml += '<button class="btn btn-sm btn-outline-warning ms-1" onclick="simulateUser(\'' + u.email + '\', \'' + u.name + '\', \'' + u.department + '\', \'' + u.role + '\')"><i class="fas fa-user-secret"></i> 模擬</button>';
+        }
+
+        var deptColor = getDeptColor(u.department);
+        var deptBadge = '<span class="badge rounded-pill" style="background-color: ' + deptColor + '; color: white;">' + (u.department || '未設定') + '</span>';
+
+        html += '<tr class="' + rowClass + '">' +
+          '<td><strong>' + (empIdVal || '-') + '</strong></td>' +
+          '<td>' + u.email + '</td>' +
+          '<td>' + (u.name || '') + '</td>' +
+          '<td>' + deptBadge + '</td>' +
+          '<td><span class="badge bg-secondary">' + (u.role || '未設定') + '</span></td>' +
+          '<td>' + statusBadge + '</td>' +
+          '<td>' + actionHtml + '</td>' +
+        '</tr>';
+      });
+      
+      if (document.getElementById('userTableBody')) {
+        document.getElementById('userTableBody').innerHTML = html || '<tr><td colspan="7" class="text-center">目前沒有可檢視的成員</td></tr>';
+      }
+    }).api_getAllUsers();
+  }
+
+  function loadTemplateAdminView() {
+    var tbody = document.getElementById('templateTableBody');
+    if (!tbody) return;
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success || !res.data) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">讀取失敗或試算表無範本資料。</td></tr>';
+        return;
+      }
+
+      if(res.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">尚無範本，請點擊右上角新增。</td></tr>';
+        return;
+      }
+
+      var html = '';
+      res.data.forEach(function(t) {
+        var steps = [];
+        try {
+          steps = JSON.parse(t.json || '[]');
+        } catch(e) {
+          console.error("範本 [" + t.name + "] JSON 解析失敗:", e);
+        }
+
+        var chainHtml = steps.length > 0 
+          ? steps.map(function(s){ return '<span class="badge bg-light text-dark border me-1">' + (s.dept || 'PM') + '</span>' + (s.name || '步驟'); }).join(' ➔ ')
+          : '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>JSON 格式需格式化</span>';
+
+        html += '<tr>' +
+          '<td><strong>' + t.name + '</strong></td>' +
+          '<td><div style="max-width: 500px; overflow-x: auto; white-space: nowrap;">' + chainHtml + '</div></td>' +
+          '<td class="text-end pe-3">' +
+            '<button class="btn btn-sm btn-outline-primary me-1" onclick="openEditTemplateModal(\'' + t.name + '\')"><i class="fas fa-edit"></i> 編輯</button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(\'' + t.name + '\')"><i class="fas fa-trash"></i> 刪除</button>' +
+          '</td>' +
+        '</tr>';
+      });
+      tbody.innerHTML = html;
+    }).withFailureHandler(function(err) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-danger text-center">後端錯誤: ' + err.message + '</td></tr>';
+    }).api_getTemplates();
+  }
+
+  function loadRecycleBinView() {
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success) return;
+      var tbody = document.getElementById('recycleBinTableBody');
+      if(!tbody) return;
+
+      if(res.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">回收箱目前沒有專案。</td></tr>';
+        return;
+      }
+
+      var html = '';
+      res.data.forEach(function(p) {
+        var safeJobNum = String(p.jobNumber).replace(/'/g, "\\'");
+        html += '<tr>' +
+          '<td><strong>' + p.jobNumber + '</strong></td>' +
+          '<td>' + p.client + '</td>' +
+          '<td>' + p.pmName + '</td>' +
+          '<td class="text-end pe-3">' +
+            '<button class="btn btn-sm btn-outline-success me-1" onclick="restoreProject(\'' + safeJobNum + '\')"><i class="fas fa-undo"></i> 還原專案</button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="permanentDeleteProject(\'' + safeJobNum + '\')"><i class="fas fa-times-circle"></i> 永久刪除</button>' +
+          '</td>' +
+        '</tr>';
+      });
+      tbody.innerHTML = html;
+    }).api_getRecycleBinProjects();
+  }
+
+  // 💡 預設包含 Client Review ➔ 上線日 ➔ 專案完成
+  function openTemplateModal() {
+    document.getElementById('tmpl_name').value = '';
+    document.getElementById('tmpl_name').readOnly = false;
+    document.getElementById('tmplModalTitle').innerText = '新增視覺化工作流範本';
+    
+    currentTemplateSteps = [
+      { step: 1, name: 'PM 開案與 Briefing', dept: 'PM', fields: ['Brief_URL'] },
+      { step: 2, name: 'Client Review', dept: 'Client', fields: ['Draft_URL'] },
+      { step: 3, name: '上線日', dept: 'PM', fields: ['正式上線網址 / 連結'] },
+      { step: 4, name: '專案完成，項目正式上線', dept: 'PM', fields: ['正式上線網址 / 連結'] }
+    ];
+
+    syncDeptListAndRender(function() {
+      renderTemplateStepCards();
+      if(templateEditModalInstance) templateEditModalInstance.show();
+    });
+  }
+
+  function openEditTemplateModal(templateName) {
+    document.getElementById('tmpl_name').value = templateName;
+    document.getElementById('tmpl_name').readOnly = true;
+    document.getElementById('tmplModalTitle').innerText = '編輯範本：' + templateName;
+
+    syncDeptListAndRender(function() {
+      google.script.run.withSuccessHandler(function(res) {
+        if(res && res.success) {
+          var target = res.data.find(function(t){ return t.name === templateName; });
+          if(target) {
+            try { currentTemplateSteps = JSON.parse(target.json || '[]'); } catch(e){}
+            renderTemplateStepCards();
+            if(templateEditModalInstance) templateEditModalInstance.show();
+          }
+        }
+      }).api_getTemplates();
+    });
+  }
+
+  function syncDeptListAndRender(callback) {
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        cachedDeptList = res.data.map(function(d){ return d.name; });
+      }
+      if(callback) callback();
+    }).api_getDepartments();
+  }
+
+  // ==========================================
+// [替換函數] 渲染範本編輯卡片 (支援並行群組 Group 設定)
+// ==========================================
+function renderTemplateStepCards() {
+  var container = document.getElementById('tmpl_stepsContainer');
+  if(!container) return;
+  if(currentTemplateSteps.length === 0) {
+    container.innerHTML = '<div class="text-center text-muted py-4">目前尚無關卡步驟，請點擊上方【新增關卡步驟】</div>';
+    return;
+  }
+
+  var html = '';
+  currentTemplateSteps.forEach(function(step, idx) {
+    var stepNum = idx + 1;
+    var deptOptions = '';
+    
+    var defaultDepts = ['PM', 'Client', 'Editorial', 'Creative', 'Design', 'AdOps', 'Sales', 'Management'];
+    var deptsToUse = cachedDeptList.length > 0 ? cachedDeptList : defaultDepts;
+    if (!deptsToUse.includes('Client')) deptsToUse.push('Client');
+
+    deptsToUse.forEach(function(dept) {
+      var selected = (step.dept || '').toLowerCase() === dept.toLowerCase() ? 'selected' : '';
+      deptOptions += '<option value="' + dept + '" ' + selected + '>' + dept + '</option>';
+    });
+
+    var fieldsHtml = '';
+    (step.fields || []).forEach(function(field, fIdx) {
+      fieldsHtml += 
+      '<div class="input-group input-group-sm mb-1">' +
+        '<span class="input-group-text"><i class="fas fa-pen"></i></span>' +
+        '<input type="text" class="form-control" value="' + field + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value)" placeholder="欄位名稱 (如: Draft_URL)">' +
+        '<button class="btn btn-outline-danger" type="button" onclick="removeStepField(' + idx + ', ' + fIdx + ')"><i class="fas fa-trash"></i></button>' +
+      '</div>';
+    });
+
+    var parallelGroupVal = step.parallelGroup || '';
+
+    html += 
+    '<div class="card mb-3 border shadow-sm">' +
+      '<div class="card-body p-3 bg-white">' +
+        '<div class="d-flex justify-content-between align-items-center mb-2">' +
+          '<span class="badge bg-primary fs-6">Step ' + stepNum + '</span>' +
+          '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="removeTemplateStep(' + idx + ')"><i class="fas fa-times-circle"></i> 移除此關</button>' +
+        '</div>' +
+        '<div class="row g-2 mb-2">' +
+          '<div class="col-md-5">' +
+            '<label class="form-label small text-muted mb-1">關卡名稱</label>' +
+            '<input type="text" class="form-control form-control-sm" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱">' +
+          '</div>' +
+          '<div class="col-md-4">' +
+            '<label class="form-label small text-muted mb-1">負責部門</label>' +
+            '<select class="form-select form-select-sm" onchange="currentTemplateSteps[' + idx + '].dept = this.value">' +
+              deptOptions +
+            '</select>' +
+          '</div>' +
+          '<div class="col-md-3">' +
+            '<label class="form-label small text-muted mb-1"><i class="fas fa-project-diagram text-info"></i> 並行群組</label>' +
+            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 Group_A (相同則並行)">' +
+          '</div>' +
+        '</div>' +
+        '<div class="bg-light p-2 rounded border">' +
+          '<div class="d-flex justify-content-between align-items-center mb-1">' +
+            '<small class="fw-bold text-muted"><i class="fas fa-tasks me-1"></i> 此關卡需填寫欄位</small>' +
+            '<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:0.75em;" onclick="addStepField(' + idx + ')"><i class="fas fa-plus"></i> 新增欄位</button>' +
+          '</div>' +
+          fieldsHtml +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+  function addTemplateStep() {
+    var insertIdx = currentTemplateSteps.length;
+    for (var i = 0; i < currentTemplateSteps.length; i++) {
+      var nameLower = (currentTemplateSteps[i].name || '').toLowerCase();
+      if (nameLower.includes('client') || nameLower.includes('上線') || nameLower.includes('完成')) {
+        insertIdx = i;
+        break;
+      }
+    }
+
+    currentTemplateSteps.splice(insertIdx, 0, {
+      step: 0,
+      name: '新關卡步驟',
+      dept: 'Editorial',
+      fields: ['URL']
+    });
+
+    currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
+    renderTemplateStepCards();
+  }
+
+  function removeTemplateStep(idx) {
+    currentTemplateSteps.splice(idx, 1);
+    currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
+    renderTemplateStepCards();
+  }
+
+  function addStepField(stepIdx) {
+    if(!currentTemplateSteps[stepIdx].fields) currentTemplateSteps[stepIdx].fields = [];
+    currentTemplateSteps[stepIdx].fields.push('New_Field');
+    renderTemplateStepCards();
+  }
+
+  function updateStepField(stepIdx, fieldIdx, val) {
+    currentTemplateSteps[stepIdx].fields[fieldIdx] = val;
+  }
+
+  function removeStepField(stepIdx, fieldIdx) {
+    currentTemplateSteps[stepIdx].fields.splice(fieldIdx, 1);
+    renderTemplateStepCards();
+  }
+
+  function saveTemplateFromModal() {
+    var name = document.getElementById('tmpl_name').value.trim();
+    if(!name) return alert('請輸入範本名稱！');
+    if(currentTemplateSteps.length === 0) return alert('範本至少需要包含一個關卡步驟！');
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        alert(res.message);
+        if(templateEditModalInstance) templateEditModalInstance.hide();
+        loadTemplateAdminView();
+      } else { alert('儲存失敗: ' + (res ? res.message : '未知錯誤')); }
+    }).api_saveTemplate(name, currentTemplateSteps);
+  }
+
+  function deleteTemplate(name) {
+    if(!confirm('確定要刪除範本 [' + name + '] 嗎？')) return;
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        alert('範本已刪除！');
+        loadTemplateAdminView();
+      } else { alert('刪除失敗'); }
+    }).api_deleteTemplate(name);
+  }
+
+  function restoreProject(jobNumber) {
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        alert('專案已還原！');
+        loadRecycleBinView();
+        if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
+      }
+    }).api_manageProjectStatus(jobNumber, 'RESTORE');
+  }
+
+  function permanentDeleteProject(jobNumber) {
+    if(!confirm('⚠️ 警告：這將【永久刪除】專案 ' + jobNumber + ' 且無法復原！確定要執行嗎？')) return;
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        alert('專案已永久刪除！');
+        loadRecycleBinView();
+      }
+    }).api_manageProjectStatus(jobNumber, 'PERMANENT_DELETE');
+  }
+
+  function resetSaveButton() {
+    var btn = document.querySelector('#userModal .btn-primary');
+    if (btn) { btn.innerHTML = '<i class="fas fa-save"></i> 儲存資料'; btn.disabled = false; }
+  }
+
+  function openUserModal() {
+    document.getElementById('userForm').reset();
+    document.getElementById('u_empId').readOnly = false;
+    document.getElementById('u_status').value = 'Active';
+    document.getElementById('userModalTitle').innerText = '新增同事權限';
+    resetSaveButton();
+    if (userModalInstance) userModalInstance.show();
+  }
+
+  function editUser(empId, email, name, dept, role, status) {
+    document.getElementById('u_empId').value = empId !== 'undefined' ? empId : '';
+    document.getElementById('u_empId').readOnly = true;
+    document.getElementById('u_email').value = email !== 'undefined' ? email : '';
+    document.getElementById('u_name').value = name !== 'undefined' ? name : '';
+    document.getElementById('u_dept').value = dept !== 'undefined' ? dept : '';
+    document.getElementById('u_role').value = role !== 'undefined' ? role : '';
+    document.getElementById('u_status').value = status !== 'undefined' ? status : 'Active';
+    document.getElementById('userModalTitle').innerText = '編輯同事權限';
+    resetSaveButton();
+    if (userModalInstance) userModalInstance.show();
+  }
+
+  function saveUser() {
+    var empId = document.getElementById('u_empId').value.trim();
+    var email = document.getElementById('u_email').value.trim();
+    var name = document.getElementById('u_name').value.trim();
+    var dept = document.getElementById('u_dept').value;
+    var role = document.getElementById('u_role').value;
+    var status = document.getElementById('u_status').value;
+
+    if (!empId || !email || !dept || !role) return alert('請填寫所有必填欄位！');
+
+    var btn = document.querySelector('#userModal .btn-primary');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 儲存中...';
+    btn.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        resetSaveButton();
+        if (res && res.success) {
+          alert('同事權限資料儲存成功！');
+          if (userModalInstance) userModalInstance.hide();
+          loadAdminView(); 
+        } else { alert('儲存失敗: ' + (res ? res.message : '未知錯誤')); }
+      })
+      .withFailureHandler(function(err) {
+        resetSaveButton();
+        alert('系統發生嚴重錯誤: ' + err.message);
+      })
+      .api_saveUser({ empId: empId, email: email, name: name, department: dept, role: role, status: status });
+  }
+
+  function openNewProjectModal() {
+    document.getElementById('newProjectForm').reset();
+    
+    var today = new Date();
+    var todayStr = today.toISOString().split('T')[0];
+    var future5 = new Date();
+    future5.setDate(today.getDate() + 5);
+    var future5Str = future5.toISOString().split('T')[0];
+
+    document.getElementById('np_tentativeDate').value = todayStr;
+    document.getElementById('np_deadline').value = future5Str;
+
+    document.getElementById('np_deliverablesArea').innerHTML = '<div class="text-center text-muted my-3"><i class="fas fa-spinner fa-spin"></i> 載入範本中...</div>';
+    if (newProjectModalInstance) newProjectModalInstance.show();
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(res.success) {
+        availableTemplates = res.data;
+        document.getElementById('np_deliverablesArea').innerHTML = ''; 
+        deliverableCounter = 1;
+        addDeliverableRow(); 
+      } else {
+        document.getElementById('np_deliverablesArea').innerHTML = '<div class="alert alert-danger">範本載入失敗: ' + res.message + '</div>';
+      }
+    }).api_getTemplates();
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        var pmSelect = document.getElementById('np_pmSelect');
+        var members = res.data.members;
+        var stats = res.data.stats;
+        
+        var html = '<option value="" disabled selected>請選擇 PM...</option>';
+        members.forEach(function(pm) {
+          var s = stats[pm] || { totalTasks: 0, clientCount: 0 };
+          var isMe = currentUser && pm === currentUser.name ? 'selected' : '';
+          html += '<option value="' + pm + '" ' + isMe + '>' + pm + ' (進行中:' + s.totalTasks + '件 | 客戶:' + s.clientCount + '個)</option>';
+        });
+        pmSelect.innerHTML = html;
+      }
+    }).api_getPMTeamWorkload();
+  }
+
+  function addDeliverableRow() {
+    var container = document.getElementById('np_deliverablesArea');
+    var rowId = 'deliv_row_' + new Date().getTime();
+    
+    var optionsHtml = '<option value="" disabled selected>請選擇工作流範本...</option>';
+    availableTemplates.forEach(function(t) {
+      optionsHtml += '<option value="' + t.name + '" data-json=\'' + t.json + '\'>' + t.name + '</option>';
+    });
+
+    var defaultName = '篇章 / 任務 ' + (deliverableCounter++);
+
+    var html = 
+    '<div class="card mb-2 border-light shadow-sm deliv-item-row" id="' + rowId + '">' +
+      '<div class="card-body p-2 bg-white">' +
+        '<div class="row g-2 align-items-center">' +
+          '<div class="col-md-5">' +
+            '<label class="form-label small text-muted mb-1">套用範本</label>' +
+            '<select class="form-select form-select-sm deliv-template" required onchange="updateTemplatePreview(\'' + rowId + '\')">' +
+              optionsHtml +
+            '</select>' +
+          '</div>' +
+          '<div class="col-md-6">' +
+            '<label class="form-label small text-muted mb-1">自訂任務名稱</label>' +
+            '<input type="text" class="form-control form-control-sm deliv-name" value="' + defaultName + '" required placeholder="請輸入任務名稱">' +
+          '</div>' +
+          '<div class="col-md-1 text-end">' +
+            '<button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById(\'' + rowId + '\').remove()">' +
+              '<i class="fas fa-trash"></i>' +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="mt-2 text-muted small border-top pt-1 style="font-size:0.8em;" id="preview_' + rowId + '" style="display:none;"></div>' +
+      '</div>' +
+    '</div>';
+    
+    container.insertAdjacentHTML('beforeend', html);
+  }
+
+  function updateTemplatePreview(rowId) {
+    var row = document.getElementById(rowId);
+    if (!row) return;
+
+    var select = row.querySelector('.deliv-template');
+    var previewBox = row.querySelector('#preview_' + rowId);
+    var selectedOption = select.options[select.selectedIndex];
+    var jsonStr = selectedOption.getAttribute('data-json');
+
+    if (!jsonStr) {
+      previewBox.style.display = 'none';
+      return;
+    }
+
+    try {
+      var steps = JSON.parse(jsonStr);
+      var chainStr = steps.map(function(s){ return '<span class="badge bg-light text-dark border">' + s.dept + '</span> ' + s.name; }).join(' ➔ ');
+      
+      previewBox.innerHTML = '<i class="fas fa-info-circle text-primary me-1"></i><strong>流程概覽 (' + steps.length + ' 個步驟)：</strong> ' + chainStr;
+      previewBox.style.display = 'block';
+    } catch (e) {
+      previewBox.style.display = 'none';
+    }
+  }
+
+  function submitNewProject() {
+    var jobNumber = document.getElementById('np_jobNumber').value.trim();
+    var client = document.getElementById('np_client').value.trim();
+    var selectedPM = document.getElementById('np_pmSelect').value;
+    if(!jobNumber || !client || !selectedPM) return alert('請填寫專案編號、客戶名稱與負責 PM！');
+
+    var rows = document.querySelectorAll('.deliv-item-row');
+    if(rows.length === 0) return alert('請至少新增一個子項目！');
+    
+    var deliverables = [];
+    var hasError = false;
+
+    rows.forEach(function(row) {
+      var select = row.querySelector('.deliv-template');
+      var nameInput = row.querySelector('.deliv-name');
+      var selectedOption = select.options[select.selectedIndex];
+
+      if(!selectedOption.value || !nameInput.value) {
+        hasError = true;
+      } else {
+        deliverables.push({
+          templateName: selectedOption.value,
+          templateJson: selectedOption.getAttribute('data-json'),
+          name: nameInput.value.trim()
+        });
+      }
+    });
+
+    if(hasError) return alert('請完整選擇範本並填寫任務名稱！');
+
+    var payload = {
+      jobNumber: jobNumber,
+      client: client,
+      salesName: document.getElementById('np_sales').value.trim(),
+      pmName: selectedPM,
+      tentativeDate: document.getElementById('np_tentativeDate').value,
+      deadline: document.getElementById('np_deadline').value,
+      deliverables: deliverables
+    };
+
+    var btn = event.target;
+    var originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 建立中...';
+    btn.disabled = true;
+
+    google.script.run.withSuccessHandler(function(res) {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+      if(res.success) {
+        alert('🎉 專案開案成功！');
+        if (newProjectModalInstance) newProjectModalInstance.hide();
+        if(typeof fetchDepartmentsAndInit === 'function') loadIndividualView(currentUser.email);
+      } else {
+        alert('建立失敗: ' + res.message);
+      }
+    }).api_createProject(payload);
+  }
+
+  function searchHistory() {
+    var tbody = document.getElementById('historyTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 搜尋歷史紀錄中...</td></tr>';
+
+    var keyword = document.getElementById('hist_searchKeyword') ? document.getElementById('hist_searchKeyword').value.trim() : '';
+    var startDate = document.getElementById('hist_startDate') ? document.getElementById('hist_startDate').value : '';
+    var endDate = document.getElementById('hist_endDate') ? document.getElementById('hist_endDate').value : '';
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
+        return;
+      }
+
+      var list = res.data;
+      if(list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
+        return;
+      }
+
+      var html = '';
+      list.forEach(function(item) {
+        var urlHtml = item.launchUrl ? formatClickableText(item.launchUrl) : '<span class="text-muted">未填寫網址</span>';
+        var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
+        
+        html += '<tr>' +
+          '<td><strong>' + item.jobNumber + '</strong></td>' +
+          '<td>' + item.client + '</td>' +
+          '<td>' + item.deliverableName + '</td>' +
+          '<td>' + item.pmName + '</td>' +
+          '<td>' + (item.completedAt || '已完成') + '</td>' +
+          '<td>' + urlHtml + '</td>' +
+          '<td class="text-end pe-3">' +
+            '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視詳情</button>' +
+          '</td>' +
+        '</tr>';
+      });
+
+      tbody.innerHTML = html;
+    }).api_getCompletedProjects(keyword, startDate, endDate);
+  }
+</script>
