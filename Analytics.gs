@@ -209,9 +209,22 @@ function api_getAnalyticsData(timeRange, customStart, customEnd) {
   }
 }
 
+// 🛡️ 靜態防護：當資料庫無資料時回傳乾淨且結構完整的空物件
 function getEmptyAnalyticsResult() {
   return {
-    kpi: { overdue: 0, dueSoon: 0, onTrack: 0, unassigned: 0, inClientReview: 0, next5DaysLaunch: 0, past5DaysLaunch: 0 },
+    kpi: { 
+      overdue: 0, 
+      dueSoon: 0, 
+      onTrack: 0, 
+      unassigned: 0, 
+      inClientReview: 0, 
+      next5DaysLaunch: 0, 
+      past5DaysLaunch: 0,
+      completedCount: 0,
+      onTimeCompletedCount: 0,
+      totalClientDelayDays: 0,
+      delayedClientReviewCount: 0
+    },
     onTimeRate: 100,
     avgClientDelayDays: 0,
     launchByDeptNext: { Editorial: 0, Creative: 0, Video: 0, Design: 0, Event: 0, Other: 0 },
@@ -220,4 +233,10 @@ function getEmptyAnalyticsResult() {
     memberPerformance: [],
     clientDelayList: []
   };
+}
+
+function test_Defensive_ManageProject() {
+  // 故意傳入一個絕對不存在的 ID
+  let result = api_manageProjectStatus('FAKE_JOB_9999', 'PAUSE');
+  Logger.log(result.message);
 }

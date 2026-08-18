@@ -23,46 +23,65 @@ const ROLE_ACCESS_MATRIX = {
 // 2. 核心讀取邏輯
 // ==========================================
 /**
- * 從 Users Sheet 讀取指定使用者的角色資料
- * @param {string} email - 使用者 Google 帳號
- * @returns {Object|null} - 回傳使用者物件，若找不到則回傳 null
+ * 從 Users Sheet 讀取指定使用者的角色資料 (嚴格防禦版)
  */
 function getUserRole(email) {
-  const users = getSheetData(SHEET_NAMES.USERS); // 呼叫 SheetHelper.gs 的函數
+  if (!email) return null;
   
-  // 尋找符合 email 且 isActive 不為 false 的使用者
-  const user = users.find(u => u.email === email && String(u.isActive).toUpperCase() !== 'FALSE');
+  // 取得 Users 表資料
+  const users = getSheetData(SHEET_NAMES.USERS) || [];
+  const targetEmail = String(email).trim().toLowerCase();
+  
+  // 尋找符合 Email 的使用者
+  const user = users.find(u => String(u.email || '').trim().toLowerCase() === targetEmail);
   
   if (user) {
+    // 🛡️ 雙重檢查 status 與 isActive 欄位 (相容 Active/Inactive/FALSE/Disabled)
+    const rawStatus = String(user.status || '').trim().toUpperCase();
+    const rawActive = String(user.isActive || '').trim().toUpperCase();
+    
+    // 只要 status 或 isActive 包含 FALSE, INACTIVE, DISABLED 就代表已停權
+    const isDisabled = (rawStatus === 'FALSE' || rawStatus === 'INACTIVE' || rawStatus === 'DISABLED') ||
+                       (rawActive === 'FALSE' || rawActive === 'INACTIVE' || rawActive === 'DISABLED');
+                       
+    if (isDisabled) {
+      Logger.log('⚠️ 帳號已停權: ' + email);
+      return null; // 視同找不到該帳號，拒絕存取
+    }
+
     return {
       email: user.email,
-      name: user.name,
-      department: user.department,
-      role: user.role
+      name: user.name || user.email.split('@')[0],
+      department: user.department || 'General',
+      role: user.role || 'Member'
     };
   }
+  
   return null;
 }
 
 /**
- * 回傳當前登入使用者的 email 與 role
- * @returns {Object} 
+ * 獲取當前使用者 (嚴格驗證版)
  */
 function getCurrentUser() {
-  const email = Session.getActiveUser().getEmail();
-  
-  if (!email) {
-    throw new Error("系統無法獲取您的 Google 帳號，請確認執行權限。");
+  let email = '';
+  try {
+    email = Session.getActiveUser().getEmail();
+  } catch (e) {
+    throw new Error('無法獲取您的 Google 登入資訊，請重新整理頁面。');
   }
-  
-  const user = getUserRole(email);
+
+  if (!email || email.trim() === '') {
+    throw new Error('存取被拒絕：無法讀取您的 Google 帳號 Email。');
+  }
+
+  const user = getUserRole(email.trim());
   if (!user) {
-    throw new Error(`存取被拒絕：帳號 (${email}) 尚未在系統註冊或已被停權。`);
+    throw new Error(`⛔ 存取被拒絕：帳號 (${email}) 未在 Users 資料表中註冊，或該帳號已被停權 (Status: Disabled)。`);
   }
-  
+
   return user;
 }
-
 // ==========================================
 // 3. 權限判定邏輯
 // ==========================================

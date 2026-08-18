@@ -5,16 +5,30 @@
  */
 
 // ==========================================
-// 1. Web App 入口 (doGet)
+// 1. Web App 入口 (doGet) - 第一線大樓門禁
 // ==========================================
 function doGet(e) {
-  // 檢查登入狀態 (Google Workspace 預設會強制登入才能訪問)
   const email = Session.getActiveUser().getEmail();
   if (!email) {
     return HtmlService.createHtmlOutput('<h1>存取被拒</h1><p>請先登入 Google 帳號。</p>');
   }
 
-  // 渲染前端頁面
+  // 🛡️ 大樓門禁：開啟網頁瞬間查驗 Users 表，未註冊或停權直接擋在門外
+  try {
+    const user = getUserRole(email);
+    if (!user) {
+      return HtmlService.createHtmlOutput(
+        '<div style="font-family:sans-serif; text-align:center; padding:50px;">' +
+          '<h1 style="color:#dc3545; font-size:3em;">⛔ 存取被拒絕</h1>' +
+          '<p style="font-size:1.2em; color:#555;">帳號 (' + email + ') 尚未在 Users 資料表中註冊，或該帳號已被系統停用 (Status: Inactive/FALSE)。</p>' +
+          '<p style="color:#888;">請聯絡 PMO 管理員開通權限。</p>' +
+        '</div>'
+      );
+    }
+  } catch (err) {
+    return HtmlService.createHtmlOutput('<h1>系統錯誤</h1><p>' + err.message + '</p>');
+  }
+
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('HK01 PMO 專案管理系統')
@@ -23,7 +37,7 @@ function doGet(e) {
 }
 
 // ==========================================
-// 2. 權限驗證輔助函數
+// 2. 權限驗證輔助函數 (verifyAuth) - 房間門鎖 (務必保留！)
 // ==========================================
 /**
  * 驗證使用者是否具備指定權限
@@ -31,10 +45,8 @@ function doGet(e) {
  * @returns {Object} 使用者資訊
  */
 function verifyAuth(allowedRoles = []) {
-  const email = Session.getActiveUser().getEmail();
-  const user = getUserByEmail(email);
-  
-  if (!user) throw new Error('您尚未在系統中註冊 (Users 表找不到此 Email)。');
+  // 🛡️ 呼叫 AuthLogic.gs 的 getCurrentUser，確保停權者在執行 API 時同樣被鎖定
+  const user = getCurrentUser(); 
   
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
     throw new Error(`權限不足！此操作需要以下角色之一：${allowedRoles.join(', ')}`);
@@ -43,7 +55,7 @@ function verifyAuth(allowedRoles = []) {
 }
 
 // ==========================================
-// 3. API Endpoints (供前端 google.script.run 呼叫)
+// 3. API Endpoints
 // ==========================================
 
 function api_getCurrentUser() {
@@ -459,20 +471,27 @@ function api_getProjectWorkflowDetails(jobNumber) {
 
 
 // ==========================================
-// [絕對鎖定 textJobType 版 API] 專案整體管理狀態更新
+// [強健版 API] 專案整體管理狀態更新 (含完整防禦機制)
 // ==========================================
 function api_manageProjectStatus(payloadInput, optionalAction) {
   try {
+    // 🛡️ 防禦 1：檢查基本輸入參數是否存在
+    if (!payloadInput && !optionalAction) {
+      throw new Error('未傳入任何有效參數');
+    }
+
     let targetJobNumber = '';
     let action = '';
 
-    // 1. 解析前端傳來的參數
-    if (typeof payloadInput === 'string' && payloadInput.startsWith('{')) {
+    // 🛡️ 防禦 2：安全解析 JSON，防止前端傳入不符合格式的字串導致程序崩潰
+    if (typeof payloadInput === 'string' && payloadInput.trim().startsWith('{')) {
       try {
         let parsed = JSON.parse(payloadInput);
         targetJobNumber = String(parsed.jobNumber || parsed.jobNo || parsed.id || '').trim();
         action = String(parsed.action || '').trim();
-      } catch(e) {}
+      } catch(e) {
+        Logger.log('⚠️ JSON 解析警告: ' + e.message);
+      }
     }
 
     if (!targetJobNumber) {
@@ -481,37 +500,44 @@ function api_manageProjectStatus(payloadInput, optionalAction) {
     }
 
     if (!targetJobNumber || targetJobNumber === '[object Object]') {
-      throw new Error('未傳入有效的專案編號');
+      throw new Error('無法辨識有效的專案編號 (Job Number)');
     }
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) throw new Error('無法連線至試算表資料庫');
+    
     const sheet = ss.getSheetByName('Projects');
-    if (!sheet) throw new Error('找不到 Projects 工作表');
+    if (!sheet) throw new Error('資料庫缺少 [Projects] 工作表');
 
     const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) throw new Error('無專案數據');
+    if (!data || data.length <= 1) throw new Error('Projects 工作表中無任何資料');
 
-    // 2. 尋找欄位 (精準鎖定 textJobType)
+    // 🛡️ 防禦 3：標題列欄位防護與安全清洗
     const headersLower = data[0].map(h => String(h || '').trim().toLowerCase());
     
     const idxJobNum = headersLower.findIndex(h => h.includes('jobnumber') || h === 'jobno' || h === 'id');
     const idxStatus = headersLower.findIndex(h => h === 'status' || h === 'project_status');
-    
-    // 💡 捨棄模糊搜尋，要求完全符合 textjobtype
     const idxTextJob = headersLower.findIndex(h => h === 'textjobtype');
 
-    if (idxJobNum === -1 || idxStatus === -1) throw new Error('工作表缺少 Status 或 JobNumber 欄位');
+    if (idxJobNum === -1) throw new Error('工作表欄位缺失: 找不到 JobNumber 相關欄位');
+    if (idxStatus === -1) throw new Error('工作表欄位缺失: 找不到 Status 欄位');
+    if (idxTextJob === -1) throw new Error('工作表欄位缺失: 找不到 textJobType 欄位');
 
-    let currentUser = 'raylo';
+    // 🛡️ 防禦 4：安全獲取當前使用者名稱
+    let currentUser = 'Unknown_User';
     try {
-      const activeEmail = Session.getActiveUser().getEmail();
-      if (activeEmail) currentUser = activeEmail.split('@')[0];
-    } catch(e){}
+      const activeUser = Session.getActiveUser();
+      if (activeUser && activeUser.getEmail()) {
+        currentUser = activeUser.getEmail().split('@')[0];
+      }
+    } catch(e) {
+      Logger.log('無法獲取 Session 用戶，使用預設身份: ' + e.message);
+    }
 
-    const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+    const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm');
     let newStatus = '', actionType = '', logDetail = '';
 
-    const actUpper = action.toUpperCase();
+    const actUpper = String(action).toUpperCase();
     if (actUpper === 'PAUSE') {
       newStatus = 'Paused';
       actionType = 'Pause Project';
@@ -525,7 +551,7 @@ function api_manageProjectStatus(payloadInput, optionalAction) {
       actionType = 'Delete Project';
       logDetail = '🗑️ 將整體專案移至【回收箱】';
     } else {
-      throw new Error('未知的操作類型：' + action);
+      throw new Error('不支援的操作類型：' + action);
     }
 
     const newLogEntry = {
@@ -536,50 +562,48 @@ function api_manageProjectStatus(payloadInput, optionalAction) {
     };
 
     // 3. 搜尋並更新專案
+    let isUpdated = false;
     for (let i = 1; i < data.length; i++) {
       const currentJob = String(data[i][idxJobNum] || '').trim();
 
       if (currentJob.toLowerCase() === targetJobNumber.toLowerCase()) {
-        
-        // A. 更新狀態 (這步確認已經會成功)
+        // 更新狀態
         sheet.getRange(i + 1, idxStatus + 1).setValue(newStatus);
 
-        // B. 寫入 textJobType 的 Log
-        if (idxTextJob >= 0) {
-          let cellValue = String(data[i][idxTextJob] || '').trim();
-          let logArray = [];
-          
-          if (cellValue.startsWith('[')) {
-            try {
-              logArray = JSON.parse(cellValue);
-            } catch(e) {}
-          }
-          
-          if (!Array.isArray(logArray)) {
+        // 🛡️ 防禦 5：Log 安全讀取與防壞軌 JSON
+        let cellValue = String(data[i][idxTextJob] || '').trim();
+        let logArray = [];
+        
+        if (cellValue.startsWith('[')) {
+          try {
+            logArray = JSON.parse(cellValue);
+          } catch(e) {
+            Logger.log('⚠️ 歷史 Log JSON 解析失敗，重置為新陣列');
             logArray = [];
           }
-          
-          // 將最新 Log 推到最前面
-          logArray.unshift(newLogEntry);
-          
-          // 💡 寫回 Google Sheet 的精準欄位！
-          sheet.getRange(i + 1, idxTextJob + 1).setValue(JSON.stringify(logArray));
-          
-        } else {
-          // 防呆警告：如果跑到這裡，代表表格第一列真的沒有叫做 textJobType 的欄位
-          throw new Error('專案狀態已更新，但找不到 textJobType 欄位，無法寫入 Log！');
         }
-
-        return {
-          success: true,
-          message: '專案狀態已更新為 [' + newStatus + ']！'
-        };
+        
+        if (!Array.isArray(logArray)) logArray = [];
+        
+        logArray.unshift(newLogEntry); // 最新紀錄至最前
+        sheet.getRange(i + 1, idxTextJob + 1).setValue(JSON.stringify(logArray));
+        
+        isUpdated = true;
+        break;
       }
     }
 
-    throw new Error('找不到編號為 [' + targetJobNumber + '] 的專案');
+    if (!isUpdated) {
+      throw new Error('資料庫中找不到編號為 [' + targetJobNumber + '] 的專案');
+    }
+
+    return {
+      success: true,
+      message: '專案狀態已成功更新為 [' + newStatus + ']！'
+    };
 
   } catch (e) {
-    return { success: false, message: e.message };
+    // 🛡️ 防禦 6：統一捕捉結構化 Error 避免前端程序跳出未捕捉例外
+    return { success: false, message: '❌ 操作被系統攔截: ' + e.message };
   }
 }
