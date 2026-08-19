@@ -272,13 +272,14 @@
   function applyAnalyticsCustomDateRange() {
     var start = document.getElementById('ana_startDate').value;
     var end = document.getElementById('ana_endDate').value;
-    if (!start || !end) return alert('請選擇完整日期區間！');
+    if (!start || !end) return showAlert('⚠️ 請選擇完整日期區間！', 'warning');
     fetchAnalyticsData('CUSTOM', start, end);
   }
 
   function fetchAnalyticsData(range, customStart, customEnd) {
     google.script.run.withSuccessHandler(function(res) {
-      if (!res || !res.success) return alert('讀取戰情室數據失敗');
+      google.script.run.withSuccessHandler(function(res) {
+  if (!res || !res.success) return showAlert('❌ 讀取戰情室數據失敗', 'danger');
       var data = res.data;
 
       document.getElementById('analyticsLastUpdated').innerText = '上次更新: ' + (data.lastRefreshed || '--:--:--');
