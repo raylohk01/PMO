@@ -197,12 +197,12 @@
   window.openWorkflow = function(jobNumber) {
     try {
       var modalEl = document.getElementById('workflowModal');
-      if (!modalEl) return alert('錯誤：系統找不到 workflowModal HTML 標籤！');
+      if (!modalEl) return showAlert('❌ 錯誤：系統找不到 workflowModal HTML 標籤！', 'danger');
       
       if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
         workflowModalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
       } else {
-        return alert('錯誤：Bootstrap JS 庫尚未載入完成！');
+        return showAlert('❌ 錯誤：Bootstrap JS 庫尚未載入完成！', 'danger');
       }
 
       document.getElementById('wf_jobNumber').innerText = jobNumber;
@@ -232,7 +232,7 @@
       }).api_getProjectWorkflow(jobNumber);
 
     } catch (err) {
-      alert('開啟視窗時發生錯誤: ' + err.message);
+      showAlert('❌ 開啟視窗時發生錯誤: ' + err.message, 'danger');
     }
   };
 
@@ -552,9 +552,9 @@ function renderDeliverableContent(deliverable) {
   function startClientReview(deliverableId, stepNumber) {
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert('🎉 已正式交由客戶審批！此專案已同步顯示於【客戶追蹤】清單中。');
+        showAlert('🎉 已正式交由客戶審批！此專案已同步顯示於【客戶追蹤】清單中。', 'success');
         openWorkflow(currentProjectData.jobNumber);
-      } else { alert('操作失敗: ' + (res ? res.message : '未知錯誤')); }
+      } else { showAlert('❌ 操作失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
     }).api_startClientReviewStep(currentProjectData.jobNumber, deliverableId, stepNumber);
   }
 
@@ -569,7 +569,7 @@ function promptClientRevision(deliverableId, stepNumber) {
     return s.step > 1 && !s.dept.toLowerCase().includes('client') && !s.name.toLowerCase().includes('client') && !s.name.toLowerCase().includes('review');
   });
 
-  if(previousSteps.length === 0) return alert('無可重複執行的前置關卡！');
+  if(previousSteps.length === 0) return showAlert('⚠️ 無可重複執行的前置關卡！', 'warning');
 
   // 💡 動態計算並行群組標籤 (如 2a, 2b)
   var groupLetters = {};
@@ -606,12 +606,12 @@ function promptClientRevision(deliverableId, stepNumber) {
       if(feedback) {
         google.script.run.withSuccessHandler(function(res) {
           if(res && res.success) {
-            alert('已成功退回修改！');
+            showAlert('🎉 已成功退回修改！', 'success');
             openWorkflow(currentProjectData.jobNumber);
-          } else { alert('修改退回失敗: ' + (res ? res.message : '未知錯誤')); }
+          } else { showAlert('❌ 修改退回失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
         }).api_triggerClientRevision(currentProjectData.jobNumber, deliverableId, selectedStep.step, feedback.trim());
       }
-    } else { alert('無效的選項'); }
+    } else { showAlert('⚠️ 無效的選項', 'warning'); }
   }
 }
 
@@ -698,30 +698,30 @@ function promptClientRevision(deliverableId, stepNumber) {
 
   function confirmDispatchAndStart() {
     var assignee = document.getElementById('dp_assigneeSelect').value;
-    if(!assignee) return alert('請先選擇負責人員！');
+    if(!assignee) return showAlert('⚠️ 請先選擇負責人員！', 'warning');
 
     if (isPMChangeMode) {
       google.script.run.withSuccessHandler(function(res) {
         if(res && res.success) {
-          alert('PM 更換成功！');
+          showAlert('🎉 PM 更換成功！', 'success');
           if(dispatchModalInstance) dispatchModalInstance.hide();
           openWorkflow(currentProjectData.jobNumber);
           if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
-        } else { alert('更換失敗: ' + (res ? res.message : '未知錯誤')); }
+        } else { showAlert('❌ 更換失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
       }).api_reassignPM(currentProjectData.jobNumber, assignee);
       return;
     }
 
-    if(!currentDispatchTarget) return alert('無效的操作標的');
+    if(!currentDispatchTarget) return showAlert('⚠️ 無效的操作標的', 'warning');
 
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert(res.message);
+        showAlert('🎉 ' + res.message, 'success');
         if(dispatchModalInstance) dispatchModalInstance.hide();
         openWorkflow(currentProjectData.jobNumber); 
         if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
       } else {
-        alert('指派失敗: ' + (res ? res.message : '未知錯誤'));
+        showAlert('❌ 指派失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_assignStepAndStart(
       currentProjectData.jobNumber, 
@@ -739,7 +739,7 @@ function promptClientRevision(deliverableId, stepNumber) {
               "👉 請負責同事儘速登入 PMO 系統推進進度，謝謝！";
     
     navigator.clipboard.writeText(msg).then(function() {
-      alert("🎉 催辦提醒訊息已複製到剪貼簿！您可以直接貼上記錄發送至 Slack / Email 予 " + dept + " 同事。");
+      showAlert("🎉 催辦提醒訊息已複製到剪貼簿！您可以直接貼上記錄發送至 Slack / Email 予 " + dept + " 同事。", "success");
     }).catch(function() {
       prompt("請複製以下催辦訊息：", msg);
     });
@@ -756,12 +756,12 @@ function promptClientRevision(deliverableId, stepNumber) {
 
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert(res.message);
+        showAlert('🎉 ' + res.message, 'success');
         activeDeliverableId = null; 
         openWorkflow(currentProjectData.jobNumber); 
         if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
       } else {
-        alert('操作失敗: ' + (res ? res.message : '未知錯誤'));
+        showAlert('❌ 操作失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_manageDeliverableStatus(currentProjectData.jobNumber, deliverableId, action);
   }
@@ -775,14 +775,14 @@ function promptClientRevision(deliverableId, stepNumber) {
     var title = document.getElementById('append_title_' + deliverableId + '_' + stepNumber).value.trim();
     var content = document.getElementById('append_content_' + deliverableId + '_' + stepNumber).value.trim();
 
-    if(!title || !content) return alert('請填寫項目名稱與內容/網址！');
+    if(!title || !content) return showAlert('⚠️ 請填寫項目名稱與內容/網址！', 'warning');
 
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert('補充資料成功！');
+        showAlert('🎉 補充資料成功！', 'success');
         openWorkflow(currentProjectData.jobNumber);
       } else {
-        alert('失敗: ' + (res ? res.message : '未知錯誤'));
+        showAlert('❌ 失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_appendStepData(currentProjectData.jobNumber, deliverableId, stepNumber, title, content);
   }
@@ -814,7 +814,7 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
       openWorkflow(jobNumber);
       if(typeof loadIndividualView === 'function') loadIndividualView(currentUser.email);
     } else {
-      alert('操作失敗：' + (res ? res.message : '未知錯誤'));
+      showAlert('❌ 操作失敗：' + (res ? res.message : '未知錯誤'), 'danger');
       openWorkflow(jobNumber);
     }
   }).api_updateWorkflowState(jobNumber, deliverableId, payload);
@@ -839,7 +839,7 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
   }
 
   if (!jobNum) {
-    alert('無法取得專案編號！');
+    showAlert('⚠️ 無法取得專案編號！', 'warning');
     return;
   }
 
@@ -853,15 +853,15 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) {
-        alert('專案狀態已更新！');
+        showAlert('🎉 專案狀態已更新！', 'success');
         if (typeof openWorkflow === 'function') openWorkflow(jobNum);
         if (typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
       } else {
-        alert('更新失敗: ' + (res ? res.message : '未知錯誤'));
+        showAlert('❌ 更新失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     })
     .withFailureHandler(function(err) {
-      alert('請求失敗: ' + err.message);
+      showAlert('❌ 請求失敗: ' + err.message, 'danger');
     })
     .api_manageProjectStatus(payloadString);
 }
@@ -871,11 +871,11 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     if (newDate) {
       google.script.run.withSuccessHandler(function(res) {
         if (res && res.success) {
-          alert("總死線更新成功！");
+          showAlert("🎉 總死線更新成功！", "success");
           openWorkflow(currentProjectData.jobNumber);
           if (typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
         } else {
-          alert("更新失敗: " + (res ? res.message : "未知錯誤"));
+          showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
         }
       }).api_updateProjectDeadline(currentProjectData.jobNumber, newDate.trim());
     }
@@ -904,17 +904,17 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     var dept = document.getElementById('ins_deptSelect').value;
     var fieldsStr = document.getElementById('ins_fields').value.trim();
 
-    if (!stepName) return alert('請輸入關卡名稱！');
+    if (!stepName) return showAlert('⚠️ 請輸入關卡名稱！', 'warning');
 
     var fields = fieldsStr ? fieldsStr.split(',').map(function(f){ return f.trim(); }) : ['URL'];
 
     google.script.run.withSuccessHandler(function(res) {
       if (res && res.success) {
-        alert('🎉 關卡插入成功！');
+        showAlert('🎉 關卡插入成功！', 'success');
         if (insertStepModalInstance) insertStepModalInstance.hide();
         openWorkflow(currentProjectData.jobNumber);
       } else {
-        alert('插入失敗: ' + (res ? res.message : '未知錯誤'));
+        showAlert('❌ 插入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_insertWorkflowStep(
       currentProjectData.jobNumber, 
