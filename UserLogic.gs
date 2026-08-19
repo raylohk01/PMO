@@ -251,46 +251,101 @@ function api_deleteTemplate(name) {
 }
 
 // ==========================================
-// [替換函數] 建立新專案 (完整保留並行群組 parallelGroup 屬性)
+// [替換函數] 建立新專案 (含 WorkflowTemplates 自動讀取與 parallelGroup 帶入)
 // ==========================================
 function api_createProject(payload) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if (!sheet) throw new Error('找不到 Projects 工作表');
 
+    // 🛡️ 安全解析 payload (相容字串與物件)
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch(e) { payload = {}; }
+    }
+
     const now = new Date();
     const timeStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd HH:mm");
 
-    let deliverables = payload.deliverables.map((d, idx) => {
+    // 💡 讀取資料庫中的 WorkflowTemplates 範本庫
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const templateSheet = ss.getSheetByName('WorkflowTemplates');
+    let templatesData = [];
+    if (templateSheet) {
+      templatesData = templateSheet.getDataRange().getValues();
+    }
+
+    let delivList = payload.deliverables || [];
+    if (!Array.isArray(delivList) || delivList.length === 0) {
+      delivList = [{ name: '篇章 / 任務 1', templateName: payload.productType || '標準 Advertorial' }];
+    }
+
+    // 💡 取得專案總死線 (Launch Date) 用於推算與截斷關卡死線
+    const launchDeadlineStr = payload.deadline || payload.launchDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
+
+    let deliverables = delivList.map((d, idx) => {
       let steps = [];
-      try {
-        steps = JSON.parse(d.templateJson || '[]');
-      } catch (e) {
-        steps = [{ step: 1, name: 'PM 開案與 Briefing', dept: 'PM' }];
+      let tplName = d.templateName || d.type || '標準 Advertorial';
+
+      // 1. 優先嘗試合法解析前端傳來的 templateJson
+      if (d.templateJson) {
+        try { steps = JSON.parse(d.templateJson); } catch (e) {}
       }
 
-      // 💡 關鍵修復：將範本中的 parallelGroup 屬性帶入開案資料結構中！
-      let formattedSteps = steps.map((s, sIdx) => ({
-        step: sIdx + 1,
-        name: s.name || ('步驟 ' + (sIdx + 1)),
-        dept: s.dept || 'PM',
-        status: sIdx === 0 ? 'In Progress' : 'Pending',
-        fields: s.fields || ['URL'],
-        parallelGroup: s.parallelGroup || s.group || ''
-      }));
+      // 2. 若 steps 為空，自動去 WorkflowTemplates 搜尋匹配的範本步驟
+      if (!steps || steps.length === 0) {
+        for (let t = 1; t < templatesData.length; t++) {
+          if (String(templatesData[t][0]).trim() === String(tplName).trim()) {
+            try { steps = JSON.parse(templatesData[t][1]); } catch(e){}
+            break;
+          }
+        }
+      }
+
+      // 3. 保底機制：若仍找不到，寫入預設 4 關流程
+      if (!steps || steps.length === 0) {
+        steps = [
+          { step: 1, name: 'PM 開案與 Briefing', dept: 'PM', fields: ['URL'] },
+          { step: 2, name: 'Editor 撰寫', dept: 'Editorial', fields: ['URL'] },
+          { step: 3, name: 'Art 設計首圖', dept: 'Design', fields: ['URL'] },
+          { step: 4, name: 'Client Review', dept: 'PM', fields: ['URL'] }
+        ];
+      }
+
+      // 4. 格式化關卡資料結構 (保留 parallelGroup 並動態推算 keyDate / deadline)
+      let formattedSteps = steps.map((s, sIdx) => {
+        // 依據關卡順序推算建議死線 (Step 1 預設 +1 天，Step 2 +2 天...)
+        let stepDeadline = new Date(now.getTime() + (sIdx + 1) * 24 * 60 * 60 * 1000);
+        let stepDeadlineStr = Utilities.formatDate(stepDeadline, "GMT+8", "yyyy-MM-dd");
+        
+        // 若關卡死線超過專案總死線，強制截斷為總死線
+        if (stepDeadlineStr > launchDeadlineStr) {
+          stepDeadlineStr = launchDeadlineStr;
+        }
+
+        return {
+          step: sIdx + 1,
+          name: s.name || ('步驟 ' + (sIdx + 1)),
+          dept: s.dept || 'PM',
+          status: sIdx === 0 ? 'In Progress' : 'Pending',
+          fields: s.fields || ['URL'],
+          parallelGroup: s.parallelGroup || s.group || '',
+          keyDate: stepDeadlineStr,     // 💡 補上關卡死線，供卡片動態讀取
+          deadline: stepDeadlineStr    // 💡 雙重相容欄位
+        };
+      });
 
       return {
         id: 'deliv_' + (idx + 1) + '_' + new Date().getTime(),
         name: d.name || ('篇章/任務 ' + (idx + 1)),
-        type: d.templateName || 'Standard',
-        status: 'Pending Start',
+        type: tplName,
+        status: 'In Progress',
         currentStep: 1,
         workflow: formattedSteps
       };
     });
 
     const workflowData = { deliverables: deliverables };
-    const auditLog = [{ timestamp: timeStr, user: payload.pmName, action: 'Create Project', details: '建立了此專案' }];
+    const auditLog = [{ timestamp: timeStr, user: payload.pmName || payload.pm || 'PM', action: 'Create Project', details: '建立了此專案' }];
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
@@ -307,12 +362,12 @@ function api_createProject(payload) {
 
     let rowData = new Array(headers.length).fill('');
 
-    if (idxJobNum >= 0) rowData[idxJobNum] = payload.jobNumber;
-    if (idxClient >= 0) rowData[idxClient] = payload.client;
-    if (idxSales >= 0) rowData[idxSales] = payload.salesName || '未指定';
-    if (idxPM >= 0) rowData[idxPM] = payload.pmName;
+    if (idxJobNum >= 0) rowData[idxJobNum] = payload.jobNumber || ('A26-' + Math.floor(1000 + Math.random() * 9000));
+    if (idxClient >= 0) rowData[idxClient] = payload.client || payload.clientName || '未命名客戶';
+    if (idxSales >= 0) rowData[idxSales] = payload.salesName || payload.sales || '未指定';
+    if (idxPM >= 0) rowData[idxPM] = payload.pmName || payload.pm || '';
     if (idxSubmission >= 0) rowData[idxSubmission] = payload.tentativeDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
-    if (idxLaunch >= 0) rowData[idxLaunch] = payload.deadline || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
+    if (idxLaunch >= 0) rowData[idxLaunch] = payload.deadline || payload.launchDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
     if (idxStatus >= 0) rowData[idxStatus] = 'In Progress';
     if (idxProduct >= 0) rowData[idxProduct] = JSON.stringify(workflowData);
     if (idxLog >= 0) rowData[idxLog] = JSON.stringify(auditLog);

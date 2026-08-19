@@ -114,3 +114,119 @@
     </div>
   </div>
 </div>
+
+<script>
+  var deliverableCounter = 0;
+
+  function addDeliverableRow() {
+    deliverableCounter++;
+    var area = document.getElementById('np_deliverablesArea');
+    if (!area) return;
+
+    var div = document.createElement('div');
+    div.className = 'row g-2 mb-2 align-items-center border p-2 rounded bg-white';
+    div.id = 'deliv_row_' + deliverableCounter;
+    div.innerHTML = '' +
+      '<div class="col-md-5">' +
+        '<input type="text" class="form-control form-control-sm np-deliv-name" placeholder="子項目名稱 (例如: 篇章 / 任務 1)" value="篇章 / 任務 ' + deliverableCounter + '" required>' +
+      '</div>' +
+      '<div class="col-md-5">' +
+        '<select class="form-select form-select-sm np-deliv-template">' +
+          '<option value="標準 Advertorial" selected>標準 Advertorial</option>' +
+          '<option value="Testing">Testing</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="col-md-2 text-end">' +
+        '<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDeliverableRow(' + deliverableCounter + ')"><i class="fas fa-trash"></i></button>' +
+      '</div>';
+    area.appendChild(div);
+  }
+
+  function removeDeliverableRow(id) {
+    var elem = document.getElementById('deliv_row_' + id);
+    if (elem) elem.remove();
+  }
+
+  // 自動在打開開案視窗時預載至少一個 Deliverable 項目
+  document.addEventListener('DOMContentLoaded', function() {
+    var modalElem = document.getElementById('newProjectModal');
+    if (modalElem) {
+      modalElem.addEventListener('show.bs.modal', function () {
+        var area = document.getElementById('np_deliverablesArea');
+        if (area && area.children.length === 0) {
+          addDeliverableRow();
+        }
+      });
+    }
+  });
+
+  function submitNewProject() {
+    var jobNumber = document.getElementById('np_jobNumber').value.trim();
+    var client = document.getElementById('np_client').value.trim();
+    var sales = document.getElementById('np_sales').value.trim();
+    var pm = document.getElementById('np_pmSelect').value || '';
+    var tentativeDate = document.getElementById('np_tentativeDate').value;
+    var deadline = document.getElementById('np_deadline').value;
+
+    if (!jobNumber || !client || !deadline) {
+      return showAlert('⚠️ 請填寫必填欄位 (專案編號、客戶名稱、總死線)！', 'warning');
+    }
+
+    // 💡 預設保險箱：無論畫面有沒有渲染出 row，基礎資料庫中一定保底含有 1 個 Deliverable
+    var deliverables = [{
+      id: 'deliv_1_' + Date.now(),
+      name: '篇章 / 任務 1',
+      type: '標準 Advertorial',
+      status: 'Pending Start'
+    }];
+
+    // 嘗試從 DOM 抓取使用者自行新增的動態子項目
+    var delivRows = document.querySelectorAll('#np_deliverablesArea .row');
+    if (delivRows && delivRows.length > 0) {
+      var customDelivs = [];
+      delivRows.forEach(function(row, idx) {
+        var nameInput = row.querySelector('.np-deliv-name');
+        var tplSelect = row.querySelector('.np-deliv-template');
+        customDelivs.push({
+          id: 'deliv_' + (idx + 1) + '_' + Date.now(),
+          name: (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : ('篇章 / 任務 ' + (idx + 1)),
+          type: tplSelect ? tplSelect.value : '標準 Advertorial',
+          status: 'Pending Start'
+        });
+      });
+      if (customDelivs.length > 0) deliverables = customDelivs;
+    }
+
+    var payload = {
+      jobNumber: jobNumber,
+      client: client,
+      sales: sales,
+      pm: pm,
+      tentativeDate: tentativeDate,
+      deadline: deadline,
+      productType: deliverables[0].type,
+      deliverables: deliverables,
+      productName: JSON.stringify({ deliverables: deliverables })
+    };
+
+    // 發送給後端
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showAlert('🎉 專案 [' + jobNumber + '] 建立成功！', 'success');
+          var modalElem = document.getElementById('newProjectModal');
+          if (modalElem && typeof bootstrap !== 'undefined') {
+            var modalInstance = bootstrap.Modal.getInstance(modalElem);
+            if (modalInstance) modalInstance.hide();
+          }
+          if (typeof loadAllDashboardViews === 'function') loadAllDashboardViews();
+        } else {
+          showAlert('❌ 建立失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        }
+      })
+      .withFailureHandler(function(err) {
+        showAlert('❌ 後端執行錯誤: ' + (err ? err.message : '連線失敗'), 'danger');
+      })
+      .api_createProject(JSON.stringify(payload));
+  }
+</script>

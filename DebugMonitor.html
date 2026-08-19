@@ -1,3 +1,43 @@
+<script>
+  // ==========================================
+  // 🔍 [全域 Debug Monitor 攔截器] 完全免改後端，100% 自動抓取
+  // ==========================================
+  (function() {
+    if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+
+    // 備份原始的 google.script.run
+    var rawRun = google.script.run;
+
+    // 使用 Proxy 代理全域監聽所有 API 呼叫
+    window.google.script.run = new Proxy(rawRun, {
+      get: function(target, apiName) {
+        // 當系統呼叫任何後端 API 時 (例如 api_createProject)
+        if (typeof target[apiName] === 'function') {
+          return function() {
+            var args = Array.prototype.slice.call(arguments);
+
+            // 💡 1. 自動印出 API 函數名稱與 Payload 至 Debug Monitor
+            console.log('🚀 [Debug Monitor 監控站] 觸發後端 API:', apiName);
+            console.log('📦 [傳送數據 Payload]:', args);
+
+            if (typeof logToDebugMonitor === 'function') {
+              logToDebugMonitor({
+                action: apiName,
+                payload: args,
+                timestamp: new Date().toLocaleTimeString()
+              });
+            }
+
+            // 💡 2. 正常執行原始後端呼叫，完全不影響原業務邏輯
+            return target[apiName].apply(target, args);
+          };
+        }
+        return target[apiName];
+      }
+    });
+  })();
+</script>
+
 <!-- ========================================== -->
 <!-- [DebugMonitor.html] 升級版：含檔案來源監控   -->
 <!-- ========================================== -->

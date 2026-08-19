@@ -202,17 +202,6 @@ function api_getProjectDetail(jobNumber) {
   }
 }
 
-function api_createProject(data) {
-  try {
-    verifyAuth(['Admin', 'PM', 'Sales']);
-    // data 預期包含: clientName, productName, salesPerson, productType
-    const newJobNumber = createProject(data.clientName, data.productName, data.salesPerson, data.productType);
-    return { success: true, data: { jobNumber: newJobNumber }, message: '專案建立成功' };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
-
 function api_updateProject(jobNumber, updates) {
   try {
     verifyAuth(['Admin', 'PM']);
@@ -680,3 +669,4 @@ function api_saveUser(input) {
     return { success: false, message: e.message };
   }
 }
+
