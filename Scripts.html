@@ -67,7 +67,7 @@ function switchSection(sectionId) {
         }).api_getDepartments();
 
       } else { 
-        alert("無法獲取使用者資訊，請重新整理頁面。"); 
+        showAlert("⚠️ 無法獲取使用者資訊，請重新整理頁面。", "danger"); 
       }
     }).api_getCurrentUser();
   }
@@ -100,7 +100,7 @@ function switchSection(sectionId) {
   function saveDepartment() {
     var name = document.getElementById('newDeptName').value;
     var colorHex = document.getElementById('newDeptColor').value;
-    if (!name) return alert('請輸入部門名稱');
+    if (!name) return showAlert('⚠️ 請輸入部門名稱！', 'warning');
     
     var btn = document.querySelector('#deptConfigBlock .btn-outline-info');
     var originalBtnHTML = btn.innerHTML;
@@ -121,7 +121,7 @@ function switchSection(sectionId) {
             loadAdminView(); 
           }
         }).api_getDepartments();
-      } else alert(res.message);
+      } else showAlert('❌ ' + (res ? res.message : '儲存部門失敗'), 'danger');
     }).api_saveDepartment({ name: name, colorHex: colorHex });
   }
 
@@ -181,7 +181,7 @@ function switchSection(sectionId) {
     document.getElementById('pmAlertArea').innerHTML = '';
 
     google.script.run.withSuccessHandler(function(res) {
-      if(!res || !res.success) return alert('載入失敗: ' + (res ? res.message : '未知錯誤'));
+      if(!res || !res.success) return showAlert('❌ 載入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       var data = res.data;
 
       document.getElementById('countOverdue').innerText = data.overdue.length;
@@ -350,7 +350,7 @@ function switchSection(sectionId) {
     }
 
     google.script.run.withSuccessHandler(function(res) {
-      if (!res || !res.success) return alert('載入成員失敗');
+      if (!res || !res.success) return showAlert('❌ 載入成員失敗', 'danger');
       var html = '';
       
       var currentDept = currentUser ? currentUser.department : 'General';
@@ -633,15 +633,15 @@ function renderTemplateStepCards() {
 
   function saveTemplateFromModal() {
     var name = document.getElementById('tmpl_name').value.trim();
-    if(!name) return alert('請輸入範本名稱！');
-    if(currentTemplateSteps.length === 0) return alert('範本至少需要包含一個關卡步驟！');
+    if(!name) return showAlert('⚠️ 請輸入範本名稱！', 'warning');
+    if(currentTemplateSteps.length === 0) return showAlert('⚠️ 範本至少需要包含一個關卡步驟！', 'warning');
 
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert(res.message);
+        showAlert('🎉 ' + res.message, 'success');
         if(templateEditModalInstance) templateEditModalInstance.hide();
         loadTemplateAdminView();
-      } else { alert('儲存失敗: ' + (res ? res.message : '未知錯誤')); }
+      } else { showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
     }).api_saveTemplate(name, currentTemplateSteps);
   }
 
@@ -649,16 +649,16 @@ function renderTemplateStepCards() {
     if(!confirm('確定要刪除範本 [' + name + '] 嗎？')) return;
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert('範本已刪除！');
+        showAlert('🗑️ 範本已成功刪除！', 'success');
         loadTemplateAdminView();
-      } else { alert('刪除失敗'); }
+      } else { showAlert('❌ 刪除失敗', 'danger'); }
     }).api_deleteTemplate(name);
   }
 
   function restoreProject(jobNumber) {
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert('專案已還原！');
+        showAlert('♻️ 專案已成功還原！', 'success');
         loadRecycleBinView();
         if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
       }
@@ -669,7 +669,7 @@ function renderTemplateStepCards() {
     if(!confirm('⚠️ 警告：這將【永久刪除】專案 ' + jobNumber + ' 且無法復原！確定要執行嗎？')) return;
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        alert('專案已永久刪除！');
+        showAlert('🗑️ 專案已成功永久刪除！', 'success');
         loadRecycleBinView();
       }
     }).api_manageProjectStatus(jobNumber, 'PERMANENT_DELETE');
@@ -832,7 +832,9 @@ function saveUser() {
             '</button>' +
           '</div>' +
         '</div>' +
-        '<div class="mt-2 text-muted small border-top pt-1 style="font-size:0.8em;" id="preview_' + rowId + '" style="display:none;"></div>' +
+        '<div class="mt-2 text-muted small border-top pt-1" id="preview_' + rowId + '" style="font-size:0.8em; display:none;"></div>'
+        
+         +
       '</div>' +
     '</div>';
     

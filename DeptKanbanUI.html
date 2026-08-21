@@ -1,5 +1,5 @@
 <!-- ========================================== -->
-<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (選單樣式完全修復版) -->
+<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (日曆放大 & 5欄互斥去重版) -->
 <!-- ========================================== -->
 
 <div id="deptHeadSection" class="section-container" style="display: none;">
@@ -15,7 +15,7 @@
             <span id="op_deptBadge" class="badge bg-primary fs-6">Editorial</span>
           </div>
 
-          <!-- 💡 切換部門下拉選單（給予明確寬度與 Bootstrap 樣式） -->
+          <!-- 切換部門下拉選單 -->
           <div class="d-flex align-items-center gap-2" id="op_deptSelectorBox" style="min-width: 220px;">
             <label class="small text-muted fw-bold text-nowrap">切換部門：</label>
             <select class="form-select form-select-sm border-primary fw-bold text-dark" style="width: 150px; cursor: pointer;" id="op_deptSelect" onchange="switchDeptKanbanView(this.value)">
@@ -105,7 +105,6 @@
     <div class="card-body p-2 bg-white rounded">
       <div class="d-flex align-items-center justify-content-between mb-2">
         <span class="fw-bold text-dark small"><i class="fas fa-users-cog text-primary me-1"></i> 組員產能與工作量分析 (點擊可篩選個人任務)：</span>
-        <button class="btn btn-xs btn-outline-secondary py-0 px-2" onclick="filterOpTasksByMember(null)">顯示全部組員</button>
       </div>
       <div id="op_memberCapacityArea" class="d-flex flex-wrap gap-2">
         <span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>
@@ -113,60 +112,96 @@
     </div>
   </div>
 
-  <!-- 💡 4. 動態產能日曆 -->
+  <!-- 💡 4. 動態產能日曆 (Google Calendar 網格風格，已放大一倍) -->
   <div class="card shadow-sm border-0 mb-3">
     <div class="card-body p-2 bg-white rounded">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="fw-bold text-dark small"><i class="fas fa-calendar-alt text-info me-1"></i> 部門產能日曆 (點擊卡片開啟工作流, 🖊️ 可快捷調整死線至空檔日)</span>
-        <div class="d-flex gap-2 align-items-center" style="font-size:0.75em;">
-          <span class="badge bg-success">🟢 產能空檔日</span>
-          <span class="badge bg-warning text-dark">🟡 正常排程</span>
-          <span class="badge bg-danger">🔴 任務過載</span>
+        <span class="fw-bold text-dark small">
+          <i class="fas fa-calendar-alt text-info me-1"></i> 部門營運日曆 (🖊️ 可快捷調整死線至空檔日)
+        </span>
+        
+        <!-- 視圖切換按鈕群 (日 / 週 / 月，預設為週) -->
+        <div class="d-flex align-items-center gap-2">
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary" id="btn_view_DAY" onclick="switchCalendarViewMode('DAY')">日</button>
+            <button type="button" class="btn btn-outline-secondary active" id="btn_view_WEEK" onclick="switchCalendarViewMode('WEEK')">週</button>
+            <button type="button" class="btn btn-outline-secondary" id="btn_view_MONTH" onclick="switchCalendarViewMode('MONTH')">月</button>
+          </div>
         </div>
       </div>
-      <div id="op_calendarGrid" class="row g-1 text-center" style="font-size:0.8em;">
-        <div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>
+
+      <!-- 日曆主要網格容器 -->
+      <div id="op_calendarGridContainer">
+        <div id="op_calendarGrid" class="row g-1 text-center" style="font-size:0.8em;">
+          <div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 💡 5. 三欄式營運操作區 -->
-  <div class="row g-3">
-    <!-- 🚨 風險與待分配調度區 -->
-    <div class="col-md-4">
+  <!-- 💡 5. 五欄式營運操作指揮區 (獨立拆分 + 互斥去重版) -->
+  <div class="row g-2">
+    <!-- 1. 🚨 已到期 (Overdue) -->
+    <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-danger h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-dark small"><i class="fas fa-exclamation-triangle text-danger me-1"></i> 逾期 / 待分配任務</span>
-          <span class="badge bg-danger" id="op_countRisk">0 件</span>
+          <span class="fw-bold text-dark small"><i class="fas fa-exclamation-circle text-danger me-1"></i> 已到期</span>
+          <span class="badge bg-danger" id="op_countOverdue">0 件</span>
         </div>
-        <div class="card-body bg-light p-2" style="max-height: 500px; overflow-y: auto;" id="op_riskContainer">
-          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 🏃 部門進行中任務區 -->
-    <div class="col-md-4">
-      <div class="card shadow-sm border-0 border-top border-4 border-primary h-100">
-        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-dark small"><i class="fas fa-running text-primary me-1"></i> 部門進行中任務</span>
-          <span class="badge bg-primary" id="op_countActive">0 件</span>
-        </div>
-        <div class="card-body bg-light p-2" style="max-height: 500px; overflow-y: auto;" id="op_activeContainer">
-          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_overdueContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
         </div>
       </div>
     </div>
 
-    <!-- 🔮 未來管線區 -->
-    <div class="col-md-4">
+    <!-- 2. 📥 待分配 (Unassigned) -->
+    <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-info h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-dark small"><i class="fas fa-forward text-info me-1"></i> 未來預備管線 (前置阻礙監控)</span>
-          <span class="badge bg-info text-dark" id="op_countPipeline">0 件</span>
+          <span class="fw-bold text-dark small"><i class="fas fa-user-plus text-info me-1"></i> 待分配</span>
+          <span class="badge bg-info text-dark" id="op_countUnassigned">0 件</span>
         </div>
-        <div class="card-body bg-light p-2" style="max-height: 500px; overflow-y: auto;" id="op_pipelineContainer">
-          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_unassignedContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. ⚠️ 即將到期 (48h內) -->
+    <div class="col" style="min-width: 200px;">
+      <div class="card shadow-sm border-0 border-top border-4 border-warning h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-clock text-warning me-1"></i> 即將到期</span>
+          <span class="badge bg-warning text-dark" id="op_countDueSoon">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_dueSoonContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 🏃 部門進行中 (Active) -->
+    <div class="col" style="min-width: 200px;">
+      <div class="card shadow-sm border-0 border-top border-4 border-primary h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-running text-primary me-1"></i> 部門進行中</span>
+          <span class="badge bg-primary" id="op_countActive">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_activeContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. 🔮 未來預備管線 (Pipeline) -->
+    <div class="col" style="min-width: 200px;">
+      <div class="card shadow-sm border-0 border-top border-4 border-secondary h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-forward text-secondary me-1"></i> 未來預備管線</span>
+          <span class="badge bg-secondary" id="op_countPipeline">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_pipelineContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
         </div>
       </div>
     </div>
@@ -175,11 +210,13 @@
 </div>
 
 <script>
+  // 💡 所有全域變數統一在最頂部宣告
   var currentOpDept = '';
   var currentOpTimeRange = 'NEXT_14_DAYS';
   var selectedOpMember = null;
   var selectedOpKpiFilter = null;
   var rawOpData = null;
+  var currentCalendarMode = 'WEEK'; 
 
   function loadDeptHeadView(dept, simEmail) {
     var section = document.getElementById('deptHeadSection');
@@ -217,6 +254,17 @@
     fetchDeptOperationData();
   }
 
+  function switchCalendarViewMode(mode) {
+    currentCalendarMode = mode;
+    ['DAY', 'WEEK', 'MONTH'].forEach(function(m) {
+      var btn = document.getElementById('btn_view_' + m);
+      if (btn) btn.classList.toggle('active', m === mode);
+    });
+    if (rawOpData) {
+      renderCapacityCalendar(rawOpData.calendarMap || {}, rawOpData.calendarTasks || []);
+    }
+  }
+
   function changeOpTimeRange(range) {
     currentOpTimeRange = range;
     ['TODAY', 'LAST_5_DAYS', 'NEXT_14_DAYS', 'LAST_30_DAYS'].forEach(function(r) {
@@ -233,18 +281,36 @@
     fetchDeptOperationData('CUSTOM', start, end);
   }
 
+  // 💡 補回 KPI 篩選功能
+  function filterOpTasksByKpi(type) {
+    selectedOpKpiFilter = selectedOpKpiFilter === type ? null : type;
+    renderOpColumns();
+  }
+
+  function filterOpTasksByMember(memberName) {
+    selectedOpMember = selectedOpMember === memberName ? null : memberName;
+    renderMemberCapacityChips(rawOpData ? rawOpData.capacityList : []);
+    renderOpColumns();
+  }
+
   function fetchDeptOperationData(customType, start, end) {
     var areaCap = document.getElementById('op_memberCapacityArea');
     var areaCal = document.getElementById('op_calendarGrid');
-    var areaRisk = document.getElementById('op_riskContainer');
-    var areaActive = document.getElementById('op_activeContainer');
-    var areaPipe = document.getElementById('op_pipelineContainer');
+    var containerOverdue = document.getElementById('op_overdueContainer');
+    var containerUnassigned = document.getElementById('op_unassignedContainer');
+    var containerDueSoon = document.getElementById('op_dueSoonContainer');
+    var containerActive = document.getElementById('op_activeContainer');
+    var containerPipeline = document.getElementById('op_pipelineContainer');
 
     if (areaCap) areaCap.innerHTML = '<span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>';
     if (areaCal) areaCal.innerHTML = '<div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>';
-    if (areaRisk) areaRisk.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>';
-    if (areaActive) areaActive.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>';
-    if (areaPipe) areaPipe.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>載入中...</div>';
+    
+    var spinnerHtml = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i><br>載入中...</div>';
+    if (containerOverdue) containerOverdue.innerHTML = spinnerHtml;
+    if (containerUnassigned) containerUnassigned.innerHTML = spinnerHtml;
+    if (containerDueSoon) containerDueSoon.innerHTML = spinnerHtml;
+    if (containerActive) containerActive.innerHTML = spinnerHtml;
+    if (containerPipeline) containerPipeline.innerHTML = spinnerHtml;
 
     var pRange = customType || currentOpTimeRange;
     var pStart = start || '';
@@ -255,7 +321,8 @@
       .withSuccessHandler(function(res) {
         if (!res || !res.success) {
           console.error('API Error:', res);
-          alert('載入指揮中心數據失敗：' + (res ? res.message : '未知錯誤'));
+          if (typeof showAlert === 'function') showAlert('載入失敗：' + (res ? res.message : '未知'), 'danger');
+          else alert('載入失敗：' + (res ? res.message : '未知'));
           return;
         }
         rawOpData = res.data;
@@ -276,7 +343,8 @@
       })
       .withFailureHandler(function(err) {
         console.error('GAS Fail:', err);
-        alert('後端執行出錯: ' + (err ? err.message : '網絡連線異常'));
+        if (typeof showAlert === 'function') showAlert('後端錯誤: ' + err.message, 'danger');
+        else alert('後端錯誤: ' + err.message);
       })
       .api_getDeptOperationData(targetDept, pRange, pStart, pEnd);
   }
@@ -285,220 +353,292 @@
     var area = document.getElementById('op_memberCapacityArea');
     if (!area) return;
 
-    if (!list || list.length === 0) {
-      area.innerHTML = '<span class="text-muted small">該部門無活躍組員數據</span>';
-      return;
+    var isAllSel = (selectedOpMember === null);
+    var allBtnClass = isAllSel ? 'btn-primary' : 'btn-outline-secondary';
+
+    var html = '<button class="btn btn-xs ' + allBtnClass + ' py-1 px-2 me-2 fw-bold" onclick="filterOpTasksByMember(null)">' +
+      '<i class="fas fa-users me-1"></i>全部同事' +
+    '</button>';
+
+    if (list && list.length > 0) {
+      list.forEach(function(m) {
+        var isSel = selectedOpMember === m.name;
+        var btnClass = isSel ? 'btn-dark fw-bold' : 'btn-outline-primary';
+
+        html += '<button class="btn btn-xs ' + btnClass + ' py-1 px-2 d-flex align-items-center gap-1" onclick="filterOpTasksByMember(\'' + m.name + '\')">' +
+          '<strong>' + m.name + '</strong>' +
+          '<span class="badge bg-primary text-white">' + m.inProgress + ' 進行中</span>' +
+          '<span class="badge bg-success text-white">' + m.completed + ' 完成</span>' +
+          (m.revisions > 0 ? '<span class="badge bg-danger text-white">' + m.revisions + ' 修改</span>' : '') +
+        '</button>';
+      });
     }
 
-    var html = '';
-    list.forEach(function(m) {
-      var isSel = selectedOpMember === m.name;
-      var btnClass = isSel ? 'btn-dark' : 'btn-outline-primary';
-
-      html += '<button class="btn btn-xs ' + btnClass + ' py-1 px-2 d-flex align-items-center gap-1" onclick="filterOpTasksByMember(\'' + m.name + '\')">' +
-        '<strong>' + m.name + '</strong>' +
-        '<span class="badge bg-primary text-white">' + m.inProgress + ' 進行中</span>' +
-        '<span class="badge bg-success text-white">' + m.completed + ' 完成</span>' +
-        (m.revisions > 0 ? '<span class="badge bg-danger text-white">' + m.revisions + ' 修改</span>' : '') +
-      '</button>';
-    });
-
     area.innerHTML = html;
-  }
-
-  function filterOpTasksByMember(memberName) {
-    selectedOpMember = selectedOpMember === memberName ? null : memberName;
-    renderMemberCapacityChips(rawOpData ? rawOpData.capacityList : []);
-    renderOpColumns();
-  }
-
-  function filterOpTasksByKpi(type) {
-    selectedOpKpiFilter = selectedOpKpiFilter === type ? null : type;
-    renderOpColumns();
   }
 
   function renderCapacityCalendar(calMap, tasksList) {
     var grid = document.getElementById('op_calendarGrid');
     if (!grid) return;
 
-    var html = '';
     var today = new Date();
-    
-    for (var i = 0; i < 14; i++) {
-      var d = new Date();
-      d.setDate(today.getDate() + i);
-      var dateStr = d.toISOString().split('T')[0];
-      var displayDate = (d.getMonth() + 1) + '/' + d.getDate();
-      var dayName = ['日','一','二','三','四','五','六'][d.getDay()];
+    var year = today.getFullYear();
+    var month = today.getMonth();
+    var date = today.getDate();
+
+    function formatLocalYMD(dObj) {
+      var y = dObj.getFullYear();
+      var m = String(dObj.getMonth() + 1).padStart(2, '0');
+      var d = String(dObj.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + d;
+    }
+
+    var todayStr = formatLocalYMD(today);
+    var daysToRender = [];
+
+    if (currentCalendarMode === 'DAY') {
+      daysToRender.push(new Date(today));
+    } else if (currentCalendarMode === 'WEEK') {
+      var dayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
+      var startOfWeek = new Date(today);
+      startOfWeek.setDate(date - (dayOfWeek - 1));
+      for (var i = 0; i < 7; i++) {
+        var nextDay = new Date(startOfWeek);
+        nextDay.setDate(startOfWeek.getDate() + i);
+        daysToRender.push(nextDay);
+      }
+    } else if (currentCalendarMode === 'MONTH') {
+      var firstDayOfMonth = new Date(year, month, 1);
+      var startDay = firstDayOfMonth.getDay() === 0 ? 7 : firstDayOfMonth.getDay();
+      var gridStart = new Date(firstDayOfMonth);
+      gridStart.setDate(firstDayOfMonth.getDate() - (startDay - 1));
+
+      for (var mIdx = 0; mIdx < 35; mIdx++) {
+        var cellDay = new Date(gridStart);
+        cellDay.setDate(gridStart.getDate() + mIdx);
+        daysToRender.push(cellDay);
+      }
+    }
+
+    var html = '';
+    if (currentCalendarMode !== 'DAY') {
+      html += '<div class="row g-1 mb-1 text-center fw-bold text-muted" style="font-size:0.85em; width:100%; margin:0;">' +
+        '<div class="col">週一</div><div class="col">週二</div><div class="col">週三</div>' +
+        '<div class="col">週四</div><div class="col">週五</div><div class="col">週六</div><div class="col">週日</div>' +
+      '</div><div class="row g-1 text-center" style="font-size:0.85em; width:100%; margin:0;">';
+    } else {
+      html += '<div class="row g-1 text-center" style="font-size:0.85em; width:100%; margin:0;">';
+    }
+
+    daysToRender.forEach(function(dObj) {
+      var dateStr = formatLocalYMD(dObj);
+      var displayDate = (dObj.getMonth() + 1) + '/' + dObj.getDate();
+      var dayName = ['日','一','二','三','四','五','六'][dObj.getDay()];
+      var isToday = dateStr === todayStr;
 
       var dayTasks = (tasksList || []).filter(function(t){ return t.deadline === dateStr; });
       var taskCount = dayTasks.length;
 
-      var bgClass = 'bg-success bg-opacity-10 border-success';
+      var bgClass = isToday ? 'bg-warning bg-opacity-20 border-warning' : 'bg-white border-light';
       var badgeClass = 'bg-success';
-      var statusText = '🟢 空檔';
 
       if (taskCount >= 3) {
         bgClass = 'bg-danger bg-opacity-10 border-danger';
         badgeClass = 'bg-danger';
-        statusText = '🔴 ' + taskCount + '件';
       } else if (taskCount > 0) {
-        bgClass = 'bg-warning bg-opacity-10 border-warning';
+        if (!isToday) bgClass = 'bg-warning bg-opacity-10 border-warning';
         badgeClass = 'bg-warning text-dark';
-        statusText = '🟡 ' + taskCount + '件';
       }
 
       var tasksHtml = '';
       dayTasks.forEach(function(t) {
         var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
         var label = t.assignee ? t.assignee : '⚠️未分配';
-        tasksHtml += '<div class="bg-white border rounded p-1 mb-1 text-truncate shadow-xs" style="font-size:0.75em; cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')" title="' + t.client + ' - ' + t.taskName + '">' +
+        
+        tasksHtml += '<div class="bg-white border rounded p-2 mb-1 text-start text-truncate shadow-xs" style="font-size:0.8em; cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')" title="' + t.client + ' - ' + t.taskName + '">' +
           '<strong>' + t.jobNumber + '</strong>: ' + label +
           ' <a href="#" onclick="event.stopPropagation(); promptQuickShiftDeadline(\'' + t.deliverableId + '\', ' + t.stepNumber + ')" class="text-secondary ms-1" title="快捷改期"><i class="fas fa-pen"></i></a>' +
         '</div>';
       });
 
-      html += '<div class="col">' +
-        '<div class="card h-100 border ' + bgClass + ' shadow-xs">' +
-          '<div class="card-header p-1 bg-white fw-bold d-flex justify-content-between" style="font-size:0.7em;">' +
-            '<span>' + displayDate + ' (' + dayName + ')</span>' +
-            '<span class="badge ' + badgeClass + '" style="font-size:0.65em;">' + taskCount + '</span>' +
+      html += '<div class="col" style="min-width: 0;">' +
+        '<div class="card h-100 border ' + bgClass + ' shadow-xs" style="min-height: 180px;">' +
+          '<div class="card-header p-2 bg-transparent border-0 d-flex justify-content-between text-muted fw-bold" style="font-size:0.8em;">' +
+            '<span class="' + (isToday ? 'badge bg-warning text-dark fs-6' : '') + '">' + displayDate + (currentCalendarMode === 'DAY' ? ' (' + dayName + ')' : '') + '</span>' +
+            '<span class="badge ' + badgeClass + '" style="font-size:0.75em;">' + taskCount + '</span>' +
           '</div>' +
-          '<div class="card-body p-1" style="min-height: 60px;">' +
-            (tasksHtml || '<small class="text-muted opacity-50" style="font-size:0.65em;">無作業</small>') +
+          '<div class="card-body p-1">' +
+            (tasksHtml || '<small class="text-muted opacity-25" style="font-size:0.75em;">-</small>') +
           '</div>' +
         '</div>' +
       '</div>';
-    }
+    });
 
+    html += '</div>';
     grid.innerHTML = html;
   }
 
   function renderOpColumns() {
     if (!rawOpData) return;
 
-    var riskContainer = document.getElementById('op_riskContainer');
-    var activeContainer = document.getElementById('op_activeContainer');
-    var pipelineContainer = document.getElementById('op_pipelineContainer');
+    var containerOverdue = document.getElementById('op_overdueContainer');
+    var containerUnassigned = document.getElementById('op_unassignedContainer');
+    var containerDueSoon = document.getElementById('op_dueSoonContainer');
+    var containerActive = document.getElementById('op_activeContainer');
+    var containerPipeline = document.getElementById('op_pipelineContainer');
 
-    var riskList = rawOpData.riskTasks || [];
-    var activeList = rawOpData.activeTasks || [];
-    var pipelineList = rawOpData.pipelineTasks || [];
+    var rawRisk = rawOpData.riskTasks || [];
+    var rawActive = rawOpData.activeTasks || [];
+    var rawPipeline = rawOpData.pipelineTasks || [];
+
+    var todayStr = new Date().toISOString().split('T')[0];
 
     if (selectedOpMember) {
-      riskList = riskList.filter(function(t){ return t.assignee === selectedOpMember; });
-      activeList = activeList.filter(function(t){ return t.assignee === selectedOpMember; });
+      rawRisk = rawRisk.filter(function(t){ return t.assignee === selectedOpMember; });
+      rawActive = rawActive.filter(function(t){ return t.assignee === selectedOpMember; });
+      rawPipeline = []; 
     }
 
-    var elCntRisk = document.getElementById('op_countRisk');
-    var elCntAct = document.getElementById('op_countActive');
-    var elCntPipe = document.getElementById('op_countPipeline');
+    if (selectedOpKpiFilter) {
+       if (selectedOpKpiFilter === 'OVERDUE') {
+          rawActive = []; rawPipeline = [];
+          rawRisk = rawRisk.filter(function(t) { return t.isOverdue || t.deadline < todayStr; });
+       } else if (selectedOpKpiFilter === 'UNASSIGNED') {
+          rawActive = []; rawPipeline = [];
+          rawRisk = rawRisk.filter(function(t) { return !t.assignee; });
+       } else if (selectedOpKpiFilter === 'DUE_SOON') {
+          rawRisk = []; rawPipeline = [];
+          rawActive = rawActive.filter(function(t) { return t.daysLeft <= 2; });
+       } else if (selectedOpKpiFilter === 'ON_TRACK') {
+          rawRisk = []; rawPipeline = [];
+          rawActive = rawActive.filter(function(t) { return t.daysLeft > 2; });
+       }
+    }
 
-    if (elCntRisk) elCntRisk.innerText = riskList.length + ' 件';
-    if (elCntAct) elCntAct.innerText = activeList.length + ' 件';
-    if (elCntPipe) elCntPipe.innerText = pipelineList.length + ' 件';
+    var processedKeys = new Set();
+    var activeJobNumbers = new Set();
 
-    // 1. 風險與待分配欄
-    if (riskList.length === 0) {
-      if (riskContainer) riskContainer.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>目前無逾期或待分配風險！</div>';
-    } else {
-      var rHtml = '';
-      riskList.forEach(function(t) {
-        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
-        var badge = t.isOverdue ? '<span class="badge bg-danger me-1">🚨 逾期</span>' : '<span class="badge bg-info text-dark me-1">📥 待分配</span>';
+    var overdueList = [], unassignedList = [], dueSoonList = [], activeList = [], pipelineList = [];
+    var allCurrentTasks = [].concat(rawRisk, rawActive);
 
-        var optHtml = '<option value="">選擇指派同仁...</option>';
-        (rawOpData.capacityList || []).forEach(function(m) {
-          optHtml += '<option value="' + m.name + '">' + m.name + ' (' + m.inProgress + '件進行中)</option>';
-        });
+    allCurrentTasks.forEach(function(t) {
+      var taskKey = (t.deliverableId || t.jobNumber) + '_' + (t.stepNumber || '1');
+      if (processedKeys.has(taskKey)) return;
 
-        rHtml += 
-        '<div class="card mb-2 border-start border-4 border-danger shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
-          '<div class="card-body p-2" style="font-size:0.85em;">' +
-            '<div class="d-flex justify-content-between align-items-center mb-1">' +
-              '<div>' + badge + '<small class="text-muted fw-bold">' + t.jobNumber + '</small></div>' +
-              '<small class="text-danger fw-bold"><i class="fas fa-clock"></i> 死線: ' + t.deadline + '</small>' +
-            '</div>' +
-            '<h6 class="fw-bold mb-1 text-dark">' + t.client + ' - ' + t.taskName + '</h6>' +
-            '<div class="text-muted mb-2">關卡: <strong class="text-primary">' + t.stepName + '</strong></div>' +
-            '<div class="border-top pt-2" onclick="event.stopPropagation();">' +
-              '<div class="input-group input-group-sm">' +
-                '<select class="form-select form-select-sm" id="assign_select_' + t.deliverableId + '_' + t.stepNumber + '">' + optHtml + '</select>' +
-                '<button class="btn btn-warning fw-bold" onclick="quickDispatchMember(\'' + t.deliverableId + '\', ' + t.stepNumber + ')">派案</button>' +
+      if (t.jobNumber) activeJobNumbers.add(String(t.jobNumber).trim().toLowerCase());
+
+      if (t.isOverdue || t.deadline < todayStr) {
+        overdueList.push(t);
+        processedKeys.add(taskKey);
+      } else if (!t.assignee) {
+        unassignedList.push(t);
+        processedKeys.add(taskKey);
+      } else if (t.daysLeft <= 2) {
+        dueSoonList.push(t);
+        processedKeys.add(taskKey);
+      } else {
+        activeList.push(t);
+        processedKeys.add(taskKey);
+      }
+    });
+
+    if (!selectedOpMember && !selectedOpKpiFilter) {
+      rawPipeline.forEach(function(p) {
+        var pJob = String(p.jobNumber || '').trim().toLowerCase();
+        if (!activeJobNumbers.has(pJob)) {
+          pipelineList.push(p);
+        }
+      });
+    }
+
+    if (document.getElementById('op_countOverdue')) document.getElementById('op_countOverdue').innerText = overdueList.length + ' 件';
+    if (document.getElementById('op_countUnassigned')) document.getElementById('op_countUnassigned').innerText = unassignedList.length + ' 件';
+    if (document.getElementById('op_countDueSoon')) document.getElementById('op_countDueSoon').innerText = dueSoonList.length + ' 件';
+    if (document.getElementById('op_countActive')) document.getElementById('op_countActive').innerText = activeList.length + ' 件';
+    if (document.getElementById('op_countPipeline')) document.getElementById('op_countPipeline').innerText = pipelineList.length + ' 件';
+
+    function buildTaskCardHtml(t, borderClass, showAssignBox) {
+      var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+      var optHtml = '<option value="">選擇指派同仁...</option>';
+      (rawOpData.capacityList || []).forEach(function(m) {
+        optHtml += '<option value="' + m.name + '">' + m.name + ' (' + m.inProgress + '件)</option>';
+      });
+
+      // 💡 方案 A 嚴格隱藏：只有被要求顯示選單「且」真的沒有負責人時，才顯示派案選單
+      var assignSection = (showAssignBox && !t.assignee) ? 
+        '<div class="border-top pt-2" onclick="event.stopPropagation();">' +
+          '<div class="input-group input-group-sm">' +
+            '<select class="form-select form-select-sm" id="assign_select_' + t.deliverableId + '_' + t.stepNumber + '">' + optHtml + '</select>' +
+            '<button class="btn btn-warning fw-bold" onclick="quickDispatchMember(\'' + t.deliverableId + '\', ' + t.stepNumber + ')">派案</button>' +
+          '</div>' +
+        '</div>' : '';
+
+      return '<div class="card mb-2 border-start border-4 ' + borderClass + ' shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+        '<div class="card-body p-2" style="font-size:0.85em;">' +
+          '<div class="d-flex justify-content-between align-items-center mb-1">' +
+            '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
+            '<small class="' + (t.isOverdue ? 'text-danger fw-bold' : 'text-muted') + '"><i class="fas fa-clock"></i> ' + t.deadline + '</small>' +
+          '</div>' +
+          '<h6 class="fw-bold mb-1 text-dark text-truncate">' + t.client + ' - ' + t.taskName + '</h6>' +
+          '<div class="d-flex justify-content-between text-muted mb-1">' +
+            '<span>關卡: <strong class="text-primary">' + t.stepName + '</strong></span>' +
+            '<span>[' + (t.assignee || '未指派') + ']</span>' +
+          '</div>' +
+          assignSection +
+        '</div>' +
+      '</div>';
+    }
+
+    if (containerOverdue) containerOverdue.innerHTML = overdueList.length === 0 ? '<div class="text-center text-muted py-4 small">🎉 無逾期任務</div>' : overdueList.map(function(t){ return buildTaskCardHtml(t, 'border-danger', true); }).join('');
+    if (containerUnassigned) containerUnassigned.innerHTML = unassignedList.length === 0 ? '<div class="text-center text-muted py-4 small">🎉 無待分配任務</div>' : unassignedList.map(function(t){ return buildTaskCardHtml(t, 'border-info', true); }).join('');
+    if (containerDueSoon) containerDueSoon.innerHTML = dueSoonList.length === 0 ? '<div class="text-center text-muted py-4 small">無即將到期任務</div>' : dueSoonList.map(function(t){ return buildTaskCardHtml(t, 'border-warning', false); }).join('');
+    if (containerActive) containerActive.innerHTML = activeList.length === 0 ? '<div class="text-center text-muted py-4 small">無進行中任務</div>' : activeList.map(function(t){ return buildTaskCardHtml(t, 'border-primary', false); }).join('');
+
+    if (containerPipeline) {
+      if (pipelineList.length === 0) {
+        containerPipeline.innerHTML = '<div class="text-center text-muted py-4 small">無未來前置任務</div>';
+      } else {
+        var pHtml = '';
+        pipelineList.forEach(function(t) {
+          var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+          var displayAssignee = t.assignee || t.pmName || '專案 PM';
+
+          pHtml += '<div class="card mb-2 border-start border-4 border-secondary shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+            '<div class="card-body p-2" style="font-size:0.85em;">' +
+              '<div class="d-flex justify-content-between align-items-center mb-1">' +
+                '<span class="badge bg-secondary">預計流入: ' + t.stepName + '</span>' +
+                '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
+              '</div>' +
+              '<h6 class="fw-bold mb-1 text-dark text-truncate">' + t.client + ' - ' + t.taskName + '</h6>' +
+              '<div class="d-flex justify-content-between text-muted small mb-1">' +
+                '<span>當前卡在: <strong class="text-danger">' + t.currentFrontStep + '</strong></span>' +
+                '<span>負責: <strong>[' + displayAssignee + ']</strong></span>' +
               '</div>' +
             '</div>' +
-          '</div>' +
-        '</div>';
-      });
-      if (riskContainer) riskContainer.innerHTML = rHtml;
-    }
-
-    // 2. 進行中欄
-    if (activeList.length === 0) {
-      if (activeContainer) activeContainer.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2"></i><br>無進行中任務。</div>';
-    } else {
-      var aHtml = '';
-      activeList.forEach(function(t) {
-        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
-        aHtml += 
-        '<div class="card mb-2 border-start border-4 border-primary shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
-          '<div class="card-body p-2" style="font-size:0.85em;">' +
-            '<div class="d-flex justify-content-between align-items-center mb-1">' +
-              '<span class="badge bg-primary">' + t.stepName + '</span>' +
-              '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
-            '</div>' +
-            '<h6 class="fw-bold mb-1 text-dark">' + t.client + ' - ' + t.taskName + '</h6>' +
-            '<div class="d-flex justify-content-between text-muted mb-2">' +
-              '<span>負責人: <strong>[' + (t.assignee || '未指派') + ']</strong></span>' +
-              '<span class="text-dark fw-bold"><i class="fas fa-clock text-primary"></i> ' + t.deadline + '</span>' +
-            '</div>' +
-            '<div class="text-end border-top pt-1">' +
-              '<button class="btn btn-xs btn-outline-primary py-0 px-2" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">操作 / 提交</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-      });
-      if (activeContainer) activeContainer.innerHTML = aHtml;
-    }
-
-    // 3. 未來管線欄
-    if (pipelineList.length === 0) {
-      if (pipelineContainer) pipelineContainer.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-calendar-check fa-2x mb-2"></i><br>未來尚無前置流轉任務。</div>';
-    } else {
-      var pHtml = '';
-      pipelineList.forEach(function(t) {
-        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
-        pHtml += 
-        '<div class="card mb-2 border-start border-4 border-info shadow-sm">' +
-          '<div class="card-body p-2" style="font-size:0.85em;">' +
-            '<div class="d-flex justify-content-between align-items-center mb-1">' +
-              '<span class="badge bg-info text-dark">預計流入: ' + t.stepName + '</span>' +
-              '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
-            '</div>' +
-            '<h6 class="fw-bold mb-1 text-dark">' + t.client + ' - ' + t.taskName + '</h6>' +
-            '<div class="text-muted mb-2">當前卡在: <strong class="text-danger">' + t.currentFrontStep + ' (' + t.frontAssignee + ')</strong></div>' +
-            '<div class="d-flex justify-content-between align-items-center border-top pt-1">' +
-              '<small class="text-muted"><i class="fas fa-hourglass-half text-info"></i> 預計到達: ' + t.estimatedArrival + '</small>' +
-              '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="nudgeDepartment(\'' + t.frontDept + '\', \'' + t.taskName + '\', \'' + t.estimatedArrival + '\')"><i class="fas fa-paper-plane"></i> 催辦前置</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-      });
-      if (pipelineContainer) pipelineContainer.innerHTML = pHtml;
+          '</div>';
+        });
+        containerPipeline.innerHTML = pHtml;
+      }
     }
   }
 
   function quickDispatchMember(deliverableId, stepNumber) {
     var sel = document.getElementById('assign_select_' + deliverableId + '_' + stepNumber);
-    if (!sel || !sel.value) return alert('請選擇要指派的同仁！');
+    if (!sel || !sel.value) {
+      if (typeof showAlert === 'function') showAlert('請選擇要指派的同仁！', 'warning');
+      else alert('請選擇要指派的同仁！');
+      return;
+    }
 
     var assignee = sel.value;
     google.script.run.withSuccessHandler(function(res) {
       if (res && res.success) {
-        alert('派案成功！已指派給 ' + assignee);
+        if (typeof showAlert === 'function') showAlert('派案成功！已指派給 ' + assignee, 'success');
+        else alert('派案成功！已指派給 ' + assignee);
         fetchDeptOperationData();
       } else {
-        alert('派案失敗: ' + (res ? res.message : '未知錯誤'));
+        if (typeof showAlert === 'function') showAlert('派案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        else alert('派案失敗: ' + (res ? res.message : '未知錯誤'));
       }
     }).api_dispatchWorkflowStep('', deliverableId, stepNumber, assignee, currentOpDept);
   }
@@ -508,9 +648,13 @@
     if (newDate) {
       google.script.run.withSuccessHandler(function(res) {
         if (res && res.success) {
-          alert('死線調整成功！');
+          if (typeof showAlert === 'function') showAlert('死線調整成功！', 'success');
+          else alert('死線調整成功！');
           fetchDeptOperationData();
-        } else { alert('調整失敗: ' + (res ? res.message : '未知錯誤')); }
+        } else { 
+          if (typeof showAlert === 'function') showAlert('調整失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+          else alert('調整失敗: ' + (res ? res.message : '未知錯誤')); 
+        }
       }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim());
     }
   }

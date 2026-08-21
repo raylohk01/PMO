@@ -235,14 +235,28 @@
     var section = document.getElementById('analyticsSection');
     if (section) section.style.display = 'block';
 
-    if (typeof currentUser !== 'undefined' && currentUser) {
-      var roleText = currentUser.role || 'Member';
-      if (currentUser.department) roleText += ' (' + currentUser.department + ')';
-      document.getElementById('analyticsViewRoleBadge').innerText = roleText;
-    }
-
+    updateAnalyticsRoleBadge();
     fetchAnalyticsData(currentAnalyticsTimeRange);
     setupAutoRefresh();
+  }
+
+  function updateAnalyticsRoleBadge() {
+    var badge = document.getElementById('analyticsViewRoleBadge');
+    if (!badge) return;
+
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.name) {
+      var roleText = currentUser.name + ' (' + (currentUser.role || 'Member');
+      if (currentUser.department) roleText += ' - ' + currentUser.department;
+      roleText += ')';
+      badge.innerText = roleText;
+    } else {
+      google.script.run.withSuccessHandler(function(res) {
+        if (res && res.success && res.data) {
+          currentUser = res.data;
+          updateAnalyticsRoleBadge();
+        }
+      }).api_getCurrentUser();
+    }
   }
 
   function toggleAutoRefresh(enable) {
@@ -272,14 +286,15 @@
   function applyAnalyticsCustomDateRange() {
     var start = document.getElementById('ana_startDate').value;
     var end = document.getElementById('ana_endDate').value;
-    if (!start || !end) return alert('請選擇完整日期區間！');
+    if (!start || !end) return showAlert('⚠️ 請選擇完整日期區間！', 'warning');
     fetchAnalyticsData('CUSTOM', start, end);
   }
 
   function fetchAnalyticsData(range, customStart, customEnd) {
-    google.script.run.withSuccessHandler(function(res) {
-      if (!res || !res.success) return alert('讀取戰情室數據失敗');
-      var data = res.data;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) return showAlert('❌ 讀取戰情室數據失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        var data = res.data;
 
       document.getElementById('analyticsLastUpdated').innerText = '上次更新: ' + (data.lastRefreshed || '--:--:--');
 
@@ -322,8 +337,11 @@
       renderClientDelayList(data.clientDelayList || []);
       rawMemberPerformanceData = data.memberPerformance || [];
       renderMemberPerfTable(rawMemberPerformanceData);
-
-    }).api_getAnalyticsData(range, customStart, customEnd);
+      })
+      .withFailureHandler(function(err) {
+        showAlert('❌ API 後端呼叫失敗: ' + (err ? err.message : '網絡連線問題'), 'danger');
+      })
+      .api_getAnalyticsData(range, customStart, customEnd);
   }
 
   function renderDeptRevisionChart(map) {
