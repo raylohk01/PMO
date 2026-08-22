@@ -1,5 +1,5 @@
 <!-- ========================================== -->
-<!-- [WorkflowUI.html] 動態工作流與主管調度分派模組 (語法修正版) -->
+<!-- [WorkflowUI.html] 動態工作流與主管調度分派模組 (UX 優化版) -->
 <!-- ========================================== -->
 
 <div class="modal fade" id="workflowModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
@@ -15,17 +15,12 @@
               <i class="fas fa-cog"></i> 專案整體管理
             </button>
             <button type="button" class="btn btn-warning btn-sm me-2" onclick="manageProjectStatus('PAUSE')">
-  🧪 測試直接暫停
-</button>
-
+              🧪 測試直接暫停
+            </button>
             <ul class="dropdown-menu dropdown-menu-end">
-
-              
               <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('PAUSE');">⏸️ 暫停整體專案</a></li>
-<li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('RESUME');">▶️ 恢復整體專案</a></li>
-<li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('DELETE');">🗑️ 移至回收箱</a></li>
-                
-                
+              <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('RESUME');">▶️ 恢復整體專案</a></li>
+              <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('DELETE');">🗑️ 移至回收箱</a></li>
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item text-danger" href="#" onclick="manageProjectStatus('DELETE')"><i class="fas fa-trash-alt"></i> 移至回收箱</a></li>
             </ul>
@@ -81,8 +76,8 @@
   </div>
 </div>
 
-<!-- 🚀 部門主管調度與派案 Modal -->
-<div class="modal fade" id="dispatchModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+<!-- 🚀 部門主管調度與派案 Modal (支援雙擊表格行自動選取) -->
+<div class="modal fade" id="dispatchModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
   <div class="modal-dialog modal-lg">
     <div class="modal-content shadow">
       <div class="modal-header bg-primary text-white py-2">
@@ -100,7 +95,7 @@
               </select>
             </div>
             <div class="alert alert-info small">
-              <i class="fas fa-info-circle me-1"></i> 請參考右側人員的當前負載進行合理分派。
+              <i class="fas fa-info-circle me-1"></i> 提示：您可以雙擊右側成員列表中的列 (Row)，自動帶入左側選單。
             </div>
           </div>
 
@@ -131,8 +126,31 @@
   </div>
 </div>
 
+<!-- 🚀 修改總死線 Modal (替換原生 prompt) -->
+<div class="modal fade" id="updateDeadlineModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content shadow">
+      <div class="modal-header bg-warning text-dark py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-calendar-edit me-1"></i> 修改專案總死線 (Launch Date)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <div class="mb-3">
+          <label class="form-label small fw-bold text-muted">請選擇新的死線日期：</label>
+          <!-- 使用 input type="date" 讓使用者透過日曆選擇，杜絕格式錯誤 -->
+          <input type="date" class="form-control" id="ud_deadlineInput">
+        </div>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-warning text-dark btn-sm fw-bold" onclick="confirmUpdateDeadline()"><i class="fas fa-save me-1"></i> 確認更新</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 🚀 動態插入關卡 Modal -->
-<div class="modal fade" id="insertStepModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+<div class="modal fade" id="insertStepModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
   <div class="modal-dialog">
     <div class="modal-content shadow">
       <div class="modal-header bg-info text-white py-2">
@@ -177,6 +195,7 @@
   var workflowModalInstance = null;
   var dispatchModalInstance = null;
   var insertStepModalInstance = null;
+  var updateDeadlineModalInstance = null; // 新增 Deadline Modal 實例
   var currentProjectData = null; 
   var activeDeliverableId = null; 
   var currentDispatchTarget = null; 
@@ -191,9 +210,11 @@
 
     var insEl = document.getElementById('insertStepModal');
     if (insEl && typeof bootstrap !== 'undefined') insertStepModalInstance = new bootstrap.Modal(insEl);
+
+    var udEl = document.getElementById('updateDeadlineModal');
+    if (udEl && typeof bootstrap !== 'undefined') updateDeadlineModalInstance = new bootstrap.Modal(udEl);
   });
 
-  // 💡 掛載於 window 物件上，確保全域絕對可被呼叫
   window.openWorkflow = function(jobNumber) {
     try {
       var modalEl = document.getElementById('workflowModal');
@@ -318,9 +339,6 @@
     return '<span class="text-dark">' + str + '</span>';
   }
 
-  // ==========================================
-// [替換函數] 工作流內容渲染 (支援 Step 2a/2b 渲染與完成度顯示)
-// ==========================================
 function renderDeliverableContent(deliverable) {
   var container = document.getElementById('wf_dynamicContentArea');
   if(!deliverable) return container.innerHTML = '找不到該項目資料';
@@ -348,8 +366,9 @@ function renderDeliverableContent(deliverable) {
 
   var totalDeadline = currentProjectData.mainDeadline || '未設定';
 
+  // 💡 點擊觸發新的 Modal (promptUpdateDeadlineModal)
   var editDeadlineBtn = (canManageWorkflow && !isProjectCompleted) ? 
-    ' <button class="btn btn-xs btn-outline-secondary py-0 px-1 ms-1" style="font-size:0.75em;" onclick="promptUpdateDeadline()" title="修改死線"><i class="fas fa-pen"></i></button>' : '';
+    ' <button class="btn btn-xs btn-outline-secondary py-0 px-1 ms-1" style="font-size:0.75em;" onclick="promptUpdateDeadlineModal()" title="修改死線"><i class="fas fa-pen"></i></button>' : '';
 
   var insertStepBtn = (canManageWorkflow && !isProjectCompleted) ?
     '<button class="btn btn-xs btn-outline-info ms-3 py-1 px-2 fw-bold" onclick="openInsertStepModal()"><i class="fas fa-plus-circle me-1"></i> 插入新關卡</button>' : '';
@@ -364,7 +383,6 @@ function renderDeliverableContent(deliverable) {
 
   var todayStr = new Date().toISOString().split('T')[0];
 
-  // 計算並行編號對照 (如 Group_A -> Step 2a, Step 2b)
   var groupLetters = {};
   var currentStepNumCounter = 1;
 
@@ -393,7 +411,6 @@ function renderDeliverableContent(deliverable) {
     var isDelayed = isCurrent && effectiveDeadline && effectiveDeadline < todayStr;
     var delayBadge = isDelayed ? '<span class="badge bg-danger ms-2"><i class="fas fa-exclamation-triangle"></i> 步驟延誤</span>' : '';
 
-    // 計算顯示的 Step 名稱 (例如 Step 2a)
     var stepDisplayLabel = 'Step ' + step.step;
     if (step.parallelGroup && groupLetters[step.parallelGroup]) {
       var gInfo = groupLetters[step.parallelGroup];
@@ -401,7 +418,6 @@ function renderDeliverableContent(deliverable) {
       stepDisplayLabel = 'Step ' + gInfo.baseNum + charCode;
     }
 
-    // 判斷是否為並行步驟後的第一個關卡，並計算前置完成度
     var progressBadge = '';
     if (!step.parallelGroup && index > 0) {
       var prevStep = deliverable.workflow[index - 1];
@@ -558,9 +574,6 @@ function renderDeliverableContent(deliverable) {
     }).api_startClientReviewStep(currentProjectData.jobNumber, deliverableId, stepNumber);
   }
 
-  // ==========================================
-// [替換函數] 客戶修改意見退回彈窗 (支援 2a/2b 標籤渲染)
-// ==========================================
 function promptClientRevision(deliverableId, stepNumber) {
   var targetD = (currentProjectData.workflowData.deliverables || []).find(function(d){ return d.id === deliverableId; });
   if(!targetD) return;
@@ -571,7 +584,6 @@ function promptClientRevision(deliverableId, stepNumber) {
 
   if(previousSteps.length === 0) return showAlert('⚠️ 無可重複執行的前置關卡！', 'warning');
 
-  // 💡 動態計算並行群組標籤 (如 2a, 2b)
   var groupLetters = {};
   var currentStepNumCounter = 1;
 
@@ -644,7 +656,8 @@ function promptClientRevision(deliverableId, stepNumber) {
         var s = stats[m] || { totalTasks: 0, next5DaysDeliveries: 0 };
         var alertClass = s.next5DaysDeliveries > 2 ? 'text-danger fw-bold' : (s.next5DaysDeliveries > 0 ? 'text-warning fw-bold' : 'text-success');
 
-        tableHtml += '<tr>' +
+        // 💡 加入 ondblclick 事件，雙擊自動選取
+        tableHtml += '<tr ondblclick="autoSelectAssignee(\'' + m + '\')" style="cursor:pointer;" title="雙擊以快速選取">' +
           '<td><strong>' + m + '</strong></td>' +
           '<td><span class="badge bg-light text-dark border">' + s.totalTasks + ' 件</span></td>' +
           '<td><span class="' + alertClass + '">' + s.next5DaysDeliveries + ' 件</span></td>' +
@@ -685,7 +698,8 @@ function promptClientRevision(deliverableId, stepNumber) {
         var s = stats[m] || { totalTasks: 0, next5DaysDeliveries: 0, clientCount: 0 };
         var alertClass = s.next5DaysDeliveries > 2 ? 'text-danger fw-bold' : (s.next5DaysDeliveries > 0 ? 'text-warning fw-bold' : 'text-success');
 
-        tableHtml += '<tr>' +
+        // 💡 加入 ondblclick 事件，雙擊自動選取
+        tableHtml += '<tr ondblclick="autoSelectAssignee(\'' + m + '\')" style="cursor:pointer;" title="雙擊以快速選取">' +
           '<td><strong>' + m + '</strong></td>' +
           '<td><span class="badge bg-light text-dark border">' + s.totalTasks + ' 件</span></td>' +
           '<td><span class="' + alertClass + '">' + s.next5DaysDeliveries + ' 件</span></td>' +
@@ -694,6 +708,18 @@ function promptClientRevision(deliverableId, stepNumber) {
       });
       tableEl.innerHTML = tableHtml;
     }).api_getPMTeamWorkload();
+  }
+
+  // 💡 雙擊表格列自動選取指派對象
+  function autoSelectAssignee(memberName) {
+    var selectEl = document.getElementById('dp_assigneeSelect');
+    if (selectEl) {
+      selectEl.value = memberName;
+      // 稍微閃爍一下表格列讓使用者知道選取成功 (UX enhancement)
+      var rows = document.querySelectorAll('#dp_workloadTableBody tr');
+      rows.forEach(function(row) { row.classList.remove('table-warning'); });
+      event.currentTarget.classList.add('table-warning');
+    }
   }
 
   function confirmDispatchAndStart() {
@@ -787,9 +813,6 @@ function promptClientRevision(deliverableId, stepNumber) {
     }).api_appendStepData(currentProjectData.jobNumber, deliverableId, stepNumber, title, content);
   }
 
-  // ==========================================
-// [替換函數] 工作流提交動作 (帶入精準 stepNumber 支援並行提交)
-// ==========================================
 function submitWorkflowAction(deliverableId, actionType, stepNumber) {
   var jobNumber = currentProjectData.jobNumber;
   var payload = { action: actionType, stepNumber: stepNumber };
@@ -824,13 +847,11 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
   var confirmMsg = action === 'DELETE' ? '確定要將此專案移至回收箱嗎？' : (action === 'PAUSE' ? '確定要暫停此專案嗎？' : '確定要恢復此專案嗎？');
   if (!confirm(confirmMsg)) return;
 
-  // 1. 抓取正確的編號
   var jobNum = '';
   if (typeof currentProjectData === 'object' && currentProjectData !== null) {
     jobNum = currentProjectData.jobNumber || currentProjectData.jobNo || currentProjectData.id || '';
   }
   
-  // 萬一 currentProjectData 拿不到，嘗試從 Modal 標題讀取 (例如 "專案工作流 : 13" -> "13")
   if (!jobNum) {
     var titleEl = document.querySelector('.modal-title, h5, header');
     if (titleEl && titleEl.innerText.includes(':')) {
@@ -843,7 +864,6 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     return;
   }
 
-  // 2. 打包為 JSON 字串，避免 Apps Script 參數轉型失真
   var payloadString = JSON.stringify({
     jobNumber: String(jobNum).trim(),
     action: String(action).trim(),
@@ -866,19 +886,35 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     .api_manageProjectStatus(payloadString);
 }
 
-  function promptUpdateDeadline() {
-    var newDate = prompt("請輸入新的總死線日期 (格式: YYYY-MM-DD)：", currentProjectData.mainDeadline || "2026-08-30");
-    if (newDate) {
-      google.script.run.withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showAlert("🎉 總死線更新成功！", "success");
-          openWorkflow(currentProjectData.jobNumber);
-          if (typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
-        } else {
-          showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
-        }
-      }).api_updateProjectDeadline(currentProjectData.jobNumber, newDate.trim());
+  // 💡 [更新] 開啟優雅的修改總死線 Modal
+  function promptUpdateDeadlineModal() {
+    if (!currentProjectData) return;
+    
+    // 將當前死線帶入 input 作為預設值
+    var currentDeadline = currentProjectData.mainDeadline || new Date().toISOString().split('T')[0];
+    document.getElementById('ud_deadlineInput').value = currentDeadline;
+    
+    if (updateDeadlineModalInstance) updateDeadlineModalInstance.show();
+  }
+
+  // 💡 [更新] 確認更新總死線
+  function confirmUpdateDeadline() {
+    var newDate = document.getElementById('ud_deadlineInput').value;
+    
+    if (!newDate) {
+      return showAlert("⚠️ 請選擇新的死線日期！", "warning");
     }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showAlert("🎉 總死線更新成功！", "success");
+        if (updateDeadlineModalInstance) updateDeadlineModalInstance.hide();
+        openWorkflow(currentProjectData.jobNumber);
+        if (typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
+      } else {
+        showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
+      }
+    }).api_updateProjectDeadline(currentProjectData.jobNumber, newDate.trim());
   }
 
   function openInsertStepModal() {
