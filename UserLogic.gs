@@ -500,6 +500,9 @@ function api_getDashboardData(simEmail) {
   }
 }
 
+
+/*
+
 // ==========================================
 // 💡 [分流修復版] 獲取部門營運指揮中心數據 (管線去重與全欄位精準流轉)
 // ==========================================
@@ -694,6 +697,8 @@ function api_getDeptOperationData(deptName, timeRange, customStart, customEnd) {
     return { success: false, message: e.message };
   }
 }
+
+*/
 
 function api_getProjectWorkflow(jobNumber) {
   try {
@@ -1490,213 +1495,204 @@ function api_insertWorkflowStep(jobNumber, deliverableId, insertAfterStep, newSt
 }
 
 // ==========================================
-// [修復版 API] 獲取部門營運指揮中心數據 (支援舊 PM 專案自動承接與真實負載)
+// 💡 部門營運數據 API (顯示真實關卡現狀版)
 // ==========================================
-function api_getDeptOperationData(deptName, timeRange, customStart, customEnd) {
+function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Projects');
-    const usersSheet = ss.getSheetByName('Users');
-    
-    const now = new Date();
-    const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
+    const targetDept = String(dept || 'Editorial').trim();
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
 
-    deptName = (deptName || 'Editorial').trim();
-    timeRange = timeRange || 'NEXT_14_DAYS';
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim().toLowerCase());
 
-    let startDate = new Date();
-    let endDate = new Date();
-    endDate.setDate(now.getDate() + 14);
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxClient = headers.findIndex(h => h.includes('client'));
+    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
 
-    if (timeRange === 'TODAY') {
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
-    } else if (timeRange === 'LAST_5_DAYS') {
-      startDate.setDate(now.getDate() - 5);
-      endDate.setHours(23, 59, 59, 999);
-    } else if (timeRange === 'LAST_30_DAYS') {
-      startDate.setDate(now.getDate() - 30);
-      endDate.setHours(23, 59, 59, 999);
-    } else if (timeRange === 'CUSTOM' && customStart && customEnd) {
-      startDate = new Date(customStart);
-      endDate = new Date(customEnd);
-      endDate.setHours(23, 59, 59, 999);
-    }
-
-    let membersMap = {};
-    if (usersSheet) {
-      const uData = usersSheet.getDataRange().getValues();
-      if (uData.length > 1) {
-        const headersU = uData[0].map(h => String(h || '').trim().toLowerCase());
-        const idxDept = headersU.findIndex(h => h === 'department' || h === 'team' || h === 'dept');
-        const idxName = headersU.findIndex(h => h === 'name' || h === 'username');
-
-        for (let i = 1; i < uData.length; i++) {
-          const d = idxDept >= 0 ? String(uData[i][idxDept] || '').trim() : '';
-          const n = idxName >= 0 ? String(uData[i][idxName] || '').trim() : '';
-          if (d.toLowerCase() === deptName.toLowerCase() && n) {
-            membersMap[n] = { name: n, inProgress: 0, completed: 0, revisions: 0 };
-          }
-        }
-      }
-    }
-
-    let kpi = { overdue: 0, dueSoon: 0, unassigned: 0, onTrack: 0 };
+    let capacityMap = {};
     let calendarMap = {};
     let calendarTasks = [];
+    
     let riskTasks = [];
     let activeTasks = [];
     let pipelineTasks = [];
+    let clientReviewTasks = [];
+    let completedTasks = [];
 
-    const fortyEightHoursLater = new Date(now.getTime() + (48 * 60 * 60 * 1000));
+    const now = new Date();
+    const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
 
-    if (sheet) {
-      const data = sheet.getDataRange().getValues();
-      if (data.length > 1) {
-        const headers = data[0].map(h => String(h || '').trim().toLowerCase());
-        const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-        const idxClient = headers.findIndex(h => h.includes('client'));
-        const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-        const idxDeadline = headers.findIndex(h => h.includes('launch') || h.includes('deadline'));
-        const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    for (let i = 1; i < data.length; i++) {
+      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
+      if (pStatus === 'Completed' || pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
 
-        for (let i = 1; i < data.length; i++) {
-          try {
-            const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
-            if (!jobNumber || jobNumber.toLowerCase() === 'jobnumber') continue;
-
-            const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
-            if (pStatus === 'Recycle Bin' || pStatus === 'Cancelled' || pStatus === 'Paused') continue;
-
-            const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '客戶';
-            const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
-
-            let deadlineStr = todayStr;
-            if (idxDeadline >= 0 && data[i][idxDeadline]) {
-              let parsed = new Date(data[i][idxDeadline]);
-              if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
-                deadlineStr = Utilities.formatDate(parsed, "GMT+8", "yyyy-MM-dd");
-              }
-            }
-
-            let wfData = {};
-            for (let c = 0; c < data[i].length; c++) {
-              let cellStr = String(data[i][c] || '');
-              if (cellStr.includes('deliverables')) { 
-                try { wfData = JSON.parse(cellStr); break; } catch(e){} 
-              }
-            }
-
-            if (wfData && wfData.deliverables && Array.isArray(wfData.deliverables)) {
-              wfData.deliverables.forEach(d => {
-                if (!d || d.status === 'Completed') return;
-
-                if (d.workflow && Array.isArray(d.workflow)) {
-                  d.workflow.forEach((s) => {
-                    if (!s) return;
-                    const sDept = String(s.dept || '').trim().toLowerCase();
-                    const targetDept = deptName.toLowerCase();
-                    const isMyDept = sDept === targetDept;
-
-                    // 💡 若為 PM 部門且關卡 assignee 為空，自動相容承接專案的 pmName！
-                    let assignee = s.assignee || '';
-                    if (!assignee && isMyDept && (targetDept === 'pm') && pmName) {
-                      assignee = pmName;
-                    }
-
-                    if (isMyDept && assignee) {
-                      if (!membersMap[assignee]) {
-                        membersMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
-                      }
-                      if (s.status === 'Completed') membersMap[assignee].completed++;
-                      if (s.revisionCount) membersMap[assignee].revisions += s.revisionCount;
-                    }
-
-                    if (isMyDept && (s.status === 'In Progress' || s.status === 'Pending Start' || s.status === 'Pending Assign' || !s.status)) {
-                      if (assignee) {
-                        if (!membersMap[assignee]) {
-                          membersMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
-                        }
-                        membersMap[assignee].inProgress++;
-                      }
-
-                      const effectiveDate = s.keyDate || deadlineStr;
-                      calendarMap[effectiveDate] = (calendarMap[effectiveDate] || 0) + 1;
-
-                      const taskObj = {
-                        jobNumber: jobNumber,
-                        client: clientName,
-                        deliverableId: d.id,
-                        taskName: d.name || '任務篇章',
-                        stepNumber: s.step,
-                        stepName: s.name || ('Step ' + s.step),
-                        assignee: assignee,
-                        deadline: effectiveDate,
-                        isOverdue: effectiveDate < todayStr
-                      };
-
-                      calendarTasks.push(taskObj);
-
-                      const taskDeadlineDate = new Date(effectiveDate);
-                      if (effectiveDate < todayStr) {
-                        kpi.overdue++;
-                        riskTasks.push(taskObj);
-                      } else if (!assignee) {
-                        kpi.unassigned++;
-                        riskTasks.push(taskObj);
-                      } else if (taskDeadlineDate <= fortyEightHoursLater) {
-                        kpi.dueSoon++;
-                        activeTasks.push(taskObj);
-                      } else {
-                        kpi.onTrack++;
-                        activeTasks.push(taskObj);
-                      }
-                    }
-
-                    if (isMyDept && s.status === 'Pending') {
-                      const currentFront = d.workflow.find(item => item && item.status === 'In Progress');
-                      if (currentFront) {
-                        pipelineTasks.push({
-                          jobNumber: jobNumber,
-                          client: clientName,
-                          deliverableId: d.id,
-                          taskName: d.name || '任務篇章',
-                          stepNumber: s.step,
-                          stepName: s.name || ('Step ' + s.step),
-                          frontDept: currentFront.dept || 'PM',
-                          currentFrontStep: 'Step ' + currentFront.step + ' (' + (currentFront.name || '') + ')',
-                          frontAssignee: currentFront.assignee || ((currentFront.dept || 'PM') + ' 未指派'),
-                          estimatedArrival: (d.workflow[0] && d.workflow[0].keyDate) ? d.workflow[0].keyDate : deadlineStr
-                        });
-                      }
-                    }
-
-                  });
-                }
-              });
-            }
-          } catch(errRow) {
-            console.error('Row parse error:', errRow);
-          }
+      let wfData = {};
+      for (let c = 0; c < data[i].length; c++) {
+        let cellStr = String(data[i][c] || '');
+        if (cellStr.includes('deliverables')) {
+          try { wfData = JSON.parse(cellStr); break; } catch(e){}
         }
       }
+
+      if (wfData && wfData.deliverables) {
+        wfData.deliverables.forEach(d => {
+          if (d.status === 'Deleted') return;
+
+          const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '') : '';
+          const client = idxClient >= 0 ? String(data[i][idxClient] || '') : '';
+          const pmName = idxPM >= 0 ? String(data[i][idxPM] || '') : '';
+
+          if (!d.workflow || d.workflow.length === 0) return;
+
+          // 1. 組員產能統計
+          d.workflow.forEach(s => {
+            const sDept = String(s.dept || '').trim().toLowerCase();
+            const assignee = String(s.assignee || '').trim();
+            if (sDept === targetDept.toLowerCase() && assignee) {
+              if (!capacityMap[assignee]) {
+                capacityMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
+              }
+              if (s.status === 'In Progress') capacityMap[assignee].inProgress++;
+              if (s.status === 'Completed') capacityMap[assignee].completed++;
+            }
+          });
+
+          // 2. 互斥歸類與動態卡片封面標籤
+          const activeStep = d.workflow.find(s => s.status === 'In Progress');
+          const allCompleted = d.status === 'Completed' || d.workflow.every(s => s.status === 'Completed');
+          const deptCompletedSteps = d.workflow.filter(s => String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase() && s.status === 'Completed');
+
+          if (allCompleted) {
+            // 全數完成 -> 封面關卡標示為「已完成」
+            if (deptCompletedSteps.length > 0) {
+              const lastStep = deptCompletedSteps[deptCompletedSteps.length - 1];
+              let compDateStr = lastStep.completedAt ? lastStep.completedAt.split(' ')[0] : todayStr;
+              let compDate = new Date(compDateStr);
+              let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
+
+              if (diffDays <= 5) {
+                const compTask = {
+                  jobNumber: jobNumber,
+                  client: client,
+                  taskName: d.name || '未命名任務',
+                  stepNumber: lastStep.step,
+                  stepName: '已完成', // 💡 整體皆已完成，封面明確印出「已完成」
+                  assignee: lastStep.assignee || pmName,
+                  deliverableId: d.id,
+                  deadline: compDateStr,
+                  category: 'COMPLETED'
+                };
+                completedTasks.push(compTask);
+                calendarTasks.push(compTask);
+                calendarMap[compDateStr] = (calendarMap[compDateStr] || 0) + 1;
+              }
+            }
+          } else if (activeStep) {
+            const activeDept = String(activeStep.dept || '').trim().toLowerCase();
+            const assignee = String(activeStep.assignee || '').trim();
+            const deadline = activeStep.deadline || activeStep.keyDate || todayStr;
+            const reviewStatus = String(activeStep.reviewStatus || '').trim();
+            const currentRealStepName = activeStep.name || ('Step ' + activeStep.step);
+
+            if (activeDept === targetDept.toLowerCase()) {
+              const isClientReview = (reviewStatus === 'Reviewing') || 
+                                     (currentRealStepName.toLowerCase().includes('client')) || 
+                                     (activeDept.includes('client'));
+
+              let taskCategory = 'ACTIVE';
+              if (isClientReview) taskCategory = 'CLIENT_REVIEW';
+              else if (deadline < todayStr) taskCategory = 'OVERDUE';
+              else if (!assignee) taskCategory = 'UNASSIGNED';
+              else {
+                let daysLeft = Math.ceil((new Date(deadline) - new Date(todayStr)) / 86400000);
+                if (daysLeft <= 2) taskCategory = 'DUE_SOON';
+              }
+
+              const taskObj = {
+                jobNumber: jobNumber,
+                client: client,
+                taskName: d.name || '未命名任務',
+                stepNumber: activeStep.step,
+                stepName: currentRealStepName,
+                assignee: assignee || pmName,
+                deadline: deadline,
+                isOverdue: (deadline < todayStr),
+                deliverableId: d.id,
+                pmName: pmName,
+                category: taskCategory
+              };
+
+              if (deadline) {
+                calendarTasks.push(taskObj);
+                calendarMap[deadline] = (calendarMap[deadline] || 0) + 1;
+              }
+
+              if (taskCategory === 'CLIENT_REVIEW') clientReviewTasks.push(taskObj);
+              else if (taskCategory === 'OVERDUE' || taskCategory === 'UNASSIGNED') riskTasks.push(taskObj);
+              else activeTasks.push(taskObj);
+
+            } else {
+              // 當前關卡在其他部門
+              const futureStep = d.workflow.find(s => s.step > activeStep.step && String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase());
+              if (futureStep) {
+                pipelineTasks.push({
+                  jobNumber: jobNumber,
+                  client: client,
+                  taskName: d.name || '未命名任務',
+                  stepName: futureStep.name,
+                  currentFrontStep: currentRealStepName + ' (' + activeStep.dept + ')',
+                  pmName: pmName,
+                  deliverableId: d.id
+                });
+              } else if (deptCompletedSteps.length > 0) {
+                // 本部門已完成，但專案整體卡在下游關卡 -> 封面顯示真實當前關卡 (如 Client Review)
+                const lastStep = deptCompletedSteps[deptCompletedSteps.length - 1];
+                let compDateStr = lastStep.completedAt ? lastStep.completedAt.split(' ')[0] : todayStr;
+                let compDate = new Date(compDateStr);
+                let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 5) {
+                  const compTask = {
+                    jobNumber: jobNumber,
+                    client: client,
+                    taskName: d.name || '未命名任務',
+                    stepNumber: lastStep.step,
+                    stepName: currentRealStepName, // 💡 印出專案當前真實關卡 (如 Client Review)
+                    assignee: lastStep.assignee || pmName,
+                    deliverableId: d.id,
+                    deadline: compDateStr,
+                    category: 'COMPLETED'
+                  };
+                  completedTasks.push(compTask);
+                  calendarTasks.push(compTask);
+                  calendarMap[compDateStr] = (calendarMap[compDateStr] || 0) + 1;
+                }
+              }
+            }
+          }
+        });
+      }
     }
+
+    const capacityList = Object.keys(capacityMap).map(k => capacityMap[k]);
 
     return {
       success: true,
       data: {
-        kpi: kpi,
-        capacityList: Object.values(membersMap),
+        capacityList: capacityList,
         calendarMap: calendarMap,
         calendarTasks: calendarTasks,
         riskTasks: riskTasks,
         activeTasks: activeTasks,
-        pipelineTasks: pipelineTasks
+        pipelineTasks: pipelineTasks,
+        clientReviewTasks: clientReviewTasks,
+        completedTasks: completedTasks
       }
     };
-
   } catch (e) {
-    return { success: false, message: e.message };
+    return { success: false, message: 'api_getDeptOperationData 錯誤: ' + e.message };
   }
 }
 

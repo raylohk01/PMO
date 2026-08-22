@@ -1,5 +1,5 @@
 <!-- ========================================== -->
-<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (日曆導航 + 終極防呆版) -->
+<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (月檢視網格重構版) -->
 <!-- ========================================== -->
 
 <div id="deptHeadSection" class="section-container" style="display: none;">
@@ -49,8 +49,8 @@
     </div>
   </div>
 
-  <!-- 💡 2. 頂部 5 欄 KPI 統計卡片 -->
-  <div class="row g-2 mb-3 row-cols-2 row-cols-md-5">
+  <!-- 💡 2. 頂部 7 欄 KPI 統計卡片 -->
+  <div class="row g-2 mb-3 row-cols-2 row-cols-md-4 row-cols-lg-7">
     <div class="col">
       <div class="card shadow-sm border-0 border-start border-4 border-danger cursor-pointer h-100" id="card_kpi_OVERDUE" onclick="filterOpTasksByKpi('OVERDUE')" style="transition: 0.2s;">
         <div class="card-body p-2 d-flex justify-content-between align-items-center">
@@ -110,6 +110,30 @@
         </div>
       </div>
     </div>
+
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-dark cursor-pointer h-100" id="card_kpi_CLIENT_REVIEW" onclick="filterOpTasksByKpi('CLIENT_REVIEW')" style="transition: 0.2s;">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">⏳ 客戶審批中</small>
+            <h4 class="fw-bold text-dark mb-0" id="op_kpi_clientReview">0</h4>
+          </div>
+          <i class="fas fa-hourglass-half fa-2x text-dark opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-success cursor-pointer h-100" id="card_kpi_COMPLETED" onclick="filterOpTasksByKpi('COMPLETED')" style="transition: 0.2s;">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">✅ 已完成(5天)</small>
+            <h4 class="fw-bold text-success mb-0" id="op_kpi_completed">0</h4>
+          </div>
+          <i class="fas fa-check-circle fa-2x text-success opacity-25"></i>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 💡 3. 同仁產能與負載面板 -->
@@ -124,22 +148,20 @@
     </div>
   </div>
 
-  <!-- 💡 4. 動態產能日曆 (支援前後導航切換) -->
+  <!-- 💡 4. 動態產能日曆 (標準 5 列 x 7 欄月曆網格版) -->
   <div class="card shadow-sm border-0 mb-3">
-    <div class="card-body p-2 bg-white rounded">
+    <div class="card-body p-3 bg-white rounded">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="fw-bold text-dark small">
-          <i class="fas fa-calendar-alt text-info me-1"></i> 部門營運日曆 (🖊️ 可快捷調整死線至空檔日)
+        <span class="fw-bold text-dark fs-6">
+          <i class="fas fa-calendar-alt text-info me-1"></i> 部門營運日曆 (🖊️ 點擊鉛筆快捷調整死線)
         </span>
         
         <div class="d-flex align-items-center gap-2">
-          <!-- 導航切換 -->
           <div class="btn-group btn-group-sm me-2" role="group">
             <button type="button" class="btn btn-outline-secondary" onclick="navigateCalendar(-1)" title="上一期"><i class="fas fa-chevron-left"></i></button>
             <button type="button" class="btn btn-outline-secondary fw-bold" onclick="resetCalendarDate()">本期</button>
             <button type="button" class="btn btn-outline-secondary" onclick="navigateCalendar(1)" title="下一期"><i class="fas fa-chevron-right"></i></button>
           </div>
-          <!-- 模式切換 -->
           <div class="btn-group btn-group-sm" role="group">
             <button type="button" class="btn btn-outline-secondary" id="btn_view_DAY" onclick="switchCalendarViewMode('DAY')">日</button>
             <button type="button" class="btn btn-outline-secondary active" id="btn_view_WEEK" onclick="switchCalendarViewMode('WEEK')">週</button>
@@ -149,16 +171,17 @@
       </div>
 
       <div id="op_calendarGridContainer">
-        <div id="op_calendarGrid" class="row g-1 text-center" style="font-size:0.8em;">
-          <div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>
+        <div id="op_calendarGrid">
+          <div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- 💡 5. 五欄式營運操作指揮區 -->
-  <div class="row g-2">
-    <div class="col" style="min-width: 200px;">
+  <!-- 💡 5. 7 欄式營運操作指揮區 -->
+  <div class="d-flex gap-2 overflow-auto pb-2" style="white-space: nowrap;">
+    
+    <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-danger h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
           <span class="fw-bold text-dark small"><i class="fas fa-exclamation-circle text-danger me-1"></i> 已到期</span>
@@ -170,7 +193,7 @@
       </div>
     </div>
 
-    <div class="col" style="min-width: 200px;">
+    <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-info h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
           <span class="fw-bold text-dark small"><i class="fas fa-user-plus text-info me-1"></i> 待分配</span>
@@ -182,7 +205,7 @@
       </div>
     </div>
 
-    <div class="col" style="min-width: 200px;">
+    <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-warning h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
           <span class="fw-bold text-dark small"><i class="fas fa-clock text-warning me-1"></i> 即將到期</span>
@@ -194,7 +217,7 @@
       </div>
     </div>
 
-    <div class="col" style="min-width: 200px;">
+    <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-primary h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
           <span class="fw-bold text-dark small"><i class="fas fa-running text-primary me-1"></i> 部門進行中</span>
@@ -206,7 +229,7 @@
       </div>
     </div>
 
-    <div class="col" style="min-width: 200px;">
+    <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-secondary h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
           <span class="fw-bold text-dark small"><i class="fas fa-forward text-secondary me-1"></i> 未來預備管線</span>
@@ -215,6 +238,57 @@
         <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_pipelineContainer">
           <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
         </div>
+      </div>
+    </div>
+
+    <div style="min-width: 230px; flex: 1;">
+      <div class="card shadow-sm border-0 border-top border-4 border-dark h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-hourglass-half text-dark me-1"></i> 客戶審批中</span>
+          <span class="badge bg-dark" id="op_countClientReview">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_clientReviewContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="min-width: 230px; flex: 1;">
+      <div class="card shadow-sm border-0 border-top border-4 border-success h-100">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+          <span class="fw-bold text-dark small"><i class="fas fa-check-circle text-success me-1"></i> 已完成(5天)</span>
+          <span class="badge bg-success" id="op_countCompleted">0 件</span>
+        </div>
+        <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_completedContainer">
+          <div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 💡 6. 統一風格 Bootstrap 修改死線 Modal -->
+<div class="modal fade" id="modalShiftDeadline" tabindex="-1" aria-hidden="true" style="z-index: 1060;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-warning text-dark py-3">
+        <h5 class="modal-title fw-bold"><i class="fas fa-calendar-alt me-2"></i>修改關卡死線 (Step Deadline)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4 bg-light">
+        <input type="hidden" id="shift_deliverableId">
+        <input type="hidden" id="shift_stepNumber">
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold text-dark fs-6">請選擇新的死線日期：</label>
+          <input type="date" class="form-control form-control-lg border-primary fw-bold text-dark" id="shift_newDate" style="cursor: pointer;">
+        </div>
+        <small class="text-muted"><i class="fas fa-info-circle me-1"></i>更新死線後，系統將同步更新部門日曆與工作流關卡時間。</small>
+      </div>
+      <div class="modal-footer bg-white border-0 py-3">
+        <button type="button" class="btn btn-secondary fw-bold px-3" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-warning fw-bold px-4 text-dark" onclick="submitQuickShiftDeadline()"><i class="fas fa-save me-1"></i>確認更新</button>
       </div>
     </div>
   </div>
@@ -229,6 +303,7 @@
   
   var currentCalendarMode = 'WEEK'; 
   var currentCalendarBaseDate = new Date(); 
+  var shiftDeadlineModalObj = null;
 
   function loadDeptHeadView(dept, simEmail) {
     var section = document.getElementById('deptHeadSection');
@@ -328,7 +403,7 @@
 
   function filterOpTasksByKpi(type) {
     selectedOpKpiFilter = selectedOpKpiFilter === type ? null : type; 
-    ['OVERDUE', 'DUE_SOON', 'UNASSIGNED', 'ACTIVE', 'PIPELINE'].forEach(function(kpi) {
+    ['OVERDUE', 'DUE_SOON', 'UNASSIGNED', 'ACTIVE', 'PIPELINE', 'CLIENT_REVIEW', 'COMPLETED'].forEach(function(kpi) {
       var el = document.getElementById('card_kpi_' + kpi);
       if (el) {
         if (selectedOpKpiFilter) {
@@ -357,9 +432,11 @@
     var containerDueSoon = document.getElementById('op_dueSoonContainer');
     var containerActive = document.getElementById('op_activeContainer');
     var containerPipeline = document.getElementById('op_pipelineContainer');
+    var containerClientReview = document.getElementById('op_clientReviewContainer');
+    var containerCompleted = document.getElementById('op_completedContainer');
 
     if (areaCap) areaCap.innerHTML = '<span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>';
-    if (areaCal) areaCal.innerHTML = '<div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>';
+    if (areaCal) areaCal.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>';
     
     var spinnerHtml = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i><br>載入中...</div>';
     if (containerOverdue) containerOverdue.innerHTML = spinnerHtml;
@@ -367,13 +444,13 @@
     if (containerDueSoon) containerDueSoon.innerHTML = spinnerHtml;
     if (containerActive) containerActive.innerHTML = spinnerHtml;
     if (containerPipeline) containerPipeline.innerHTML = spinnerHtml;
+    if (containerClientReview) containerClientReview.innerHTML = spinnerHtml;
+    if (containerCompleted) containerCompleted.innerHTML = spinnerHtml;
 
     var isEv1 = (customType && typeof customType === 'object' && customType.type);
     var safeType = (!isEv1 && typeof customType === 'string' && !customType.includes('[object')) ? customType : null;
-    var isEv2 = (start && typeof start === 'object' && start.type);
-    var safeStart = (!isEv2 && typeof start === 'string' && !start.includes('[object')) ? start : '';
-    var isEv3 = (end && typeof end === 'object' && end.type);
-    var safeEnd = (!isEv3 && typeof end === 'string' && !end.includes('[object')) ? end : '';
+    var safeStart = (typeof start === 'string') ? start : '';
+    var safeEnd = (typeof end === 'string') ? end : '';
 
     var pRange = safeType || currentOpTimeRange || 'NEXT_14_DAYS';
     var pStart = safeStart;
@@ -421,6 +498,7 @@
     area.innerHTML = html;
   }
 
+  // 💡 [重構升級] 月檢視 5 列 x 7 欄彈性多列渲染，徹底解決擠壓問題！
   function renderCapacityCalendar(calMap, tasksList) {
     var grid = document.getElementById('op_calendarGrid');
     if (!grid) return;
@@ -466,25 +544,38 @@
     }
 
     var html = '';
+    
+    // 表頭：週一至週日
     if (currentCalendarMode !== 'DAY') {
-      html += '<div class="row g-1 mb-1 text-center fw-bold text-muted" style="font-size:0.85em; width:100%; margin:0;">' +
-        '<div class="col">週一</div><div class="col">週二</div><div class="col">週三</div>' +
-        '<div class="col">週四</div><div class="col">週五</div><div class="col">週六</div><div class="col">週日</div>' +
-      '</div><div class="row g-1 text-center" style="font-size:0.85em; width:100%; margin:0;">';
-    } else {
-      html += '<div class="row g-1 text-center" style="font-size:0.85em; width:100%; margin:0;">';
+      html += '<div class="d-flex text-center fw-bold text-muted mb-1" style="font-size:0.9em;">' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週一</div>' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週二</div>' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週三</div>' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週四</div>' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週五</div>' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週六</div>' +
+        '<div style="flex:0 0 14.2857%; width:14.2857%;">週日</div>' +
+      '</div>';
     }
+
+    var minCardHeight = (currentCalendarMode === 'MONTH') ? '110px' : (currentCalendarMode === 'DAY' ? '280px' : '220px');
+    var colWidthStyle = (currentCalendarMode === 'DAY') ? 'flex:0 0 100%; width:100%;' : 'flex:0 0 14.2857%; width:14.2857%;';
+
+    // 使用 flex-wrap 容器，每 7 天自動換列！
+    html += '<div class="d-flex flex-wrap text-center" style="font-size:0.9em;">';
 
     daysToRender.forEach(function(dObj) {
       var dateStr = formatLocalYMD(dObj);
       var displayDate = (dObj.getMonth() + 1) + '/' + dObj.getDate();
       var dayName = ['日','一','二','三','四','五','六'][dObj.getDay()];
       var isToday = dateStr === realTodayStr;
+      var isCurrentMonth = (dObj.getMonth() === month);
 
       var dayTasks = (tasksList || []).filter(function(t){ return t.deadline === dateStr; });
       var taskCount = dayTasks.length;
 
-      var bgClass = isToday ? 'bg-warning bg-opacity-20 border-warning' : 'bg-white border-light';
+      // 當月與跨月外觀處理
+      var bgClass = isToday ? 'bg-warning bg-opacity-20 border-warning' : (isCurrentMonth ? 'bg-white border-light' : 'bg-light bg-opacity-50 border-light opacity-75');
       var badgeClass = 'bg-success';
 
       if (taskCount >= 3) {
@@ -499,20 +590,30 @@
       dayTasks.forEach(function(t) {
         var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
         var label = t.assignee ? t.assignee : '⚠️未分配';
+
+        var borderClass = 'border-primary text-primary';
+        if (t.category === 'OVERDUE') borderClass = 'border-danger text-danger';
+        else if (t.category === 'UNASSIGNED') borderClass = 'border-info text-info';
+        else if (t.category === 'DUE_SOON') borderClass = 'border-warning text-warning';
+        else if (t.category === 'CLIENT_REVIEW') borderClass = 'border-dark text-dark';
+        else if (t.category === 'COMPLETED') borderClass = 'border-success text-success';
         
-        tasksHtml += '<div class="bg-white border rounded p-2 mb-1 text-start text-truncate shadow-xs" style="font-size:0.8em; cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')" title="' + t.client + ' - ' + t.taskName + '">' +
-          '<strong>' + t.jobNumber + '</strong>: ' + label +
-          ' <a href="#" onclick="event.stopPropagation(); promptQuickShiftDeadline(\'' + t.deliverableId + '\', ' + t.stepNumber + ')" class="text-secondary ms-1" title="快捷改期"><i class="fas fa-pen"></i></a>' +
+        tasksHtml += '<div class="bg-white border-start border-4 ' + borderClass + ' rounded p-1 mb-1 text-start shadow-xs d-flex justify-content-between align-items-center" style="font-size:0.9em; cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')" title="' + t.client + ' - ' + t.taskName + '">' +
+          '<div class="text-truncate me-1">' +
+            '<strong class="text-dark fs-6 me-1">' + t.jobNumber + ':</strong>' +
+            '<span class="badge bg-light text-dark border fw-bold">' + label + '</span>' +
+          '</div>' +
+          '<a href="javascript:void(0)" onclick="event.stopPropagation(); openQuickShiftDeadlineModal(\'' + t.deliverableId + '\', ' + t.stepNumber + ', \'' + t.deadline + '\')" class="text-muted ms-1 p-1" title="快捷修改死線"><i class="fas fa-pen text-secondary"></i></a>' +
         '</div>';
       });
 
-      html += '<div class="col" style="min-width: 0;">' +
-        '<div class="card h-100 border ' + bgClass + ' shadow-xs" style="min-height: 180px;">' +
-          '<div class="card-header p-2 bg-transparent border-0 d-flex justify-content-between text-muted fw-bold" style="font-size:0.8em;">' +
+      html += '<div style="' + colWidthStyle + ' padding: 2px;">' +
+        '<div class="card h-100 border ' + bgClass + ' shadow-xs" style="min-height: ' + minCardHeight + ';">' +
+          '<div class="card-header p-1 bg-transparent border-0 d-flex justify-content-between text-muted fw-bold" style="font-size:0.85em;">' +
             '<span class="' + (isToday ? 'badge bg-warning text-dark fs-6' : '') + '">' + displayDate + (currentCalendarMode === 'DAY' ? ' (' + dayName + ')' : '') + '</span>' +
-            '<span class="badge ' + badgeClass + '" style="font-size:0.75em;">' + taskCount + '</span>' +
+            '<span class="badge ' + badgeClass + '" style="font-size:0.8em;">' + taskCount + '</span>' +
           '</div>' +
-          '<div class="card-body p-1">' +
+          '<div class="card-body p-1" style="max-height: 120px; overflow-y: auto;">' +
             (tasksHtml || '<small class="text-muted opacity-25" style="font-size:0.75em;">-</small>') +
           '</div>' +
         '</div>' +
@@ -531,10 +632,14 @@
     var containerDueSoon = document.getElementById('op_dueSoonContainer');
     var containerActive = document.getElementById('op_activeContainer');
     var containerPipeline = document.getElementById('op_pipelineContainer');
+    var containerClientReview = document.getElementById('op_clientReviewContainer');
+    var containerCompleted = document.getElementById('op_completedContainer');
 
     var baseRisk = rawOpData.riskTasks || [];
     var baseActive = rawOpData.activeTasks || [];
     var basePipeline = rawOpData.pipelineTasks || [];
+    var baseClientReview = rawOpData.clientReviewTasks || [];
+    var baseCompleted = rawOpData.completedTasks || [];
 
     var todayStr = new Date().toISOString().split('T')[0];
     var todayDate = new Date(todayStr);
@@ -548,78 +653,41 @@
     populateDaysLeft(baseRisk);
     populateDaysLeft(baseActive);
     populateDaysLeft(basePipeline);
+    populateDaysLeft(baseClientReview);
+    populateDaysLeft(baseCompleted);
 
     if (selectedOpMember) {
       baseRisk = baseRisk.filter(function(t){ return t.assignee === selectedOpMember; });
       baseActive = baseActive.filter(function(t){ return t.assignee === selectedOpMember; });
+      baseCompleted = baseCompleted.filter(function(t){ return t.assignee === selectedOpMember; });
       basePipeline = []; 
+      baseClientReview = [];
     }
 
-    var countOverdue = 0, countUnassigned = 0, countDueSoon = 0, countActive = 0, countPipeline = 0;
-    var tempProcessedKeys = new Set();
-    var tempActiveJobNumbers = new Set();
+    var overdueList = baseRisk.filter(function(t) { return t.isOverdue || t.deadline < todayStr; });
+    var unassignedList = baseRisk.filter(function(t) { return !t.isOverdue && t.deadline >= todayStr && !t.assignee; });
+    var dueSoonList = baseActive.filter(function(t) { return t.daysLeft <= 2; });
+    var activeList = baseActive.filter(function(t) { return t.daysLeft > 2; });
+    var pipelineList = basePipeline;
+    var clientReviewList = baseClientReview;
+    var completedList = baseCompleted;
 
-    [].concat(baseRisk, baseActive).forEach(function(t) {
-      var taskKey = (t.deliverableId || t.jobNumber) + '_' + (t.stepNumber || '1');
-      if (tempProcessedKeys.has(taskKey)) return;
-      if (t.jobNumber) tempActiveJobNumbers.add(String(t.jobNumber).trim().toLowerCase());
-
-      if (t.isOverdue || t.deadline < todayStr) { countOverdue++; tempProcessedKeys.add(taskKey); }
-      else if (!t.assignee) { countUnassigned++; tempProcessedKeys.add(taskKey); }
-      else if (t.daysLeft <= 2) { countDueSoon++; tempProcessedKeys.add(taskKey); }
-      else { countActive++; tempProcessedKeys.add(taskKey); }
-    });
-
-    basePipeline.forEach(function(p) {
-      if (!tempActiveJobNumbers.has(String(p.jobNumber || '').trim().toLowerCase())) countPipeline++;
-    });
-
-    if (document.getElementById('op_kpi_overdue')) document.getElementById('op_kpi_overdue').innerText = countOverdue;
-    if (document.getElementById('op_kpi_unassigned')) document.getElementById('op_kpi_unassigned').innerText = countUnassigned;
-    if (document.getElementById('op_kpi_dueSoon')) document.getElementById('op_kpi_dueSoon').innerText = countDueSoon;
-    if (document.getElementById('op_kpi_active')) document.getElementById('op_kpi_active').innerText = countActive;
-    if (document.getElementById('op_kpi_pipeline')) document.getElementById('op_kpi_pipeline').innerText = countPipeline;
+    if (document.getElementById('op_kpi_overdue')) document.getElementById('op_kpi_overdue').innerText = overdueList.length;
+    if (document.getElementById('op_kpi_unassigned')) document.getElementById('op_kpi_unassigned').innerText = unassignedList.length;
+    if (document.getElementById('op_kpi_dueSoon')) document.getElementById('op_kpi_dueSoon').innerText = dueSoonList.length;
+    if (document.getElementById('op_kpi_active')) document.getElementById('op_kpi_active').innerText = activeList.length;
+    if (document.getElementById('op_kpi_pipeline')) document.getElementById('op_kpi_pipeline').innerText = pipelineList.length;
+    if (document.getElementById('op_kpi_clientReview')) document.getElementById('op_kpi_clientReview').innerText = clientReviewList.length;
+    if (document.getElementById('op_kpi_completed')) document.getElementById('op_kpi_completed').innerText = completedList.length;
 
     if (selectedOpKpiFilter) {
-       if (selectedOpKpiFilter === 'OVERDUE') {
-          baseActive = []; basePipeline = [];
-          baseRisk = baseRisk.filter(function(t) { return t.isOverdue || t.deadline < todayStr; });
-       } else if (selectedOpKpiFilter === 'UNASSIGNED') {
-          baseActive = []; basePipeline = [];
-          baseRisk = baseRisk.filter(function(t) { return !t.assignee; });
-       } else if (selectedOpKpiFilter === 'DUE_SOON') {
-          baseRisk = []; basePipeline = [];
-          baseActive = baseActive.filter(function(t) { return t.daysLeft <= 2; });
-       } else if (selectedOpKpiFilter === 'ACTIVE') {
-          baseRisk = []; basePipeline = [];
-          baseActive = baseActive.filter(function(t) { return t.daysLeft > 2; });
-       } else if (selectedOpKpiFilter === 'PIPELINE') {
-          baseRisk = []; baseActive = [];
-       }
-    }
-
-    var overdueList = [], unassignedList = [], dueSoonList = [], activeList = [], pipelineList = [];
-    var processedKeys = new Set();
-    var activeJobNumbers = new Set();
-
-    [].concat(baseRisk, baseActive).forEach(function(t) {
-      var taskKey = (t.deliverableId || t.jobNumber) + '_' + (t.stepNumber || '1');
-      if (processedKeys.has(taskKey)) return;
-
-      if (t.jobNumber) activeJobNumbers.add(String(t.jobNumber).trim().toLowerCase());
-
-      if (t.isOverdue || t.deadline < todayStr) { overdueList.push(t); processedKeys.add(taskKey); }
-      else if (!t.assignee) { unassignedList.push(t); processedKeys.add(taskKey); }
-      else if (t.daysLeft <= 2) { dueSoonList.push(t); processedKeys.add(taskKey); }
-      else { activeList.push(t); processedKeys.add(taskKey); }
-    });
-
-    if (!selectedOpMember && (!selectedOpKpiFilter || selectedOpKpiFilter === 'PIPELINE')) {
-      basePipeline.forEach(function(p) {
-        if (!activeJobNumbers.has(String(p.jobNumber || '').trim().toLowerCase())) {
-          pipelineList.push(p);
-        }
-      });
+       if (selectedOpKpiFilter === 'OVERDUE') { unassignedList = []; dueSoonList = []; activeList = []; pipelineList = []; clientReviewList = []; completedList = []; }
+       else if (selectedOpKpiFilter === 'UNASSIGNED') { overdueList = []; dueSoonList = []; activeList = []; pipelineList = []; clientReviewList = []; completedList = []; }
+       else if (selectedOpKpiFilter === 'DUE_SOON') { overdueList = []; unassignedList = []; activeList = []; pipelineList = []; clientReviewList = []; completedList = []; }
+       else if (selectedOpKpiFilter === 'ACTIVE') { overdueList = []; unassignedList = []; dueSoonList = []; pipelineList = []; clientReviewList = []; completedList = []; }
+       else if (selectedOpKpiFilter === 'PIPELINE') { overdueList = []; unassignedList = []; dueSoonList = []; activeList = []; clientReviewList = []; completedList = []; }
+       else if (selectedOpKpiFilter === 'CLIENT_REVIEW') { overdueList = []; unassignedList = []; dueSoonList = []; activeList = []; pipelineList = []; completedList = []; }
+       else if (selectedOpKpiFilter === 'COMPLETED') { overdueList = []; unassignedList = []; dueSoonList = []; activeList = []; pipelineList = []; clientReviewList = []; }
     }
 
     if (document.getElementById('op_countOverdue')) document.getElementById('op_countOverdue').innerText = overdueList.length + ' 件';
@@ -627,6 +695,8 @@
     if (document.getElementById('op_countDueSoon')) document.getElementById('op_countDueSoon').innerText = dueSoonList.length + ' 件';
     if (document.getElementById('op_countActive')) document.getElementById('op_countActive').innerText = activeList.length + ' 件';
     if (document.getElementById('op_countPipeline')) document.getElementById('op_countPipeline').innerText = pipelineList.length + ' 件';
+    if (document.getElementById('op_countClientReview')) document.getElementById('op_countClientReview').innerText = clientReviewList.length + ' 件';
+    if (document.getElementById('op_countCompleted')) document.getElementById('op_countCompleted').innerText = completedList.length + ' 件';
 
     function buildTaskCardHtml(t, borderClass, showAssignBox) {
       var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
@@ -644,10 +714,10 @@
         '</div>' : '';
 
       return '<div class="card mb-2 border-start border-4 ' + borderClass + ' shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
-        '<div class="card-body p-2" style="font-size:0.85em;">' +
+        '<div class="card-body p-2" style="font-size:0.85em; white-space: normal;">' +
           '<div class="d-flex justify-content-between align-items-center mb-1">' +
             '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
-            '<small class="' + (t.isOverdue ? 'text-danger fw-bold' : 'text-muted') + '"><i class="fas fa-clock"></i> ' + t.deadline + '</small>' +
+            '<small class="' + (t.isOverdue ? 'text-danger fw-bold' : 'text-muted') + '"><i class="fas fa-clock"></i> ' + (t.deadline || '已完成') + '</small>' +
           '</div>' +
           '<h6 class="fw-bold mb-1 text-dark text-truncate">' + t.client + ' - ' + t.taskName + '</h6>' +
           '<div class="d-flex justify-content-between text-muted mb-1">' +
@@ -674,7 +744,7 @@
           var displayAssignee = t.assignee || t.pmName || '專案 PM';
 
           pHtml += '<div class="card mb-2 border-start border-4 border-secondary shadow-sm task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
-            '<div class="card-body p-2" style="font-size:0.85em;">' +
+            '<div class="card-body p-2" style="font-size:0.85em; white-space: normal;">' +
               '<div class="d-flex justify-content-between align-items-center mb-1">' +
                 '<span class="badge bg-secondary">預計流入: ' + t.stepName + '</span>' +
                 '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
@@ -689,6 +759,14 @@
         });
         containerPipeline.innerHTML = pHtml;
       }
+    }
+
+    if (containerClientReview) {
+      containerClientReview.innerHTML = clientReviewList.length === 0 ? '<div class="text-center text-muted py-4 small">無審批中項目</div>' : clientReviewList.map(function(t){ return buildTaskCardHtml(t, 'border-dark', false); }).join('');
+    }
+
+    if (containerCompleted) {
+      containerCompleted.innerHTML = completedList.length === 0 ? '<div class="text-center text-muted py-4 small">無近期完成項目</div>' : completedList.map(function(t){ return buildTaskCardHtml(t, 'border-success', false); }).join('');
     }
   }
 
@@ -707,17 +785,43 @@
     }).api_dispatchWorkflowStep('', deliverableId, stepNumber, assignee, currentOpDept);
   }
 
-  function promptQuickShiftDeadline(deliverableId, stepNumber) {
-    var newDate = prompt('請輸入新的關卡死線 (yyyy-MM-dd)：', new Date().toISOString().split('T')[0]);
-    if (newDate) {
-      google.script.run.withSuccessHandler(function(res) {
-        if (res && res.success) {
-          alert('死線調整成功！');
-          fetchDeptOperationData();
-        } else { 
-          alert('調整失敗: ' + res.message); 
-        }
-      }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim());
+  function openQuickShiftDeadlineModal(deliverableId, stepNumber, currentDeadline) {
+    document.getElementById('shift_deliverableId').value = deliverableId || '';
+    document.getElementById('shift_stepNumber').value = stepNumber || '';
+    
+    var dateInput = document.getElementById('shift_newDate');
+    if (dateInput) {
+      dateInput.value = (currentDeadline && currentDeadline.length === 10) ? currentDeadline : new Date().toISOString().split('T')[0];
     }
+
+    var modalEl = document.getElementById('modalShiftDeadline');
+    if (modalEl) {
+      shiftDeadlineModalObj = new bootstrap.Modal(modalEl);
+      shiftDeadlineModalObj.show();
+    }
+  }
+
+  function submitQuickShiftDeadline() {
+    var deliverableId = document.getElementById('shift_deliverableId').value;
+    var stepNumber = parseInt(document.getElementById('shift_stepNumber').value, 10);
+    var newDate = document.getElementById('shift_newDate').value;
+
+    if (!newDate) {
+      if (typeof showAlert === 'function') showAlert('請選擇有效的死線日期！', 'warning');
+      else alert('請選擇有效的死線日期！');
+      return;
+    }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (shiftDeadlineModalObj) shiftDeadlineModalObj.hide();
+      if (res && res.success) {
+        if (typeof showAlert === 'function') showAlert('死線調整成功！', 'success');
+        else alert('死線調整成功！');
+        fetchDeptOperationData();
+      } else { 
+        if (typeof showAlert === 'function') showAlert('調整失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        else alert('調整失敗: ' + (res ? res.message : '未知錯誤')); 
+      }
+    }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim());
   }
 </script>
