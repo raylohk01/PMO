@@ -1,5 +1,5 @@
 <!-- ========================================== -->
-<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (日曆放大 & 5欄互斥去重版) -->
+<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (日曆導航 + 終極防呆版) -->
 <!-- ========================================== -->
 
 <div id="deptHeadSection" class="section-container" style="display: none;">
@@ -49,13 +49,13 @@
     </div>
   </div>
 
-  <!-- 💡 2. 頂部 KPI 統計卡片 -->
-  <div class="row g-2 mb-3">
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 border-start border-4 border-danger cursor-pointer" onclick="filterOpTasksByKpi('OVERDUE')">
+  <!-- 💡 2. 頂部 5 欄 KPI 統計卡片 -->
+  <div class="row g-2 mb-3 row-cols-2 row-cols-md-5">
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-danger cursor-pointer h-100" id="card_kpi_OVERDUE" onclick="filterOpTasksByKpi('OVERDUE')" style="transition: 0.2s;">
         <div class="card-body p-2 d-flex justify-content-between align-items-center">
           <div>
-            <small class="text-muted fw-bold">🚨 已到期 (Overdue)</small>
+            <small class="text-muted fw-bold">🚨 已到期</small>
             <h4 class="fw-bold text-danger mb-0" id="op_kpi_overdue">0</h4>
           </div>
           <i class="fas fa-exclamation-circle fa-2x text-danger opacity-25"></i>
@@ -63,23 +63,11 @@
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 border-start border-4 border-warning cursor-pointer" onclick="filterOpTasksByKpi('DUE_SOON')">
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-info cursor-pointer h-100" id="card_kpi_UNASSIGNED" onclick="filterOpTasksByKpi('UNASSIGNED')" style="transition: 0.2s;">
         <div class="card-body p-2 d-flex justify-content-between align-items-center">
           <div>
-            <small class="text-muted fw-bold">⚠️ 即將到期 (48h內)</small>
-            <h4 class="fw-bold text-warning mb-0" id="op_kpi_dueSoon">0</h4>
-          </div>
-          <i class="fas fa-clock fa-2x text-warning opacity-25"></i>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 border-start border-4 border-info cursor-pointer" onclick="filterOpTasksByKpi('UNASSIGNED')">
-        <div class="card-body p-2 d-flex justify-content-between align-items-center">
-          <div>
-            <small class="text-muted fw-bold">📥 待分配 (Unassigned)</small>
+            <small class="text-muted fw-bold">📥 待分配</small>
             <h4 class="fw-bold text-info mb-0" id="op_kpi_unassigned">0</h4>
           </div>
           <i class="fas fa-user-plus fa-2x text-info opacity-25"></i>
@@ -87,14 +75,38 @@
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 border-start border-4 border-success cursor-pointer" onclick="filterOpTasksByKpi('ON_TRACK')">
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-warning cursor-pointer h-100" id="card_kpi_DUE_SOON" onclick="filterOpTasksByKpi('DUE_SOON')" style="transition: 0.2s;">
         <div class="card-body p-2 d-flex justify-content-between align-items-center">
           <div>
-            <small class="text-muted fw-bold">🟢 穩步推進 (On Track)</small>
-            <h4 class="fw-bold text-success mb-0" id="op_kpi_onTrack">0</h4>
+            <small class="text-muted fw-bold">⚠️ 即將到期</small>
+            <h4 class="fw-bold text-warning mb-0" id="op_kpi_dueSoon">0</h4>
           </div>
-          <i class="fas fa-check-circle fa-2x text-success opacity-25"></i>
+          <i class="fas fa-clock fa-2x text-warning opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-primary cursor-pointer h-100" id="card_kpi_ACTIVE" onclick="filterOpTasksByKpi('ACTIVE')" style="transition: 0.2s;">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">🏃 部門進行中</small>
+            <h4 class="fw-bold text-primary mb-0" id="op_kpi_active">0</h4>
+          </div>
+          <i class="fas fa-running fa-2x text-primary opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-secondary cursor-pointer h-100" id="card_kpi_PIPELINE" onclick="filterOpTasksByKpi('PIPELINE')" style="transition: 0.2s;">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">🔮 未來管線</small>
+            <h4 class="fw-bold text-secondary mb-0" id="op_kpi_pipeline">0</h4>
+          </div>
+          <i class="fas fa-forward fa-2x text-secondary opacity-25"></i>
         </div>
       </div>
     </div>
@@ -112,7 +124,7 @@
     </div>
   </div>
 
-  <!-- 💡 4. 動態產能日曆 (Google Calendar 網格風格，已放大一倍) -->
+  <!-- 💡 4. 動態產能日曆 (支援前後導航切換) -->
   <div class="card shadow-sm border-0 mb-3">
     <div class="card-body p-2 bg-white rounded">
       <div class="d-flex justify-content-between align-items-center mb-2">
@@ -120,8 +132,14 @@
           <i class="fas fa-calendar-alt text-info me-1"></i> 部門營運日曆 (🖊️ 可快捷調整死線至空檔日)
         </span>
         
-        <!-- 視圖切換按鈕群 (日 / 週 / 月，預設為週) -->
         <div class="d-flex align-items-center gap-2">
+          <!-- 導航切換 -->
+          <div class="btn-group btn-group-sm me-2" role="group">
+            <button type="button" class="btn btn-outline-secondary" onclick="navigateCalendar(-1)" title="上一期"><i class="fas fa-chevron-left"></i></button>
+            <button type="button" class="btn btn-outline-secondary fw-bold" onclick="resetCalendarDate()">本期</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="navigateCalendar(1)" title="下一期"><i class="fas fa-chevron-right"></i></button>
+          </div>
+          <!-- 模式切換 -->
           <div class="btn-group btn-group-sm" role="group">
             <button type="button" class="btn btn-outline-secondary" id="btn_view_DAY" onclick="switchCalendarViewMode('DAY')">日</button>
             <button type="button" class="btn btn-outline-secondary active" id="btn_view_WEEK" onclick="switchCalendarViewMode('WEEK')">週</button>
@@ -130,7 +148,6 @@
         </div>
       </div>
 
-      <!-- 日曆主要網格容器 -->
       <div id="op_calendarGridContainer">
         <div id="op_calendarGrid" class="row g-1 text-center" style="font-size:0.8em;">
           <div class="col text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>
@@ -139,9 +156,8 @@
     </div>
   </div>
 
-  <!-- 💡 5. 五欄式營運操作指揮區 (獨立拆分 + 互斥去重版) -->
+  <!-- 💡 5. 五欄式營運操作指揮區 -->
   <div class="row g-2">
-    <!-- 1. 🚨 已到期 (Overdue) -->
     <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-danger h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
@@ -154,7 +170,6 @@
       </div>
     </div>
 
-    <!-- 2. 📥 待分配 (Unassigned) -->
     <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-info h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
@@ -167,7 +182,6 @@
       </div>
     </div>
 
-    <!-- 3. ⚠️ 即將到期 (48h內) -->
     <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-warning h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
@@ -180,7 +194,6 @@
       </div>
     </div>
 
-    <!-- 4. 🏃 部門進行中 (Active) -->
     <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-primary h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
@@ -193,7 +206,6 @@
       </div>
     </div>
 
-    <!-- 5. 🔮 未來預備管線 (Pipeline) -->
     <div class="col" style="min-width: 200px;">
       <div class="card shadow-sm border-0 border-top border-4 border-secondary h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
@@ -206,40 +218,58 @@
       </div>
     </div>
   </div>
-
 </div>
 
 <script>
-  // 💡 所有全域變數統一在最頂部宣告
   var currentOpDept = '';
   var currentOpTimeRange = 'NEXT_14_DAYS';
   var selectedOpMember = null;
   var selectedOpKpiFilter = null;
   var rawOpData = null;
+  
   var currentCalendarMode = 'WEEK'; 
+  var currentCalendarBaseDate = new Date(); 
 
   function loadDeptHeadView(dept, simEmail) {
     var section = document.getElementById('deptHeadSection');
     if (section) section.style.display = 'block';
 
-    if (dept && typeof dept === 'string' && dept.trim() !== '') {
-      currentOpDept = dept.trim();
-    } else if (typeof currentUser !== 'undefined' && currentUser && currentUser.department) {
-      currentOpDept = currentUser.department.trim();
+    var isEvent = (dept && typeof dept === 'object' && dept.type);
+    var safeDept = (!isEvent && typeof dept === 'string' && dept.trim() !== '' && !dept.includes('[object')) ? dept.trim() : null;
+
+    if (safeDept) {
+      currentOpDept = safeDept;
+    } else if (typeof currentUser !== 'undefined' && currentUser) {
+      if (currentUser.role === 'Management' || currentUser.department === 'Management') {
+        currentOpDept = 'PM';
+      } else if (currentUser.department && typeof currentUser.department === 'string' && currentUser.department.trim() !== '') {
+        currentOpDept = currentUser.department.trim();
+      } else {
+        currentOpDept = 'Editorial'; 
+      }
     } else {
       currentOpDept = 'Editorial';
     }
+
+    currentOpDept = String(currentOpDept).trim();
 
     var badgeEl = document.getElementById('op_deptBadge');
     if (badgeEl) badgeEl.innerText = currentOpDept;
 
     var selectEl = document.getElementById('op_deptSelect');
     if (selectEl) {
+      var found = false;
       for (var i = 0; i < selectEl.options.length; i++) {
         if (selectEl.options[i].value.toLowerCase() === currentOpDept.toLowerCase()) {
           selectEl.selectedIndex = i;
+          found = true;
           break;
         }
+      }
+      if (!found) {
+        selectEl.selectedIndex = 0;
+        currentOpDept = 'Editorial';
+        if (badgeEl) badgeEl.innerText = currentOpDept;
       }
     }
 
@@ -248,28 +278,43 @@
 
   function switchDeptKanbanView(dept) {
     if (!dept) return;
-    currentOpDept = dept;
+    currentOpDept = String(dept).trim();
     var badgeEl = document.getElementById('op_deptBadge');
-    if (badgeEl) badgeEl.innerText = dept;
+    if (badgeEl) badgeEl.innerText = currentOpDept;
     fetchDeptOperationData();
   }
 
   function switchCalendarViewMode(mode) {
-    currentCalendarMode = mode;
+    currentCalendarMode = String(mode).trim();
+    currentCalendarBaseDate = new Date(); 
     ['DAY', 'WEEK', 'MONTH'].forEach(function(m) {
       var btn = document.getElementById('btn_view_' + m);
-      if (btn) btn.classList.toggle('active', m === mode);
+      if (btn) btn.classList.toggle('active', m === currentCalendarMode);
     });
-    if (rawOpData) {
-      renderCapacityCalendar(rawOpData.calendarMap || {}, rawOpData.calendarTasks || []);
+    if (rawOpData) renderCapacityCalendar(rawOpData.calendarMap || {}, rawOpData.calendarTasks || []);
+  }
+
+  function navigateCalendar(direction) {
+    if (currentCalendarMode === 'DAY') {
+      currentCalendarBaseDate.setDate(currentCalendarBaseDate.getDate() + direction);
+    } else if (currentCalendarMode === 'WEEK') {
+      currentCalendarBaseDate.setDate(currentCalendarBaseDate.getDate() + (direction * 7));
+    } else if (currentCalendarMode === 'MONTH') {
+      currentCalendarBaseDate.setMonth(currentCalendarBaseDate.getMonth() + direction);
     }
+    if (rawOpData) renderCapacityCalendar(rawOpData.calendarMap || {}, rawOpData.calendarTasks || []);
+  }
+
+  function resetCalendarDate() {
+    currentCalendarBaseDate = new Date();
+    if (rawOpData) renderCapacityCalendar(rawOpData.calendarMap || {}, rawOpData.calendarTasks || []);
   }
 
   function changeOpTimeRange(range) {
-    currentOpTimeRange = range;
+    currentOpTimeRange = String(range).trim();
     ['TODAY', 'LAST_5_DAYS', 'NEXT_14_DAYS', 'LAST_30_DAYS'].forEach(function(r) {
       var btn = document.getElementById('btn_op_' + r);
-      if (btn) btn.classList.toggle('active', r === range);
+      if (btn) btn.classList.toggle('active', r === currentOpTimeRange);
     });
     fetchDeptOperationData();
   }
@@ -281,9 +326,20 @@
     fetchDeptOperationData('CUSTOM', start, end);
   }
 
-  // 💡 補回 KPI 篩選功能
   function filterOpTasksByKpi(type) {
-    selectedOpKpiFilter = selectedOpKpiFilter === type ? null : type;
+    selectedOpKpiFilter = selectedOpKpiFilter === type ? null : type; 
+    ['OVERDUE', 'DUE_SOON', 'UNASSIGNED', 'ACTIVE', 'PIPELINE'].forEach(function(kpi) {
+      var el = document.getElementById('card_kpi_' + kpi);
+      if (el) {
+        if (selectedOpKpiFilter) {
+          el.style.opacity = (selectedOpKpiFilter === kpi) ? '1' : '0.4';
+          el.style.transform = (selectedOpKpiFilter === kpi) ? 'scale(1.02)' : 'scale(1)';
+        } else {
+          el.style.opacity = '1';
+          el.style.transform = 'scale(1)';
+        }
+      }
+    });
     renderOpColumns();
   }
 
@@ -312,39 +368,28 @@
     if (containerActive) containerActive.innerHTML = spinnerHtml;
     if (containerPipeline) containerPipeline.innerHTML = spinnerHtml;
 
-    var pRange = customType || currentOpTimeRange;
-    var pStart = start || '';
-    var pEnd = end || '';
-    var targetDept = currentOpDept || 'Editorial';
+    var isEv1 = (customType && typeof customType === 'object' && customType.type);
+    var safeType = (!isEv1 && typeof customType === 'string' && !customType.includes('[object')) ? customType : null;
+    var isEv2 = (start && typeof start === 'object' && start.type);
+    var safeStart = (!isEv2 && typeof start === 'string' && !start.includes('[object')) ? start : '';
+    var isEv3 = (end && typeof end === 'object' && end.type);
+    var safeEnd = (!isEv3 && typeof end === 'string' && !end.includes('[object')) ? end : '';
+
+    var pRange = safeType || currentOpTimeRange || 'NEXT_14_DAYS';
+    var pStart = safeStart;
+    var pEnd = safeEnd;
+    var targetDept = String(currentOpDept || 'Editorial').trim();
 
     google.script.run
       .withSuccessHandler(function(res) {
         if (!res || !res.success) {
-          console.error('API Error:', res);
           if (typeof showAlert === 'function') showAlert('載入失敗：' + (res ? res.message : '未知'), 'danger');
-          else alert('載入失敗：' + (res ? res.message : '未知'));
           return;
         }
         rawOpData = res.data;
-
-        var elOverdue = document.getElementById('op_kpi_overdue');
-        var elDueSoon = document.getElementById('op_kpi_dueSoon');
-        var elUnassigned = document.getElementById('op_kpi_unassigned');
-        var elOnTrack = document.getElementById('op_kpi_onTrack');
-
-        if (elOverdue) elOverdue.innerText = res.data.kpi ? res.data.kpi.overdue : 0;
-        if (elDueSoon) elDueSoon.innerText = res.data.kpi ? res.data.kpi.dueSoon : 0;
-        if (elUnassigned) elUnassigned.innerText = res.data.kpi ? res.data.kpi.unassigned : 0;
-        if (elOnTrack) elOnTrack.innerText = res.data.kpi ? res.data.kpi.onTrack : 0;
-
         renderMemberCapacityChips(res.data.capacityList || []);
         renderCapacityCalendar(res.data.calendarMap || {}, res.data.calendarTasks || []);
         renderOpColumns();
-      })
-      .withFailureHandler(function(err) {
-        console.error('GAS Fail:', err);
-        if (typeof showAlert === 'function') showAlert('後端錯誤: ' + err.message, 'danger');
-        else alert('後端錯誤: ' + err.message);
       })
       .api_getDeptOperationData(targetDept, pRange, pStart, pEnd);
   }
@@ -373,7 +418,6 @@
         '</button>';
       });
     }
-
     area.innerHTML = html;
   }
 
@@ -381,10 +425,11 @@
     var grid = document.getElementById('op_calendarGrid');
     if (!grid) return;
 
-    var today = new Date();
-    var year = today.getFullYear();
-    var month = today.getMonth();
-    var date = today.getDate();
+    var realToday = new Date();
+    var baseDate = new Date(currentCalendarBaseDate);
+    var year = baseDate.getFullYear();
+    var month = baseDate.getMonth();
+    var date = baseDate.getDate();
 
     function formatLocalYMD(dObj) {
       var y = dObj.getFullYear();
@@ -393,14 +438,14 @@
       return y + '-' + m + '-' + d;
     }
 
-    var todayStr = formatLocalYMD(today);
+    var realTodayStr = formatLocalYMD(realToday);
     var daysToRender = [];
 
     if (currentCalendarMode === 'DAY') {
-      daysToRender.push(new Date(today));
+      daysToRender.push(new Date(baseDate));
     } else if (currentCalendarMode === 'WEEK') {
-      var dayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
-      var startOfWeek = new Date(today);
+      var dayOfWeek = baseDate.getDay() === 0 ? 7 : baseDate.getDay();
+      var startOfWeek = new Date(baseDate);
       startOfWeek.setDate(date - (dayOfWeek - 1));
       for (var i = 0; i < 7; i++) {
         var nextDay = new Date(startOfWeek);
@@ -434,7 +479,7 @@
       var dateStr = formatLocalYMD(dObj);
       var displayDate = (dObj.getMonth() + 1) + '/' + dObj.getDate();
       var dayName = ['日','一','二','三','四','五','六'][dObj.getDay()];
-      var isToday = dateStr === todayStr;
+      var isToday = dateStr === realTodayStr;
 
       var dayTasks = (tasksList || []).filter(function(t){ return t.deadline === dateStr; });
       var taskCount = dayTasks.length;
@@ -487,65 +532,91 @@
     var containerActive = document.getElementById('op_activeContainer');
     var containerPipeline = document.getElementById('op_pipelineContainer');
 
-    var rawRisk = rawOpData.riskTasks || [];
-    var rawActive = rawOpData.activeTasks || [];
-    var rawPipeline = rawOpData.pipelineTasks || [];
+    var baseRisk = rawOpData.riskTasks || [];
+    var baseActive = rawOpData.activeTasks || [];
+    var basePipeline = rawOpData.pipelineTasks || [];
 
     var todayStr = new Date().toISOString().split('T')[0];
+    var todayDate = new Date(todayStr);
+
+    function populateDaysLeft(tasks) {
+      tasks.forEach(function(t) {
+        if (t.deadline) t.daysLeft = Math.ceil((new Date(t.deadline) - todayDate) / 86400000);
+        else t.daysLeft = 0;
+      });
+    }
+    populateDaysLeft(baseRisk);
+    populateDaysLeft(baseActive);
+    populateDaysLeft(basePipeline);
 
     if (selectedOpMember) {
-      rawRisk = rawRisk.filter(function(t){ return t.assignee === selectedOpMember; });
-      rawActive = rawActive.filter(function(t){ return t.assignee === selectedOpMember; });
-      rawPipeline = []; 
+      baseRisk = baseRisk.filter(function(t){ return t.assignee === selectedOpMember; });
+      baseActive = baseActive.filter(function(t){ return t.assignee === selectedOpMember; });
+      basePipeline = []; 
     }
+
+    var countOverdue = 0, countUnassigned = 0, countDueSoon = 0, countActive = 0, countPipeline = 0;
+    var tempProcessedKeys = new Set();
+    var tempActiveJobNumbers = new Set();
+
+    [].concat(baseRisk, baseActive).forEach(function(t) {
+      var taskKey = (t.deliverableId || t.jobNumber) + '_' + (t.stepNumber || '1');
+      if (tempProcessedKeys.has(taskKey)) return;
+      if (t.jobNumber) tempActiveJobNumbers.add(String(t.jobNumber).trim().toLowerCase());
+
+      if (t.isOverdue || t.deadline < todayStr) { countOverdue++; tempProcessedKeys.add(taskKey); }
+      else if (!t.assignee) { countUnassigned++; tempProcessedKeys.add(taskKey); }
+      else if (t.daysLeft <= 2) { countDueSoon++; tempProcessedKeys.add(taskKey); }
+      else { countActive++; tempProcessedKeys.add(taskKey); }
+    });
+
+    basePipeline.forEach(function(p) {
+      if (!tempActiveJobNumbers.has(String(p.jobNumber || '').trim().toLowerCase())) countPipeline++;
+    });
+
+    if (document.getElementById('op_kpi_overdue')) document.getElementById('op_kpi_overdue').innerText = countOverdue;
+    if (document.getElementById('op_kpi_unassigned')) document.getElementById('op_kpi_unassigned').innerText = countUnassigned;
+    if (document.getElementById('op_kpi_dueSoon')) document.getElementById('op_kpi_dueSoon').innerText = countDueSoon;
+    if (document.getElementById('op_kpi_active')) document.getElementById('op_kpi_active').innerText = countActive;
+    if (document.getElementById('op_kpi_pipeline')) document.getElementById('op_kpi_pipeline').innerText = countPipeline;
 
     if (selectedOpKpiFilter) {
        if (selectedOpKpiFilter === 'OVERDUE') {
-          rawActive = []; rawPipeline = [];
-          rawRisk = rawRisk.filter(function(t) { return t.isOverdue || t.deadline < todayStr; });
+          baseActive = []; basePipeline = [];
+          baseRisk = baseRisk.filter(function(t) { return t.isOverdue || t.deadline < todayStr; });
        } else if (selectedOpKpiFilter === 'UNASSIGNED') {
-          rawActive = []; rawPipeline = [];
-          rawRisk = rawRisk.filter(function(t) { return !t.assignee; });
+          baseActive = []; basePipeline = [];
+          baseRisk = baseRisk.filter(function(t) { return !t.assignee; });
        } else if (selectedOpKpiFilter === 'DUE_SOON') {
-          rawRisk = []; rawPipeline = [];
-          rawActive = rawActive.filter(function(t) { return t.daysLeft <= 2; });
-       } else if (selectedOpKpiFilter === 'ON_TRACK') {
-          rawRisk = []; rawPipeline = [];
-          rawActive = rawActive.filter(function(t) { return t.daysLeft > 2; });
+          baseRisk = []; basePipeline = [];
+          baseActive = baseActive.filter(function(t) { return t.daysLeft <= 2; });
+       } else if (selectedOpKpiFilter === 'ACTIVE') {
+          baseRisk = []; basePipeline = [];
+          baseActive = baseActive.filter(function(t) { return t.daysLeft > 2; });
+       } else if (selectedOpKpiFilter === 'PIPELINE') {
+          baseRisk = []; baseActive = [];
        }
     }
 
+    var overdueList = [], unassignedList = [], dueSoonList = [], activeList = [], pipelineList = [];
     var processedKeys = new Set();
     var activeJobNumbers = new Set();
 
-    var overdueList = [], unassignedList = [], dueSoonList = [], activeList = [], pipelineList = [];
-    var allCurrentTasks = [].concat(rawRisk, rawActive);
-
-    allCurrentTasks.forEach(function(t) {
+    [].concat(baseRisk, baseActive).forEach(function(t) {
       var taskKey = (t.deliverableId || t.jobNumber) + '_' + (t.stepNumber || '1');
       if (processedKeys.has(taskKey)) return;
 
       if (t.jobNumber) activeJobNumbers.add(String(t.jobNumber).trim().toLowerCase());
 
-      if (t.isOverdue || t.deadline < todayStr) {
-        overdueList.push(t);
-        processedKeys.add(taskKey);
-      } else if (!t.assignee) {
-        unassignedList.push(t);
-        processedKeys.add(taskKey);
-      } else if (t.daysLeft <= 2) {
-        dueSoonList.push(t);
-        processedKeys.add(taskKey);
-      } else {
-        activeList.push(t);
-        processedKeys.add(taskKey);
-      }
+      if (t.isOverdue || t.deadline < todayStr) { overdueList.push(t); processedKeys.add(taskKey); }
+      else if (!t.assignee) { unassignedList.push(t); processedKeys.add(taskKey); }
+      else if (t.daysLeft <= 2) { dueSoonList.push(t); processedKeys.add(taskKey); }
+      else { activeList.push(t); processedKeys.add(taskKey); }
     });
 
-    if (!selectedOpMember && !selectedOpKpiFilter) {
-      rawPipeline.forEach(function(p) {
-        var pJob = String(p.jobNumber || '').trim().toLowerCase();
-        if (!activeJobNumbers.has(pJob)) {
+    if (!selectedOpMember && (!selectedOpKpiFilter || selectedOpKpiFilter === 'PIPELINE')) {
+      basePipeline.forEach(function(p) {
+        if (!activeJobNumbers.has(String(p.jobNumber || '').trim().toLowerCase())) {
           pipelineList.push(p);
         }
       });
@@ -564,7 +635,6 @@
         optHtml += '<option value="' + m.name + '">' + m.name + ' (' + m.inProgress + '件)</option>';
       });
 
-      // 💡 方案 A 嚴格隱藏：只有被要求顯示選單「且」真的沒有負責人時，才顯示派案選單
       var assignSection = (showAssignBox && !t.assignee) ? 
         '<div class="border-top pt-2" onclick="event.stopPropagation();">' +
           '<div class="input-group input-group-sm">' +
@@ -624,21 +694,15 @@
 
   function quickDispatchMember(deliverableId, stepNumber) {
     var sel = document.getElementById('assign_select_' + deliverableId + '_' + stepNumber);
-    if (!sel || !sel.value) {
-      if (typeof showAlert === 'function') showAlert('請選擇要指派的同仁！', 'warning');
-      else alert('請選擇要指派的同仁！');
-      return;
-    }
-
+    if (!sel || !sel.value) return alert('請選擇要指派的同仁！');
+    
     var assignee = sel.value;
     google.script.run.withSuccessHandler(function(res) {
       if (res && res.success) {
-        if (typeof showAlert === 'function') showAlert('派案成功！已指派給 ' + assignee, 'success');
-        else alert('派案成功！已指派給 ' + assignee);
+        alert('派案成功！');
         fetchDeptOperationData();
       } else {
-        if (typeof showAlert === 'function') showAlert('派案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-        else alert('派案失敗: ' + (res ? res.message : '未知錯誤'));
+        alert('派案失敗: ' + res.message);
       }
     }).api_dispatchWorkflowStep('', deliverableId, stepNumber, assignee, currentOpDept);
   }
@@ -648,12 +712,10 @@
     if (newDate) {
       google.script.run.withSuccessHandler(function(res) {
         if (res && res.success) {
-          if (typeof showAlert === 'function') showAlert('死線調整成功！', 'success');
-          else alert('死線調整成功！');
+          alert('死線調整成功！');
           fetchDeptOperationData();
         } else { 
-          if (typeof showAlert === 'function') showAlert('調整失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-          else alert('調整失敗: ' + (res ? res.message : '未知錯誤')); 
+          alert('調整失敗: ' + res.message); 
         }
       }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim());
     }
