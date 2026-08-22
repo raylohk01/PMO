@@ -85,6 +85,7 @@ function api_getDashboardData(simulateEmail) {
   }
 }
 
+/*
 function api_getClientReviewList(simulateEmail) {
   try {
     const user = verifyAuth(['Sales', 'PM', 'Admin', 'Management']);
@@ -98,6 +99,7 @@ function api_getClientReviewList(simulateEmail) {
     return { success: false, message: e.message };
   }
 }
+*/
 
 function api_getWorkloadStats(department, simulateEmail) {
   try {
@@ -274,6 +276,7 @@ function api_completeProject(jobNumber) {
   }
 }
 
+/*
 function api_getClientReviewList() {
   try {
     verifyAuth(['Admin', 'PM', 'Sales', 'Management']);
@@ -284,6 +287,7 @@ function api_getClientReviewList() {
     return { success: false, message: e.message };
   }
 }
+*/
 
 function api_sendReminder(jobNumber, method) {
   try {

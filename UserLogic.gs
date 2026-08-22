@@ -947,6 +947,19 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
       logData.unshift({ timestamp: timeStr, user: userName, action: 'Submit Step', details: `完成了 [${targetD.name}] 的 ${currentStepObj ? currentStepObj.name : ''}` });
     }
 
+
+// 💡 [關鍵修正] 提交步驟後，自動將 currentStep 更新為當前正處於 In Progress 的步驟
+      if (targetD && targetD.workflow) {
+        let activeStepObj = targetD.workflow.find(s => s.status === 'In Progress');
+        if (activeStepObj) {
+          targetD.currentStep = activeStepObj.step;
+        } else if (!targetD.workflow.some(s => s.status !== 'Completed')) {
+          // 如果全數完成，將 currentStep 設定為最後一步
+          targetD.currentStep = targetD.workflow.length;
+        }
+      }
+
+
     sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
     sheet.getRange(rowIndex, logCol).setValue(JSON.stringify(logData));
 
@@ -2092,4 +2105,49 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
   } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+
+// ==========================================
+// 💡 一鍵校正所有專案的 currentStep 欄位
+// ==========================================
+function fixAllProjectCurrentSteps() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+  if(!sheet) return '找不到 Projects 工作表';
+  
+  const data = sheet.getDataRange().getValues();
+  let updatedCount = 0;
+  
+  for(let i = 1; i < data.length; i++) {
+    for (let c = 0; c < data[i].length; c++) {
+      let cellStr = String(data[i][c] || '');
+      if (cellStr.includes('deliverables')) {
+        try {
+          let wfData = JSON.parse(cellStr);
+          let updated = false;
+          
+          if (wfData.deliverables) {
+            wfData.deliverables.forEach(d => {
+              if (d.workflow) {
+                let activeStepObj = d.workflow.find(s => s.status === 'In Progress');
+                let targetStep = activeStepObj ? activeStepObj.step : (d.workflow.every(s => s.status === 'Completed') ? d.workflow.length : 1);
+                
+                if (d.currentStep !== targetStep) {
+                  d.currentStep = targetStep;
+                  updated = true;
+                }
+              }
+            });
+          }
+          
+          if (updated) {
+            sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
+            updatedCount++;
+          }
+        } catch(e){}
+      }
+    }
+  }
+  Logger.log(`🎉 校正完成！共修正了 ${updatedCount} 個專案的 currentStep！`);
+  return `🎉 校正完成！共修正了 ${updatedCount} 個專案的 currentStep！`;
 }

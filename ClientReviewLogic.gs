@@ -187,3 +187,70 @@ function testClientReviewLogic() {
     Logger.log('❌ 測試失敗: ' + e.message);
   }
 }
+
+// ==========================================
+// 💡 全新：獲取客戶審批 (Client Review) 追蹤資料 API (智能搜尋 In Progress 關卡版)
+// ==========================================
+function api_getClientReviewData() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if(!sheet) return { success: true, data: [] };
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim().toLowerCase());
+    
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxClient = headers.findIndex(h => h.includes('client'));
+    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
+    const idxSales = headers.findIndex(h => h.includes('sales'));
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    
+    let results = [];
+    
+    for(let i=1; i < data.length; i++) {
+      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
+      if(pStatus === 'Completed' || pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
+      
+      let wfData = {};
+      for (let c = 0; c < data[i].length; c++) {
+        let cellStr = String(data[i][c] || '');
+        if (cellStr.includes('deliverables')) { try { wfData = JSON.parse(cellStr); break; } catch(e){} }
+      }
+      
+      if(wfData && wfData.deliverables) {
+        wfData.deliverables.forEach(d => {
+          if(d.status === 'Completed' || d.status === 'Deleted') return;
+          
+          // 💡 核心修復：不要依賴可能卡住的 currentStep，直接抓出狀態為 'In Progress' 的那一關！
+          const currentStepObj = d.workflow ? d.workflow.find(s => s.status === 'In Progress') : null;
+          
+          if (currentStepObj && (currentStepObj.reviewStatus === 'Reviewing' || currentStepObj.name.toLowerCase().includes('client') || currentStepObj.dept.toLowerCase().includes('client'))) {
+             
+             let waitDays = 1;
+             try {
+                 // 調用你原本寫好的 getWaitingDays 來計算天數
+                 waitDays = getWaitingDays(data[i][idxJobNum]);
+             } catch(e) {}
+
+             results.push({
+               jobNumber: idxJobNum >= 0 ? data[i][idxJobNum] : '',
+               client: idxClient >= 0 ? data[i][idxClient] : '',
+               taskName: d.name || '未命名項目',
+               stepName: currentStepObj.name || ('Step ' + currentStepObj.step),
+               pmName: idxPM >= 0 ? data[i][idxPM] : '未指定',
+               salesName: idxSales >= 0 ? data[i][idxSales] : '未指定',
+               waitingDays: waitDays
+             });
+          }
+        });
+      }
+    }
+    
+    // 按等待日數由大到小排序
+    results.sort((a, b) => b.waitingDays - a.waitingDays);
+    
+    return { success: true, data: results };
+  } catch(e) {
+    return { success: false, message: e.message };
+  }
+}

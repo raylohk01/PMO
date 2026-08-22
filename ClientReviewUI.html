@@ -34,3 +34,43 @@
     </div>
   </div>
 </div>
+
+<script>
+  // 💡 客戶追蹤畫面載入函數
+  function loadClientReviewView() {
+    var tbody = document.getElementById('clientReviewTableBody');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-2"></i>載入 Client Review 資料中...</td></tr>';
+    }
+    
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">載入失敗：' + (res ? res.message : '未知錯誤') + '</td></tr>';
+        return;
+      }
+      
+      var data = res.data || [];
+      if (data.length === 0) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">🎉 目前沒有等待客戶審批的項目。</td></tr>';
+        return;
+      }
+      
+      var html = '';
+      data.forEach(function(item) {
+        var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
+        html += '<tr class="align-middle border-bottom">' +
+          '<td class="fw-bold text-primary">' + item.jobNumber + '</td>' +
+          '<td>' + item.client + '</td>' +
+          '<td>' + item.taskName + ' <span class="badge bg-light text-dark border ms-1">' + item.stepName + '</span></td>' +
+          '<td>' + item.pmName + '</td>' +
+          '<td>' + (item.salesName || '未指定') + '</td>' +
+          '<td><span class="badge bg-warning text-dark">' + item.waitingDays + ' 天</span></td>' +
+          '<td><span class="badge bg-info text-dark"><i class="fas fa-hourglass-half me-1"></i>客戶審批中</span></td>' +
+          '<td><button class="btn btn-sm btn-primary fw-bold" onclick="window.openWorkflow(\'' + safeJobNum + '\')">查看專案</button></td>' +
+        '</tr>';
+      });
+      if (tbody) tbody.innerHTML = html;
+      
+    }).api_getClientReviewData();
+  }
+</script>
