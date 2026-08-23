@@ -1038,4 +1038,53 @@ function unlockUserBtn(btn, originalHtml) {
 }
 
 
+
+  
+
+// ==========================================
+// 💡 全域事件廣播機制 (僅刷新使用者「當前眼前的分頁」)
+// ==========================================
+window.addEventListener('refreshAllViews', function() {
+  // 1. 若停留在「我的任務」
+  try { 
+    var dashSec = document.getElementById('individualSection') || document.getElementById('dashboardSection') || document.getElementById('myTasksSection');
+    if (dashSec && dashSec.style.display !== 'none' && typeof loadIndividualView === 'function' && typeof currentUser !== 'undefined' && currentUser) { 
+      loadIndividualView(currentUser.email); 
+    } 
+  } catch(e){}
+  
+  // 2. 若停留在「部門看板」
+  try { 
+    var deptSec = document.getElementById('deptHeadSection');
+    if (deptSec && deptSec.style.display !== 'none' && typeof fetchDeptOperationData === 'function') {
+      fetchDeptOperationData(); 
+    } 
+  } catch(e){}
+  
+  // 3. 若停留在「客戶追蹤」
+  try { 
+    var clientSec = document.getElementById('clientReviewSection');
+    if (clientSec && clientSec.style.display !== 'none' && typeof loadClientReviewView === 'function') {
+      loadClientReviewView(); 
+    } 
+  } catch(e){}
+});
+
+// ==========================================
+// 💡 全系統「唯一」智慧背景定時器 (每 30 秒，具備嚴格防打斷檢測)
+// ==========================================
+setInterval(function() {
+  // 1. 檢測是否開啟了任何 Modal 彈窗 (包含遮罩)
+  var isModalOpen = (document.querySelector('.modal.show') !== null) || (document.querySelector('.modal-backdrop') !== null);
+  
+  // 2. 檢測使用者游標是否停留在輸入框、下拉選單或文字區 (Active Focus)
+  var activeTag = document.activeElement ? document.activeElement.tagName : '';
+  var isUserTyping = ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeTag);
+
+  // 3. 🛡️ 嚴格避讓：只有在【完全沒開彈窗】且【完全沒在輸入】時才觸發背景刷新
+  if (!isModalOpen && !isUserTyping) {
+    window.dispatchEvent(new Event('refreshAllViews'));
+  }
+}, 120000);
+
 </script>

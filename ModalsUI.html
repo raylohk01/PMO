@@ -209,24 +209,78 @@
       productName: JSON.stringify({ deliverables: deliverables })
     };
 
-    // 發送給後端
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showAlert('🎉 專案 [' + jobNumber + '] 建立成功！', 'success');
-          var modalElem = document.getElementById('newProjectModal');
-          if (modalElem && typeof bootstrap !== 'undefined') {
-            var modalInstance = bootstrap.Modal.getInstance(modalElem);
-            if (modalInstance) modalInstance.hide();
-          }
-          if (typeof loadAllDashboardViews === 'function') loadAllDashboardViews();
-        } else {
-          showAlert('❌ 建立失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-        }
-      })
-      .withFailureHandler(function(err) {
-        showAlert('❌ 後端執行錯誤: ' + (err ? err.message : '連線失敗'), 'danger');
-      })
-      .api_createProject(JSON.stringify(payload));
+}
+
+// ==========================================
+// 💡 專案開案 (全域廣播 + 免 F5 即時刷新版)
+// ==========================================
+function submitNewProject() {
+  var btn = document.querySelector('#newProjectModal .modal-footer button.btn-primary');
+  if (btn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.style.pointerEvents = 'none';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 建立中...';
   }
+
+  var jobNum = document.getElementById('np_jobNumber').value.trim();
+  var client = document.getElementById('np_client').value.trim();
+  var sales = document.getElementById('np_sales').value.trim();
+  var pmSelect = document.getElementById('np_pmSelect');
+  var pm = pmSelect ? pmSelect.value : '';
+  var deadline = document.getElementById('np_deadline').value;
+
+  if (!jobNum || !client || !sales || !pm || !deadline) {
+    unlockBtn(btn, '確認建立專案');
+    return showAlert('⚠️ 請填寫完整專案基本資訊！', 'warning');
+  }
+
+  var deliverables = [];
+  var delRows = document.querySelectorAll('.deliv-item-row');
+  delRows.forEach(function(row) {
+    var template = row.querySelector('.deliv-template') ? row.querySelector('.deliv-template').value : '';
+    var name = row.querySelector('.deliv-name') ? row.querySelector('.deliv-name').value.trim() : '';
+    if (name) deliverables.push({ template: template, name: name });
+  });
+
+  var payload = {
+    jobNumber: jobNum,
+    client: client,
+    sales: sales,
+    pm: pm,
+    deadline: deadline,
+    tentativeDate: document.getElementById('np_tentativeDate') ? document.getElementById('np_tentativeDate').value : '',
+    deliverables: deliverables
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      unlockBtn(btn, '確認建立專案');
+      if (res && res.success) {
+        showAlert('🎉 專案 [' + jobNum + '] 開案成功！', 'success');
+        
+        // 1. 關閉 Modal 彈窗並重置表單
+        var modalEl = document.getElementById('newProjectModal');
+        if (modalEl) {
+          var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+          if (modal) modal.hide();
+        }
+        var form = document.getElementById('newProjectForm');
+        if (form) form.reset();
+
+        // 2. 💡【關鍵】發送全域廣播，觸發所有分頁秒級重繪卡片 (無需 F5)
+        window.dispatchEvent(new Event('refreshAllViews'));
+
+      } else {
+        showAlert('❌ 開案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      unlockBtn(btn, '確認建立專案');
+      showAlert('❌ 後端執行失敗: ' + (err ? err.message : '網絡連線異常'), 'danger');
+    })
+    .api_createProject(payload);
+}
+
+
 </script>
