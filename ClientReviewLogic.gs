@@ -189,68 +189,98 @@ function testClientReviewLogic() {
 }
 
 // ==========================================
-// 💡 全新：獲取客戶審批 (Client Review) 追蹤資料 API (智能搜尋 In Progress 關卡版)
+// 💡 [更新版] 獲取 Client Review 審批中清單 (支援搜尋、日期抓取與新到舊排序)
 // ==========================================
-function api_getClientReviewData() {
+function api_getClientReviewData(keyword) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    if(!sheet) return { success: true, data: [] };
-    
+    if (!sheet) return { success: true, data: [] };
+
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
-    
+
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
     const idxClient = headers.findIndex(h => h.includes('client'));
     const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
     const idxSales = headers.findIndex(h => h.includes('sales'));
-    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
-    
-    let results = [];
-    
-    for(let i=1; i < data.length; i++) {
-      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
-      if(pStatus === 'Completed' || pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
+    const idxDeadline = headers.findIndex(h => h.includes('launch') || h.includes('deadline') || h.includes('死線'));
+
+    let reviewList = [];
+    const searchKw = String(keyword || '').trim().toLowerCase();
+    const now = new Date();
+
+    for (let i = 1; i < data.length; i++) {
+      const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (!jobNumber || jobNumber.toLowerCase() === 'jobnumber') continue;
+
+      const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
+      const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
+      const salesName = idxSales >= 0 ? String(data[i][idxSales] || '').trim() : '';
       
+      // 💡 確保死線日期正確抓取
+      const deadlineStr = (idxDeadline >= 0 && data[i][idxDeadline]) ? Utilities.formatDate(new Date(data[i][idxDeadline]), "GMT+8", "yyyy-MM-dd") : '未設定';
+
       let wfData = {};
       for (let c = 0; c < data[i].length; c++) {
         let cellStr = String(data[i][c] || '');
-        if (cellStr.includes('deliverables')) { try { wfData = JSON.parse(cellStr); break; } catch(e){} }
+        if (cellStr.includes('deliverables')) {
+          try { wfData = JSON.parse(cellStr); break; } catch(e){}
+        }
       }
-      
-      if(wfData && wfData.deliverables) {
-        wfData.deliverables.forEach(d => {
-          if(d.status === 'Completed' || d.status === 'Deleted') return;
-          
-          // 💡 核心修復：不要依賴可能卡住的 currentStep，直接抓出狀態為 'In Progress' 的那一關！
-          const currentStepObj = d.workflow ? d.workflow.find(s => s.status === 'In Progress') : null;
-          
-          if (currentStepObj && (currentStepObj.reviewStatus === 'Reviewing' || currentStepObj.name.toLowerCase().includes('client') || currentStepObj.dept.toLowerCase().includes('client'))) {
-             
-             let waitDays = 1;
-             try {
-                 // 調用你原本寫好的 getWaitingDays 來計算天數
-                 waitDays = getWaitingDays(data[i][idxJobNum]);
-             } catch(e) {}
 
-             results.push({
-               jobNumber: idxJobNum >= 0 ? data[i][idxJobNum] : '',
-               client: idxClient >= 0 ? data[i][idxClient] : '',
-               taskName: d.name || '未命名項目',
-               stepName: currentStepObj.name || ('Step ' + currentStepObj.step),
-               pmName: idxPM >= 0 ? data[i][idxPM] : '未指定',
-               salesName: idxSales >= 0 ? data[i][idxSales] : '未指定',
-               waitingDays: waitDays
-             });
+      if (wfData.deliverables) {
+        wfData.deliverables.forEach(d => {
+          if (d.status === 'Completed' || d.status === 'Deleted' || d.status === 'Recycle Bin') return;
+
+          if (d.workflow) {
+            d.workflow.forEach(s => {
+              // 只有狀態為 In Progress 且 reviewStatus 為 Reviewing 才會列入清單
+              if (s.status === 'In Progress' && s.reviewStatus === 'Reviewing') {
+                
+                // 💡 確保交由客戶審批的時間點正確抓取
+                let startedAtIso = s.startedAt || s.pendingAssignmentAt || null;
+                let submissionDateStr = '未紀錄';
+                let waitingDays = 0;
+
+                if (startedAtIso) {
+                  let startDt = new Date(startedAtIso);
+                  submissionDateStr = Utilities.formatDate(startDt, "GMT+8", "yyyy-MM-dd HH:mm");
+                  waitingDays = Math.max(0, Math.floor((now.getTime() - startDt.getTime()) / (1000 * 60 * 60 * 24)));
+                }
+
+                // 搜尋關鍵字過濾
+                const matchKw = !searchKw || 
+                  jobNumber.toLowerCase().includes(searchKw) || 
+                  clientName.toLowerCase().includes(searchKw) || 
+                  d.name.toLowerCase().includes(searchKw) ||
+                  pmName.toLowerCase().includes(searchKw);
+
+                if (matchKw) {
+                  reviewList.push({
+                    jobNumber: jobNumber,
+                    client: clientName,
+                    taskName: d.name,
+                    stepName: s.name,
+                    pmName: pmName,
+                    salesName: salesName,
+                    deadline: deadlineStr,             // 回傳給前端
+                    submissionDate: submissionDateStr, // 回傳給前端
+                    submissionDateIso: startedAtIso || '1970-01-01T00:00:00.000Z', 
+                    waitingDays: waitingDays
+                  });
+                }
+              }
+            });
           }
         });
       }
     }
-    
-    // 按等待日數由大到小排序
-    results.sort((a, b) => b.waitingDays - a.waitingDays);
-    
-    return { success: true, data: results };
-  } catch(e) {
+
+    // 依照「交給客戶日期」由新到舊排序
+    reviewList.sort((a, b) => new Date(b.submissionDateIso).getTime() - new Date(a.submissionDateIso).getTime());
+
+    return { success: true, data: reviewList };
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }

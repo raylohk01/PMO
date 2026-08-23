@@ -896,10 +896,13 @@ function unlockBtn(btn, originalText) {
   btn.innerHTML = originalText;
 }
 
+  // ==========================================
+  // 💡 [更新版] 渲染已完成專案歷史 (支援提交日、死線與精準狀態)
+  // ==========================================
   function searchHistory() {
     var tbody = document.getElementById('historyTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 搜尋歷史紀錄中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 搜尋歷史紀錄中...</td></tr>';
 
     var keyword = document.getElementById('hist_searchKeyword') ? document.getElementById('hist_searchKeyword').value.trim() : '';
     var startDate = document.getElementById('hist_startDate') ? document.getElementById('hist_startDate').value : '';
@@ -907,13 +910,13 @@ function unlockBtn(btn, originalText) {
 
     google.script.run.withSuccessHandler(function(res) {
       if(!res || !res.success) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
         return;
       }
 
       var list = res.data;
       if(list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
         return;
       }
 
@@ -922,15 +925,21 @@ function unlockBtn(btn, originalText) {
         var urlHtml = item.launchUrl ? formatClickableText(item.launchUrl) : '<span class="text-muted">未填寫網址</span>';
         var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
         
+        var delayBadge = item.isDelayed 
+          ? '<div class="badge bg-danger mt-1"><i class="fas fa-exclamation-triangle"></i> ' + item.delayText + '</div>' 
+          : '<div class="badge bg-success mt-1"><i class="fas fa-check-circle"></i> ' + item.delayText + '</div>';
+
         html += '<tr>' +
           '<td><strong>' + item.jobNumber + '</strong></td>' +
           '<td>' + item.client + '</td>' +
           '<td>' + item.deliverableName + '</td>' +
           '<td>' + item.pmName + '</td>' +
-          '<td>' + (item.completedAt || '已完成') + '</td>' +
+          '<td><span class="badge bg-light text-dark border"><i class="fas fa-calendar-plus me-1"></i>' + item.submissionDate + '</span></td>' +
+          '<td><span class="badge bg-light text-danger border"><i class="fas fa-bullseye me-1"></i>' + item.deadline + '</span></td>' +
+          '<td><div class="fw-bold text-secondary" style="font-size:0.9em;">' + item.completedAt + '</div>' + delayBadge + '</td>' +
           '<td>' + urlHtml + '</td>' +
           '<td class="text-end pe-3">' +
-            '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視詳情</button>' +
+            '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視</button>' +
           '</td>' +
         '</tr>';
       });

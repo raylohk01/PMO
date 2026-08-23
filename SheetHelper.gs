@@ -210,3 +210,4 @@ function logAction(action, jobNumber, details) {
     Logger.log('寫入 Log 失敗: ' + e.message);
   }
 }
+
