@@ -1,5 +1,5 @@
 <!-- ========================================== -->
-<!-- [AnalyticsUI.html] 戰情室大螢幕 TV 投屏極致對稱雙面板版 -->
+<!-- [AnalyticsUI.html] 戰情室大螢幕 TV 投屏極致對稱雙面板版 (含三大新 KPI) -->
 <!-- ========================================== -->
 
 <div id="analyticsSection" class="section-container" style="display: none;">
@@ -39,54 +39,193 @@
     </div>
   </div>
 
-  <!-- 💡 2. 第一行：5 大超級巨型 Operational KPI 色塊 -->
+  <!-- 💡 2. 8 大 Operational KPI 色塊 (對稱 4x2 完美佈局) -->
+  
+  <!-- 第一排：重點風險與進行中卡片 (4 欄) -->
   <div class="row g-3 mb-3">
-    <div class="col">
+    <!-- 🚨 已到期 -->
+    <div class="col-md-3">
       <div class="card shadow border-0 bg-danger text-white h-100">
         <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
-          <div class="fs-5 fw-bold text-white-50">🚨 已到期 (Overdue)</div>
-          <h1 class="fw-bold my-2 display-2" id="tv_kpi_overdue">0</h1>
+          <div class="fs-6 fw-bold text-white-50">🚨 已到期 (Overdue)</div>
+          <h1 class="fw-bold my-1 display-4" id="tv_kpi_overdue">0</h1>
           <div class="badge bg-black bg-opacity-25 fs-6">內部逾期關卡</div>
         </div>
       </div>
     </div>
 
-    <div class="col">
+    <!-- ⚠️ 即將到期 -->
+    <div class="col-md-3">
       <div class="card shadow border-0 bg-warning text-dark h-100">
         <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
-          <div class="fs-5 fw-bold text-dark-50">⚠️ 即將到期 (48h內)</div>
-          <h1 class="fw-bold my-2 display-2" id="tv_kpi_dueSoon">0</h1>
+          <div class="fs-6 fw-bold text-dark-50">⚠️ 即將到期 (48h內)</div>
+          <h1 class="fw-bold my-1 display-4" id="tv_kpi_dueSoon">0</h1>
           <div class="badge bg-black bg-opacity-10 text-dark fs-6">準備交付結案</div>
         </div>
       </div>
     </div>
 
-    <div class="col">
+    <!-- 🟢 穩步推進 -->
+    <div class="col-md-3">
       <div class="card shadow border-0 bg-success text-white h-100">
         <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
-          <div class="fs-5 fw-bold text-white-50">🟢 穩步推進 (On Track)</div>
-          <h1 class="fw-bold my-2 display-2" id="tv_kpi_onTrack">0</h1>
+          <div class="fs-6 fw-bold text-white-50">🟢 穩步推進 (On Track)</div>
+          <h1 class="fw-bold my-1 display-4" id="tv_kpi_onTrack">0</h1>
           <div class="badge bg-black bg-opacity-25 fs-6">正常執行中</div>
         </div>
       </div>
     </div>
 
-    <div class="col">
+    <!-- 🤝 客戶審批中 -->
+    <div class="col-md-3">
+      <div class="card shadow border-0 bg-primary text-white h-100">
+        <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
+          <div class="fs-6 fw-bold text-white-50">🤝 客戶審批中</div>
+          <h1 class="fw-bold my-1 display-4" id="tv_kpi_inClientReview">0</h1>
+          <div class="badge bg-black bg-opacity-25 fs-6">流轉於客戶端</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第二排：管線狀態與當日流轉 (對稱鮮豔 4 欄) -->
+  <div class="row g-3 mb-3">
+    <!-- ⏳ 待啟動 / 即將到來 (優雅紫) -->
+    <div class="col-md-3">
+      <div class="card shadow border-0 text-white h-100" style="background-color: #6f42c1;">
+        <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
+          <div class="fs-6 fw-bold text-white-50">⏳ 待啟動 / 即將到來</div>
+          <h1 class="fw-bold my-1 display-4 text-white" id="tv_kpi_upcoming">0</h1>
+          <div class="badge bg-black bg-opacity-25 fs-6">含子項目等候管線</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 📥 待分配 (亮湖藍) -->
+    <div class="col-md-3">
       <div class="card shadow border-0 bg-info text-dark h-100">
         <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
-          <div class="fs-5 fw-bold text-dark-50">📥 待分配 (Unassigned)</div>
-          <h1 class="fw-bold my-2 display-2" id="tv_kpi_unassigned">0</h1>
+          <div class="fs-6 fw-bold text-dark-50">📥 待分配 (Unassigned)</div>
+          <h1 class="fw-bold my-1 display-4 text-dark" id="tv_kpi_unassigned">0</h1>
           <div class="badge bg-black bg-opacity-10 text-dark fs-6">等待主管指派</div>
         </div>
       </div>
     </div>
 
-    <div class="col">
-      <div class="card shadow border-0 bg-primary text-white h-100">
+    <!-- ✨ 今日新增項目 (活力橙) -->
+    <div class="col-md-3">
+      <div class="card shadow border-0 text-white h-100" style="background-color: #fd7e14;">
         <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
-          <div class="fs-5 fw-bold text-white-50">🤝 客戶審批中</div>
-          <h1 class="fw-bold my-2 display-2" id="tv_kpi_inClientReview">0</h1>
-          <div class="badge bg-black bg-opacity-25 fs-6">流轉於客戶端</div>
+          <div class="fs-6 fw-bold text-white-50"><i class="fas fa-plus-circle me-1"></i>今日新增項目</div>
+          <h1 class="fw-bold my-1 display-4 text-white" id="tv_kpi_todayCreated">0</h1>
+          <div class="badge bg-black bg-opacity-25 fs-6">今日開案建檔數</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🎉 今日完成項目 (翡翠綠) -->
+    <div class="col-md-3">
+      <div class="card shadow border-0 text-white h-100" style="background-color: #10b981;">
+        <div class="card-body p-3 text-center d-flex flex-column justify-content-between">
+          <div class="fs-6 fw-bold text-white-50"><i class="fas fa-check-circle me-1"></i>今日完成項目</div>
+          <h1 class="fw-bold my-1 display-4 text-white" id="tv_kpi_todayCompleted">0</h1>
+          <div class="badge bg-black bg-opacity-25 fs-6">今日正式結案數</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- 💡 核心部門工作負載面板 (極高對比高清晰版) -->
+  <div class="card shadow-sm border-0 bg-white mb-3">
+    <div class="card-body p-3">
+      <div class="fs-5 fw-bold text-dark mb-3 border-bottom pb-2 d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-cubes me-2 text-primary"></i>核心部門工作負載 (進行中 vs 即將進行)</span>
+        <span class="badge bg-light text-dark border fs-6 fw-bold">依關卡歸屬部門即時統計</span>
+      </div>
+      <div class="row text-center g-2">
+        <!-- Editorial -->
+        <div class="col">
+          <div class="bg-light border border-2 rounded p-2 text-dark shadow-sm">
+            <div class="fw-bold text-dark fs-5 mb-1 border-bottom pb-1">Editorial</div>
+            <div class="d-flex justify-content-around align-items-center mt-2">
+              <div>
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">進行中</small>
+                <span class="fs-2 fw-bolder text-success" id="dw_act_Editorial">0</span>
+              </div>
+              <div class="border-start border-2 ps-2">
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">即將進行</small>
+                <span class="fs-2 fw-bolder" style="color: #d97706;" id="dw_pipe_Editorial">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Creative -->
+        <div class="col">
+          <div class="bg-light border border-2 rounded p-2 text-dark shadow-sm">
+            <div class="fw-bold text-dark fs-5 mb-1 border-bottom pb-1">Creative</div>
+            <div class="d-flex justify-content-around align-items-center mt-2">
+              <div>
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">進行中</small>
+                <span class="fs-2 fw-bolder text-success" id="dw_act_Creative">0</span>
+              </div>
+              <div class="border-start border-2 ps-2">
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">即將進行</small>
+                <span class="fs-2 fw-bolder" style="color: #d97706;" id="dw_pipe_Creative">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Design -->
+        <div class="col">
+          <div class="bg-light border border-2 rounded p-2 text-dark shadow-sm">
+            <div class="fw-bold text-dark fs-5 mb-1 border-bottom pb-1">Design</div>
+            <div class="d-flex justify-content-around align-items-center mt-2">
+              <div>
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">進行中</small>
+                <span class="fs-2 fw-bolder text-success" id="dw_act_Design">0</span>
+              </div>
+              <div class="border-start border-2 ps-2">
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">即將進行</small>
+                <span class="fs-2 fw-bolder" style="color: #d97706;" id="dw_pipe_Design">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PM -->
+        <div class="col">
+          <div class="bg-light border border-2 rounded p-2 text-dark shadow-sm">
+            <div class="fw-bold text-dark fs-5 mb-1 border-bottom pb-1">PM</div>
+            <div class="d-flex justify-content-around align-items-center mt-2">
+              <div>
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">進行中</small>
+                <span class="fs-2 fw-bolder text-success" id="dw_act_PM">0</span>
+              </div>
+              <div class="border-start border-2 ps-2">
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">即將進行</small>
+                <span class="fs-2 fw-bolder" style="color: #d97706;" id="dw_pipe_PM">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video -->
+        <div class="col">
+          <div class="bg-light border border-2 rounded p-2 text-dark shadow-sm">
+            <div class="fw-bold text-dark fs-5 mb-1 border-bottom pb-1">Video</div>
+            <div class="d-flex justify-content-around align-items-center mt-2">
+              <div>
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">進行中</small>
+                <span class="fs-2 fw-bolder text-success" id="dw_act_Video">0</span>
+              </div>
+              <div class="border-start border-2 ps-2">
+                <small class="text-secondary fw-bold d-block" style="font-size: 0.8rem;">即將進行</small>
+                <span class="fs-2 fw-bolder" style="color: #d97706;" id="dw_pipe_Video">0</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -135,7 +274,7 @@
     </div>
   </div>
 
-  <!-- 💡 4. 第三行：深度指標 (按時完成率 + 客戶 Delay 天數) 下移至此 -->
+  <!-- 💡 4. 第三行：深度指標 (按時完成率 + 客戶 Delay 天數) -->
   <div class="row g-3 mb-4">
     <div class="col-md-6">
       <div class="card shadow-sm border-0 border-start border-4 border-success bg-white h-100">
@@ -296,47 +435,63 @@
         if (!res || !res.success) return showAlert('❌ 讀取戰情室數據失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
         var data = res.data;
 
-      document.getElementById('analyticsLastUpdated').innerText = '上次更新: ' + (data.lastRefreshed || '--:--:--');
+        // 0. 上次更新時間
+        document.getElementById('analyticsLastUpdated').innerText = '上次更新: ' + (data.lastRefreshed || '--:--:--');
 
-      // 1. 第一行 5 大 KPI
-      document.getElementById('tv_kpi_overdue').innerText = data.kpi ? data.kpi.overdue : 0;
-      document.getElementById('tv_kpi_dueSoon').innerText = data.kpi ? data.kpi.dueSoon : 0;
-      document.getElementById('tv_kpi_onTrack').innerText = data.kpi ? data.kpi.onTrack : 0;
-      document.getElementById('tv_kpi_unassigned').innerText = data.kpi ? data.kpi.unassigned : 0;
-      document.getElementById('tv_kpi_inClientReview').innerText = data.kpi ? data.kpi.inClientReview : 0;
+        // 1. 頂部 8 大核心 KPI 色塊
+        document.getElementById('tv_kpi_overdue').innerText = data.kpi ? data.kpi.overdue : 0;
+        document.getElementById('tv_kpi_dueSoon').innerText = data.kpi ? data.kpi.dueSoon : 0;
+        document.getElementById('tv_kpi_onTrack').innerText = data.kpi ? data.kpi.onTrack : 0;
+        document.getElementById('tv_kpi_upcoming').innerText = data.kpi ? (data.kpi.upcomingCount || 0) : 0;
+        document.getElementById('tv_kpi_unassigned').innerText = data.kpi ? data.kpi.unassigned : 0;
+        document.getElementById('tv_kpi_inClientReview').innerText = data.kpi ? data.kpi.inClientReview : 0;
+        document.getElementById('tv_kpi_todayCreated').innerText = data.kpi ? (data.kpi.todayCreatedCount || 0) : 0;
+        document.getElementById('tv_kpi_todayCompleted').innerText = data.kpi ? (data.kpi.todayCompletedCount || 0) : 0;
 
-      // 2. 第二行 過去 5 天已上線
-      document.getElementById('tv_kpi_past5Days').innerText = data.kpi ? data.kpi.past5DaysLaunch : 0;
-      if (data.launchByDeptPast) {
-        document.getElementById('lb_past_Editorial').innerText = data.launchByDeptPast.Editorial || 0;
-        document.getElementById('lb_past_Creative').innerText = data.launchByDeptPast.Creative || 0;
-        document.getElementById('lb_past_Video').innerText = data.launchByDeptPast.Video || 0;
-        document.getElementById('lb_past_Design').innerText = data.launchByDeptPast.Design || 0;
-        document.getElementById('lb_past_Event').innerText = data.launchByDeptPast.Event || 0;
-      }
+        // 2. [新增] 核心 5 大部門工作負載 (進行中 vs 即將進行)
+        if (data.deptWorkload) {
+          ['Editorial', 'Creative', 'Design', 'PM', 'Video'].forEach(function(dept) {
+            var item = data.deptWorkload[dept] || { active: 0, pipeline: 0 };
+            var actEl = document.getElementById('dw_act_' + dept);
+            var pipeEl = document.getElementById('dw_pipe_' + dept);
+            if (actEl) actEl.innerText = item.active || 0;
+            if (pipeEl) pipeEl.innerText = item.pipeline || 0;
+          });
+        }
 
-      // 3. 第二行 未來 5 天預計上線
-      document.getElementById('tv_kpi_next5Days').innerText = data.kpi ? data.kpi.next5DaysLaunch : 0;
-      if (data.launchByDeptNext) {
-        document.getElementById('lb_next_Editorial').innerText = data.launchByDeptNext.Editorial || 0;
-        document.getElementById('lb_next_Creative').innerText = data.launchByDeptNext.Creative || 0;
-        document.getElementById('lb_next_Video').innerText = data.launchByDeptNext.Video || 0;
-        document.getElementById('lb_next_Design').innerText = data.launchByDeptNext.Design || 0;
-        document.getElementById('lb_next_Event').innerText = data.launchByDeptNext.Event || 0;
-      }
+        // 3. 過去 5 天已上線
+        document.getElementById('tv_kpi_past5Days').innerText = data.kpi ? data.kpi.past5DaysLaunch : 0;
+        if (data.launchByDeptPast) {
+          document.getElementById('lb_past_Editorial').innerText = data.launchByDeptPast.Editorial || 0;
+          document.getElementById('lb_past_Creative').innerText = data.launchByDeptPast.Creative || 0;
+          document.getElementById('lb_past_Video').innerText = data.launchByDeptPast.Video || 0;
+          document.getElementById('lb_past_Design').innerText = data.launchByDeptPast.Design || 0;
+          document.getElementById('lb_past_Event').innerText = data.launchByDeptPast.Event || 0;
+        }
 
-      // 4. 第三行 深度指標
-      var rate = data.onTimeRate || 100;
-      document.getElementById('metric_onTimeRate').innerText = rate + '%';
-      document.getElementById('metric_completedDetail').innerText = '(完成 ' + (data.kpi ? data.kpi.completedCount : 0) + ' / 按時 ' + (data.kpi ? data.kpi.onTimeCompletedCount : 0) + ')';
-      document.getElementById('metric_onTimeBar').style.width = rate + '%';
+        // 4. 未來 5 天預計上線
+        document.getElementById('tv_kpi_next5Days').innerText = data.kpi ? data.kpi.next5DaysLaunch : 0;
+        if (data.launchByDeptNext) {
+          document.getElementById('lb_next_Editorial').innerText = data.launchByDeptNext.Editorial || 0;
+          document.getElementById('lb_next_Creative').innerText = data.launchByDeptNext.Creative || 0;
+          document.getElementById('lb_next_Video').innerText = data.launchByDeptNext.Video || 0;
+          document.getElementById('lb_next_Design').innerText = data.launchByDeptNext.Design || 0;
+          document.getElementById('lb_next_Event').innerText = data.launchByDeptNext.Event || 0;
+        }
 
-      document.getElementById('metric_avgClientDelay').innerText = (data.avgClientDelayDays || 0) + ' 天';
+        // 5. 深度品質指標
+        var rate = data.onTimeRate || 100;
+        document.getElementById('metric_onTimeRate').innerText = rate + '%';
+        document.getElementById('metric_completedDetail').innerText = '(完成 ' + (data.kpi ? data.kpi.completedCount : 0) + ' / 按時 ' + (data.kpi ? data.kpi.onTimeCompletedCount : 0) + ')';
+        document.getElementById('metric_onTimeBar').style.width = rate + '%';
 
-      renderDeptRevisionChart(data.deptRevisionMap || {});
-      renderClientDelayList(data.clientDelayList || []);
-      rawMemberPerformanceData = data.memberPerformance || [];
-      renderMemberPerfTable(rawMemberPerformanceData);
+        document.getElementById('metric_avgClientDelay').innerText = (data.avgClientDelayDays || 0) + ' 天';
+
+        // 6. 渲染圖表、客戶延遲清單與成員績效表
+        renderDeptRevisionChart(data.deptRevisionMap || {});
+        renderClientDelayList(data.clientDelayList || []);
+        rawMemberPerformanceData = data.memberPerformance || [];
+        renderMemberPerfTable(rawMemberPerformanceData);
       })
       .withFailureHandler(function(err) {
         showAlert('❌ API 後端呼叫失敗: ' + (err ? err.message : '網絡連線問題'), 'danger');
@@ -370,7 +525,8 @@
         responsive: true,
         scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
       }
-    });
+    }
+    );
   }
 
   function renderClientDelayList(list) {

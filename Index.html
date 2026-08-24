@@ -24,6 +24,26 @@
   </style>
 </head>
 <body>
+
+
+
+<!-- 🚀 專屬動態通知牆 (Offcanvas 側邊面板) -->
+<div class="offcanvas offcanvas-end shadow-lg" tabindex="-1" id="notificationOffcanvas" aria-labelledby="notificationOffcanvasLabel">
+  <div class="offcanvas-header bg-dark text-white py-3">
+    <h5 class="offcanvas-title fs-6" id="notificationOffcanvasLabel">
+      <i class="fas fa-bell me-2 text-warning"></i> 個人動態與專案報告
+    </h5>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body bg-light p-0">
+    <div id="notificationList" class="list-group list-group-flush">
+      <div class="text-center text-muted py-5">
+        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...
+      </div>
+    </div>
+  </div>
+</div>
+
   <!-- 💡 全域頁面內 Toast / Alert 提示容器 (固定於右上方，不遮擋操作) -->
   <div id="globalAlertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 99999; max-width: 400px; pointer-events: none;"></div>
 

@@ -1011,7 +1011,8 @@ function unlockBtn(btn, originalText) {
           '<td>' + item.client + '</td>' +
           '<td>' + item.deliverableName + '</td>' +
           '<td>' + item.pmName + '</td>' +
-          '<td><span class="badge bg-light text-dark border"><i class="fas fa-calendar-plus me-1"></i>' + item.submissionDate + '</span></td>' +
+          // 💡 這裡換成了專案總耗時
+          '<td><span class="badge bg-light text-dark border"><i class="fas fa-stopwatch text-primary me-1"></i>' + item.totalDurationText + '</span></td>' +
           '<td><span class="badge bg-light text-danger border"><i class="fas fa-bullseye me-1"></i>' + item.deadline + '</span></td>' +
           '<td><div class="fw-bold text-secondary" style="font-size:0.9em;">' + item.completedAt + '</div>' + delayBadge + '</td>' +
           '<td>' + urlHtml + '</td>' +
@@ -1172,5 +1173,55 @@ setInterval(function() {
     window.dispatchEvent(new Event('refreshAllViews'));
   }
 }, 120000);
+
+// ==========================================
+// 💡 混合式動態通知引擎 (Notification Center)
+// ==========================================
+function fetchNotifications() {
+  var listEl = document.getElementById('notificationList');
+  var badgeEl = document.getElementById('notifBadge');
+  
+  var email = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : '';
+  if (!email) return;
+
+  // 每次打開先顯示 loading
+  if (listEl && !listEl.innerHTML.includes('list-group-item')) {
+    listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...</div>';
+  }
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success) {
+      var notifs = res.data || [];
+      if (notifs.length > 0) {
+        if (badgeEl) {
+          badgeEl.innerText = notifs.length > 99 ? '99+' : notifs.length;
+          badgeEl.style.display = 'block'; // 顯示紅點
+        }
+        var html = '';
+        notifs.forEach(function(n) {
+          var timeStr = n.rawTime || new Date(n.time).toLocaleString();
+          var bgClass = n.type === 'OVERDUE' || n.type === 'NUDGE' ? 'bg-danger bg-opacity-10' : 'bg-white';
+          
+          html += '<div class="list-group-item py-3 border-bottom ' + bgClass + '">' +
+                    '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
+                      '<h6 class="mb-0 fw-bold text-' + n.color + '"><i class="fas ' + n.icon + ' me-2"></i>' + n.title + '</h6>' +
+                      '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
+                    '</div>' +
+                    '<p class="mb-0 small text-secondary mt-1">' + n.message + '</p>' +
+                  '</div>';
+        });
+        if (listEl) listEl.innerHTML = html;
+      } else {
+        if (badgeEl) badgeEl.style.display = 'none';
+        if (listEl) listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle fa-3x text-success mb-3 opacity-25"></i><br>目前沒有任何新動態</div>';
+      }
+    }
+  }).api_getUserNotifications(email);
+}
+
+// 💡 綁定全域刷新事件：當背景定時器啟動，或手動重整時，順便幫小鈴鐺抓最新數字！
+window.addEventListener('refreshAllViews', function() {
+  fetchNotifications();
+});
 
 </script>

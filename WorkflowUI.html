@@ -14,9 +14,7 @@
             <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
               <i class="fas fa-cog"></i> 專案整體管理
             </button>
-            <button type="button" class="btn btn-warning btn-sm me-2" onclick="manageProjectStatus('PAUSE')">
-              🧪 測試直接暫停
-            </button>
+            
             <ul class="dropdown-menu dropdown-menu-end">
               <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('PAUSE');">⏸️ 暫停整體專案</a></li>
               <li><a class="dropdown-item" href="javascript:void(0);" onclick="event.preventDefault(); manageProjectStatus('RESUME');">▶️ 恢復整體專案</a></li>
@@ -687,8 +685,9 @@
       var rollbackBtn = (isCompleted && canManageWorkflow && !isProjectCompleted) ?
         '<button class="btn btn-xs btn-outline-warning ms-1 py-0 px-1" style="font-size:0.75em;" onclick="promptRollbackStep(' + step.step + ')" title="點擊開啟強制退回選單"><i class="fas fa-undo me-1"></i>退回此關</button>' : '';
 
+      // 💡 傳遞 deliverable.id 和 step.step 供後端真實寫入
       var nudgeBtn = (isCurrent && canManageWorkflow) ? 
-        '<button class="btn btn-xs btn-outline-danger ms-2 py-0 px-2" style="font-size:0.75em;" onclick="nudgeDepartment(\'' + step.dept + '\', \'' + step.name + '\', \'' + effectiveDeadline + '\')"><i class="fas fa-paper-plane"></i> 催辦</button>' : '';
+        '<button class="btn btn-xs btn-outline-danger ms-2 py-0 px-2 shadow-sm" style="font-size:0.75em;" onclick="nudgeDepartment(\'' + step.dept + '\', \'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane"></i> 系統催辦</button>' : '';
 
       // 卡片開始
       html += '<div class="d-flex mb-4 position-relative" style="z-index: 2;">' +
@@ -1103,18 +1102,21 @@
     );
   }
 
-  function nudgeDepartment(dept, stepName, deadline) {
-    var msg = "【HK01 PMO 催辦提醒】\n" +
-              "📌 專案：" + currentProjectData.jobNumber + " - " + currentProjectData.client + "\n" +
-              "🎯 待處理關卡：" + stepName + " (" + dept + ")\n" +
-              "⏰ 預定死線：" + (deadline || "儘速完成") + "\n" +
-              "👉 請負責同事儘速登入 PMO 系統推進進度，謝謝！";
+  // ==========================================
+  // 💡 [升級版] 發送真實系統催辦通知
+  // ==========================================
+  function nudgeDepartment(dept, deliverableId, stepNumber) {
+    if (!confirm("確定要對 " + dept + " 部門發出系統催辦嗎？\n系統將會發送通知給負責人，並真實寫入日誌。")) return;
     
-    navigator.clipboard.writeText(msg).then(function() {
-      showAlert("🎉 催辦提醒訊息已複製到剪貼簿！您可以直接貼上記錄發送至 Slack / Email 予 " + dept + " 同事。", "success");
-    }).catch(function() {
-      prompt("請複製以下催辦訊息：", msg);
-    });
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showAlert("🎉 " + res.message, "success");
+        openWorkflow(currentProjectData.jobNumber); // 刷新工作流畫面
+        window.dispatchEvent(new Event('refreshAllViews')); // 觸發全域更新 (包含小鈴鐺)
+      } else {
+        showAlert("❌ 催辦失敗: " + (res ? res.message : "未知錯誤"), "danger");
+      }
+    }).api_sendNudge(currentProjectData.jobNumber, deliverableId, stepNumber);
   }
 
   function manageDeliverable(deliverableId, action) {
