@@ -10,6 +10,17 @@
     </button>
   </div>
 
+  <!-- 💡 新增搜尋列區塊 -->
+  <div class="row mb-3">
+    <div class="col-md-8">
+      <div class="input-group">
+        <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+        <input type="text" id="cr_searchKeyword" class="form-control" placeholder="搜尋專案編號 / 客戶名稱 / 任務名稱 / PM..." onkeypress="if(event.key === 'Enter') loadClientReviewView()">
+        <button class="btn btn-primary fw-bold" onclick="loadClientReviewView()"><i class="fas fa-filter me-1"></i> 搜尋</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card shadow-sm border-0">
     <div class="card-body p-0">
       <div class="table-responsive">
@@ -21,16 +32,66 @@
               <th>子項目 / 任務</th>
               <th>負責 PM</th>
               <th>負責 Sales</th>
+              <th>交給客戶日期</th> <!-- 💡 新增 -->
+              <th>總死線</th>       <!-- 💡 新增 -->
               <th>等待天數</th>
               <th>狀態標籤</th>
               <th class="text-end pe-3">操作動作</th>
             </tr>
           </thead>
           <tbody id="clientReviewTableBody">
-            <tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 載入 Client Review 資料中...</td></tr>
+            <tr><td colspan="10" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 載入 Client Review 資料中...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
   </div>
 </div>
+
+<script>
+  // 💡 客戶追蹤畫面載入函數 (支援搜尋關鍵字)
+  function loadClientReviewView() {
+    var tbody = document.getElementById('clientReviewTableBody');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-2"></i>載入 Client Review 資料中...</td></tr>';
+    }
+    
+    var keyword = document.getElementById('cr_searchKeyword') ? document.getElementById('cr_searchKeyword').value.trim() : '';
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-4">載入失敗：' + (res ? res.message : '未知錯誤') + '</td></tr>';
+        return;
+      }
+      
+      var data = res.data || [];
+      if (data.length === 0) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">🎉 目前沒有符合條件的等待客戶審批項目。</td></tr>';
+        return;
+      }
+      
+      var html = '';
+      data.forEach(function(item) {
+        var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
+        
+        // 天數警示色
+        var waitBadgeClass = item.waitingDays > 3 ? 'bg-danger text-white' : 'bg-warning text-dark';
+
+        html += '<tr class="align-middle border-bottom">' +
+          '<td class="fw-bold text-primary">' + item.jobNumber + '</td>' +
+          '<td>' + item.client + '</td>' +
+          '<td>' + item.taskName + ' <span class="badge bg-light text-dark border ms-1">' + item.stepName + '</span></td>' +
+          '<td>' + item.pmName + '</td>' +
+          '<td>' + (item.salesName || '未指定') + '</td>' +
+          '<td><span class="badge bg-light text-dark border"><i class="fas fa-calendar-check me-1"></i>' + item.submissionDate + '</span></td>' +
+          '<td><span class="badge bg-light text-danger border"><i class="fas fa-bullseye me-1"></i>' + item.deadline + '</span></td>' +
+          '<td><span class="badge ' + waitBadgeClass + ' border">' + item.waitingDays + ' 天</span></td>' +
+          '<td><span class="badge bg-info text-dark"><i class="fas fa-hourglass-half me-1"></i>客戶審批中</span></td>' +
+          '<td class="text-end pe-3"><button class="btn btn-sm btn-primary fw-bold" onclick="window.openWorkflow(\'' + safeJobNum + '\')">查看專案</button></td>' +
+        '</tr>';
+      });
+      if (tbody) tbody.innerHTML = html;
+      
+    }).api_getClientReviewData(keyword);
+  }
+</script>

@@ -37,6 +37,15 @@
       </ul>
       
       <div class="d-flex align-items-center">
+        <!-- 🔔 導覽列鈴鐺按鈕 (貼在這裡！) -->
+        <button class="btn btn-outline-light position-relative me-3 shadow-sm border-0" type="button" data-bs-toggle="offcanvas" data-bs-target="#notificationOffcanvas" onclick="fetchNotifications()" style="background: transparent;">
+          <i class="fas fa-bell fs-5"></i>
+          <!-- 動態紅點 -->
+          <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger shadow" style="display: none; font-size: 0.65em;">
+            0
+          </span>
+        </button>
+        
         <button class="btn btn-sm btn-light text-primary fw-bold me-3 rounded-pill shadow-sm px-3" onclick="openNewProjectModal()">
           <i class="fas fa-plus"></i> 新增專案
         </button>

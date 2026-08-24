@@ -173,17 +173,27 @@ function switchSection(sectionId) {
     }).api_getCurrentUser();
   }
 
-  function loadIndividualView(simEmail) {
-    document.getElementById('urgentTasksArea').innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 讀取任務中...</div>';
-    document.getElementById('onTrackTasksArea').innerHTML = '';
-    document.getElementById('upcomingTasksArea').innerHTML = '';
-    document.getElementById('pausedTasksArea').innerHTML = '';
-    document.getElementById('pmAlertArea').innerHTML = '';
+  // ==========================================
+  // 💡 [升級版] 載入個人看板 (支援局部區塊更新，避免畫面全閃)
+  // ==========================================
+  function loadIndividualView(simEmail, targetSection) {
+    // 💡 1. 判斷是否有指定區塊，若有，則只在該區塊顯示 Loading
+    if (!targetSection) {
+      document.getElementById('urgentTasksArea').innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 讀取任務中...</div>';
+      document.getElementById('onTrackTasksArea').innerHTML = '';
+      document.getElementById('upcomingTasksArea').innerHTML = '';
+      document.getElementById('pausedTasksArea').innerHTML = '';
+      document.getElementById('pmAlertArea').innerHTML = '';
+    } else {
+      var targetEl = document.getElementById(targetSection);
+      if (targetEl) targetEl.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 局部更新中...</div>';
+    }
 
     google.script.run.withSuccessHandler(function(res) {
       if(!res || !res.success) return showAlert('❌ 載入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       var data = res.data;
 
+      // 更新數字 Badge
       document.getElementById('countOverdue').innerText = data.overdue.length;
       document.getElementById('countDueSoon').innerText = data.dueSoon.length;
       document.getElementById('countOnTrack').innerText = data.onTrack.length;
@@ -192,7 +202,8 @@ function switchSection(sectionId) {
         document.getElementById('countPaused').innerText = (data.paused || []).length;
       }
 
-      if(data.actionRequired && data.actionRequired.length > 0) {
+      // 若未指定局部，或指定了緊急區塊，才更新 PM 警報區
+      if(!targetSection && data.actionRequired && data.actionRequired.length > 0) {
         var alertHtml = '';
         data.actionRequired.forEach(function(alert) {
           alertHtml += '<div class="alert alert-danger shadow-sm d-flex justify-content-between align-items-center">' +
@@ -253,61 +264,24 @@ function switchSection(sectionId) {
         container.innerHTML = html;
       };
 
-      var urgentTasks = [].concat(data.overdue, data.dueSoon);
-      renderCards(urgentTasks, 'urgentTasksArea', 'border-danger');
-      renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
-      renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
-      renderCards(data.paused, 'pausedTasksArea', 'border-warning');
+      // 💡 2. 只有「未指定局部」或「指定該區塊」時，才進行渲染覆蓋
+      if (!targetSection || targetSection === 'urgentTasksArea') {
+        var urgentTasks = [].concat(data.overdue, data.dueSoon);
+        renderCards(urgentTasks, 'urgentTasksArea', 'border-danger');
+      }
+      if (!targetSection || targetSection === 'onTrackTasksArea') {
+        renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
+      }
+      if (!targetSection || targetSection === 'upcomingTasksArea') {
+        renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
+      }
+      if (!targetSection || targetSection === 'pausedTasksArea') {
+        renderCards(data.paused, 'pausedTasksArea', 'border-warning');
+      }
     }).api_getDashboardData(simEmail);
   }
 
-  function loadDeptHeadView(dept, simEmail) {
-    var taskListEl = document.getElementById('deptTaskList');
-    if(!taskListEl) return;
-    taskListEl.innerHTML = '<li class="list-group-item text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 載入部門看板中...</li>';
-
-    google.script.run.withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        taskListEl.innerHTML = '<li class="list-group-item text-danger">載入失敗: ' + (res ? res.message : '未知錯誤') + '</li>';
-        return;
-      }
-
-      var tasks = res.data.tasks;
-      var workload = res.data.workload;
-
-      if (tasks.length === 0) {
-        taskListEl.innerHTML = '<li class="list-group-item text-center text-muted py-4">🎉 目前該部門沒有相關任務！</li>';
-      } else {
-        var html = '';
-        tasks.forEach(function(t) {
-          var statusBadge = t.status === 'In Progress' ? '<span class="badge bg-success me-1">進行中</span>' : '<span class="badge bg-warning text-dark me-1">待啟動</span>';
-          var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
-
-          html += 
-          '<li class="list-group-item d-flex justify-content-between align-items-center py-3" style="cursor:pointer;" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
-            '<div>' +
-              '<div class="mb-1">' +
-                statusBadge +
-                '<span class="badge bg-primary me-1">' + t.type + '</span>' +
-                '<strong class="text-dark">' + t.jobNumber + ' - ' + t.client + '</strong>' +
-              '</div>' +
-              '<div class="text-muted small">' +
-                '任務：<strong>' + t.deliverableName + '</strong>｜階段：<span class="text-info fw-bold">' + t.stepName + '</span>' +
-              '</div>' +
-            '</div>' +
-            '<div class="text-end">' +
-              '<span class="badge bg-light text-dark border mb-1"><i class="fas fa-user text-secondary"></i> PM: ' + t.pmName + '</span><br>' +
-              '<button class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.8em;" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">檢視</button>' +
-            '</div>' +
-          '</li>';
-        });
-        taskListEl.innerHTML = html;
-      }
-
-      renderWorkloadChart(workload);
-
-    }).api_getDeptKanbanData(currentUser.department);
-  }
+  
 
   function renderWorkloadChart(workloadMap) {
     var chartEl = document.getElementById('workloadChart');
@@ -468,8 +442,11 @@ function switchSection(sectionId) {
     }).api_getRecycleBinProjects();
   }
 
-  // 💡 預設包含 Client Review ➔ 上線日 ➔ 專案完成
+  // 💡 在變數宣告區新增一個變數來記住舊名字 (可以加在 currentTemplateSteps 附近)
+  var currentEditingTemplateName = null;
+
   function openTemplateModal() {
+    currentEditingTemplateName = null; // 新增時清空舊名字
     document.getElementById('tmpl_name').value = '';
     document.getElementById('tmpl_name').readOnly = false;
     document.getElementById('tmplModalTitle').innerText = '新增視覺化工作流範本';
@@ -488,8 +465,9 @@ function switchSection(sectionId) {
   }
 
   function openEditTemplateModal(templateName) {
+    currentEditingTemplateName = templateName; // 💡 記住原本的名字
     document.getElementById('tmpl_name').value = templateName;
-    document.getElementById('tmpl_name').readOnly = true;
+    document.getElementById('tmpl_name').readOnly = false; // 💡 解鎖！允許修改！
     document.getElementById('tmplModalTitle').innerText = '編輯範本：' + templateName;
 
     syncDeptListAndRender(function() {
@@ -515,8 +493,8 @@ function switchSection(sectionId) {
     }).api_getDepartments();
   }
 
-  // ==========================================
-// [替換函數] 渲染範本編輯卡片 (支援並行群組 Group 設定)
+// ==========================================
+// 💡 [更新版] 渲染範本編輯卡片 (支援並行群組 + 最終關卡防呆與鎖定)
 // ==========================================
 function renderTemplateStepCards() {
   var container = document.getElementById('tmpl_stepsContainer');
@@ -525,6 +503,10 @@ function renderTemplateStepCards() {
     container.innerHTML = '<div class="text-center text-muted py-4">目前尚無關卡步驟，請點擊上方【新增關卡步驟】</div>';
     return;
   }
+
+  // 💡 權限判定：檢查使用者是否為 Management 或 Admin
+  var currentRole = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.role : 'Member';
+  var canEditFinal = ['Admin', 'Management'].includes(currentRole);
 
   var html = '';
   currentTemplateSteps.forEach(function(step, idx) {
@@ -540,45 +522,58 @@ function renderTemplateStepCards() {
       deptOptions += '<option value="' + dept + '" ' + selected + '>' + dept + '</option>';
     });
 
+    // 💡 Phase D 防呆邏輯：判斷是否為「最終關卡」或「專案完成關卡」
+    var isLastStep = (idx === currentTemplateSteps.length - 1);
+    var isProjectEnd = (step.name || '').includes('完成') || (step.name || '').includes('上線');
+    var isFinalGatekeeper = isLastStep || isProjectEnd;
+
+    // UI 變色與鎖定設定
+    var badgeClass = isFinalGatekeeper ? 'bg-dark text-warning border border-warning' : 'bg-primary';
+    var stepIcon = isFinalGatekeeper ? '<i class="fas fa-flag-checkered me-1"></i>' : '';
+    var cardBorder = isFinalGatekeeper ? 'border-dark border-2 shadow' : 'border shadow-sm';
+    var readOnlyAttr = (isFinalGatekeeper && !canEditFinal) ? 'readonly title="僅 Management 可修改最終結案關卡"' : '';
+    var disabledAttr = (isFinalGatekeeper && !canEditFinal) ? 'disabled title="僅 Management 可修改最終結案關卡"' : '';
+    var bgClass = isFinalGatekeeper ? 'bg-light' : 'bg-white';
+
     var fieldsHtml = '';
     (step.fields || []).forEach(function(field, fIdx) {
       fieldsHtml += 
       '<div class="input-group input-group-sm mb-1">' +
         '<span class="input-group-text"><i class="fas fa-pen"></i></span>' +
-        '<input type="text" class="form-control" value="' + field + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value)" placeholder="欄位名稱 (如: Draft_URL)">' +
-        '<button class="btn btn-outline-danger" type="button" onclick="removeStepField(' + idx + ', ' + fIdx + ')"><i class="fas fa-trash"></i></button>' +
+        '<input type="text" class="form-control" value="' + field + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value)" placeholder="欄位名稱 (如: Draft_URL)" ' + readOnlyAttr + '>' +
+        '<button class="btn btn-outline-danger" type="button" onclick="removeStepField(' + idx + ', ' + fIdx + ')" ' + disabledAttr + '><i class="fas fa-trash"></i></button>' +
       '</div>';
     });
 
     var parallelGroupVal = step.parallelGroup || '';
 
     html += 
-    '<div class="card mb-3 border shadow-sm">' +
-      '<div class="card-body p-3 bg-white">' +
+    '<div class="card mb-3 ' + cardBorder + '">' +
+      '<div class="card-body p-3 ' + bgClass + '">' +
         '<div class="d-flex justify-content-between align-items-center mb-2">' +
-          '<span class="badge bg-primary fs-6">Step ' + stepNum + '</span>' +
-          '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="removeTemplateStep(' + idx + ')"><i class="fas fa-times-circle"></i> 移除此關</button>' +
+          '<span class="badge ' + badgeClass + ' fs-6">' + stepIcon + 'Step ' + stepNum + (isFinalGatekeeper ? ' (最終把關)' : '') + '</span>' +
+          '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="removeTemplateStep(' + idx + ')" ' + disabledAttr + '><i class="fas fa-times-circle"></i> 移除此關</button>' +
         '</div>' +
         '<div class="row g-2 mb-2">' +
           '<div class="col-md-5">' +
             '<label class="form-label small text-muted mb-1">關卡名稱</label>' +
-            '<input type="text" class="form-control form-control-sm" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱">' +
+            '<input type="text" class="form-control form-control-sm fw-bold ' + (isFinalGatekeeper ? 'text-primary' : '') + '" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱" ' + readOnlyAttr + '>' +
           '</div>' +
           '<div class="col-md-4">' +
             '<label class="form-label small text-muted mb-1">負責部門</label>' +
-            '<select class="form-select form-select-sm" onchange="currentTemplateSteps[' + idx + '].dept = this.value">' +
+            '<select class="form-select form-select-sm" onchange="currentTemplateSteps[' + idx + '].dept = this.value" ' + disabledAttr + '>' +
               deptOptions +
             '</select>' +
           '</div>' +
           '<div class="col-md-3">' +
             '<label class="form-label small text-muted mb-1"><i class="fas fa-project-diagram text-info"></i> 並行群組</label>' +
-            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 Group_A (相同則並行)">' +
+            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 Group_A (相同則並行)" ' + readOnlyAttr + '>' +
           '</div>' +
         '</div>' +
-        '<div class="bg-light p-2 rounded border">' +
+        '<div class="bg-white p-2 rounded border">' +
           '<div class="d-flex justify-content-between align-items-center mb-1">' +
             '<small class="fw-bold text-muted"><i class="fas fa-tasks me-1"></i> 此關卡需填寫欄位</small>' +
-            '<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:0.75em;" onclick="addStepField(' + idx + ')"><i class="fas fa-plus"></i> 新增欄位</button>' +
+            '<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:0.75em;" onclick="addStepField(' + idx + ')" ' + disabledAttr + '><i class="fas fa-plus"></i> 新增欄位</button>' +
           '</div>' +
           fieldsHtml +
         '</div>' +
@@ -632,8 +627,8 @@ function renderTemplateStepCards() {
   }
 
   function saveTemplateFromModal() {
-    var name = document.getElementById('tmpl_name').value.trim();
-    if(!name) return showAlert('⚠️ 請輸入範本名稱！', 'warning');
+    var newName = document.getElementById('tmpl_name').value.trim();
+    if(!newName) return showAlert('⚠️ 請輸入範本名稱！', 'warning');
     if(currentTemplateSteps.length === 0) return showAlert('⚠️ 範本至少需要包含一個關卡步驟！', 'warning');
 
     google.script.run.withSuccessHandler(function(res) {
@@ -642,7 +637,8 @@ function renderTemplateStepCards() {
         if(templateEditModalInstance) templateEditModalInstance.hide();
         loadTemplateAdminView();
       } else { showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
-    }).api_saveTemplate(name, currentTemplateSteps);
+    // 💡 把 currentEditingTemplateName 也傳給後端
+    }).api_saveTemplate(newName, currentTemplateSteps, currentEditingTemplateName); 
   }
 
   function deleteTemplate(name) {
@@ -866,8 +862,8 @@ function saveUser() {
     }
   }
 
-  // ==========================================
-// 1. 專案開案 (物理防連點鎖定版)
+ // ==========================================
+// 1. 專案開案 (修復自動刷新看板功能)
 // ==========================================
 function submitNewProject() {
   // 💡 第 0 毫秒：立刻抓住按鈕並進行物理鎖定
@@ -893,11 +889,24 @@ function submitNewProject() {
   }
 
   var deliverables = [];
-  var delRows = document.querySelectorAll('.deliverable-row');
+  var delRows = document.querySelectorAll('.deliv-item-row');
   delRows.forEach(function(row) {
-    var template = row.querySelector('.del-template') ? row.querySelector('.del-template').value : '';
-    var name = row.querySelector('.del-name') ? row.querySelector('.del-name').value.trim() : '';
-    if (name) deliverables.push({ template: template, name: name });
+    var selectEl = row.querySelector('.deliv-template');
+    var template = selectEl ? selectEl.value : '';
+    var name = row.querySelector('.deliv-name') ? row.querySelector('.deliv-name').value.trim() : '';
+    
+    var templateJson = '';
+    if (selectEl && selectEl.selectedIndex >= 0) {
+      templateJson = selectEl.options[selectEl.selectedIndex].getAttribute('data-json') || '';
+    }
+
+    if (name) {
+      deliverables.push({ 
+        templateName: template, 
+        name: name,
+        templateJson: templateJson 
+      });
+    }
   });
 
   var payload = {
@@ -915,6 +924,7 @@ function submitNewProject() {
       unlockBtn(btn, '確認建立專案'); // 收到回應解鎖
       if (res && res.success) {
         showAlert('🎉 專案 [' + jobNum + '] 開案成功！', 'success');
+        
         var modalEl = document.getElementById('newProjectModal');
         if (modalEl) {
           var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
@@ -922,7 +932,12 @@ function submitNewProject() {
         }
         var form = document.getElementById('newProjectForm');
         if (form) form.reset();
-        if (typeof loadMyTasksView === 'function') loadMyTasksView();
+        
+        // 💡 局部渲染：只重新讀取並刷新「即將到來 (Upcoming)」區塊！
+        if (typeof loadIndividualView === 'function' && currentUser) {
+          loadIndividualView(currentUser.email, 'upcomingTasksArea');
+        }
+        
       } else {
         showAlert('❌ 開案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
@@ -942,10 +957,29 @@ function unlockBtn(btn, originalText) {
   btn.innerHTML = originalText;
 }
 
+// 輔助解鎖函數
+function unlockBtn(btn, originalText) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.innerHTML = originalText;
+}
+
+// 輔助解鎖函數
+function unlockBtn(btn, originalText) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.innerHTML = originalText;
+}
+
+  // ==========================================
+  // 💡 [更新版] 渲染已完成專案歷史 (支援提交日、死線與精準狀態)
+  // ==========================================
   function searchHistory() {
     var tbody = document.getElementById('historyTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 搜尋歷史紀錄中...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 搜尋歷史紀錄中...</td></tr>';
 
     var keyword = document.getElementById('hist_searchKeyword') ? document.getElementById('hist_searchKeyword').value.trim() : '';
     var startDate = document.getElementById('hist_startDate') ? document.getElementById('hist_startDate').value : '';
@@ -953,13 +987,13 @@ function unlockBtn(btn, originalText) {
 
     google.script.run.withSuccessHandler(function(res) {
       if(!res || !res.success) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
         return;
       }
 
       var list = res.data;
       if(list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
         return;
       }
 
@@ -968,15 +1002,22 @@ function unlockBtn(btn, originalText) {
         var urlHtml = item.launchUrl ? formatClickableText(item.launchUrl) : '<span class="text-muted">未填寫網址</span>';
         var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
         
+        var delayBadge = item.isDelayed 
+          ? '<div class="badge bg-danger mt-1"><i class="fas fa-exclamation-triangle"></i> ' + item.delayText + '</div>' 
+          : '<div class="badge bg-success mt-1"><i class="fas fa-check-circle"></i> ' + item.delayText + '</div>';
+
         html += '<tr>' +
           '<td><strong>' + item.jobNumber + '</strong></td>' +
           '<td>' + item.client + '</td>' +
           '<td>' + item.deliverableName + '</td>' +
           '<td>' + item.pmName + '</td>' +
-          '<td>' + (item.completedAt || '已完成') + '</td>' +
+          // 💡 這裡換成了專案總耗時
+          '<td><span class="badge bg-light text-dark border"><i class="fas fa-stopwatch text-primary me-1"></i>' + item.totalDurationText + '</span></td>' +
+          '<td><span class="badge bg-light text-danger border"><i class="fas fa-bullseye me-1"></i>' + item.deadline + '</span></td>' +
+          '<td><div class="fw-bold text-secondary" style="font-size:0.9em;">' + item.completedAt + '</div>' + delayBadge + '</td>' +
           '<td>' + urlHtml + '</td>' +
           '<td class="text-end pe-3">' +
-            '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視詳情</button>' +
+            '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視</button>' +
           '</td>' +
         '</tr>';
       });
@@ -1082,5 +1123,105 @@ function unlockUserBtn(btn, originalHtml) {
   btn.style.pointerEvents = 'auto';
   btn.innerHTML = originalHtml;
 }
+
+
+
+  
+
+// ==========================================
+// 💡 全域事件廣播機制 (僅刷新使用者「當前眼前的分頁」)
+// ==========================================
+window.addEventListener('refreshAllViews', function() {
+  // 1. 若停留在「我的任務」
+  try { 
+    var dashSec = document.getElementById('individualSection') || document.getElementById('dashboardSection') || document.getElementById('myTasksSection');
+    if (dashSec && dashSec.style.display !== 'none' && typeof loadIndividualView === 'function' && typeof currentUser !== 'undefined' && currentUser) { 
+      loadIndividualView(currentUser.email); 
+    } 
+  } catch(e){}
+  
+  // 2. 若停留在「部門看板」
+  try { 
+    var deptSec = document.getElementById('deptHeadSection');
+    if (deptSec && deptSec.style.display !== 'none' && typeof fetchDeptOperationData === 'function') {
+      fetchDeptOperationData(); 
+    } 
+  } catch(e){}
+  
+  // 3. 若停留在「客戶追蹤」
+  try { 
+    var clientSec = document.getElementById('clientReviewSection');
+    if (clientSec && clientSec.style.display !== 'none' && typeof loadClientReviewView === 'function') {
+      loadClientReviewView(); 
+    } 
+  } catch(e){}
+});
+
+// ==========================================
+// 💡 全系統「唯一」智慧背景定時器 (每 30 秒，具備嚴格防打斷檢測)
+// ==========================================
+setInterval(function() {
+  // 1. 檢測是否開啟了任何 Modal 彈窗 (包含遮罩)
+  var isModalOpen = (document.querySelector('.modal.show') !== null) || (document.querySelector('.modal-backdrop') !== null);
+  
+  // 2. 檢測使用者游標是否停留在輸入框、下拉選單或文字區 (Active Focus)
+  var activeTag = document.activeElement ? document.activeElement.tagName : '';
+  var isUserTyping = ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeTag);
+
+  // 3. 🛡️ 嚴格避讓：只有在【完全沒開彈窗】且【完全沒在輸入】時才觸發背景刷新
+  if (!isModalOpen && !isUserTyping) {
+    window.dispatchEvent(new Event('refreshAllViews'));
+  }
+}, 120000);
+
+// ==========================================
+// 💡 混合式動態通知引擎 (Notification Center)
+// ==========================================
+function fetchNotifications() {
+  var listEl = document.getElementById('notificationList');
+  var badgeEl = document.getElementById('notifBadge');
+  
+  var email = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : '';
+  if (!email) return;
+
+  // 每次打開先顯示 loading
+  if (listEl && !listEl.innerHTML.includes('list-group-item')) {
+    listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...</div>';
+  }
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success) {
+      var notifs = res.data || [];
+      if (notifs.length > 0) {
+        if (badgeEl) {
+          badgeEl.innerText = notifs.length > 99 ? '99+' : notifs.length;
+          badgeEl.style.display = 'block'; // 顯示紅點
+        }
+        var html = '';
+        notifs.forEach(function(n) {
+          var timeStr = n.rawTime || new Date(n.time).toLocaleString();
+          var bgClass = n.type === 'OVERDUE' || n.type === 'NUDGE' ? 'bg-danger bg-opacity-10' : 'bg-white';
+          
+          html += '<div class="list-group-item py-3 border-bottom ' + bgClass + '">' +
+                    '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
+                      '<h6 class="mb-0 fw-bold text-' + n.color + '"><i class="fas ' + n.icon + ' me-2"></i>' + n.title + '</h6>' +
+                      '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
+                    '</div>' +
+                    '<p class="mb-0 small text-secondary mt-1">' + n.message + '</p>' +
+                  '</div>';
+        });
+        if (listEl) listEl.innerHTML = html;
+      } else {
+        if (badgeEl) badgeEl.style.display = 'none';
+        if (listEl) listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle fa-3x text-success mb-3 opacity-25"></i><br>目前沒有任何新動態</div>';
+      }
+    }
+  }).api_getUserNotifications(email);
+}
+
+// 💡 綁定全域刷新事件：當背景定時器啟動，或手動重整時，順便幫小鈴鐺抓最新數字！
+window.addEventListener('refreshAllViews', function() {
+  fetchNotifications();
+});
 
 </script>
