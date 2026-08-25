@@ -199,7 +199,10 @@ function api_getTemplates() {
   }
 }
 
-function api_saveTemplate(name, steps) {
+// ==========================================
+// 💡 [更新版] 儲存工作流範本 (支援完美重新命名)
+// ==========================================
+function api_saveTemplate(newName, steps, originalName) {
   try {
     let sheet = getTemplateSheet();
     if (!sheet) {
@@ -211,19 +214,34 @@ function api_saveTemplate(name, steps) {
     const jsonStr = JSON.stringify(steps);
     let rowIndex = -1;
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(name).trim()) {
-        rowIndex = i + 1;
-        break;
+    // 1. 如果有提供舊名字 (代表是編輯模式)，先找舊名字的行數
+    if (originalName) {
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0]).trim() === String(originalName).trim()) {
+          rowIndex = i + 1;
+          break;
+        }
       }
     }
 
-    if (rowIndex > 0) {
-      sheet.getRange(rowIndex, 2).setValue(jsonStr);
-    } else {
-      sheet.appendRow([name, jsonStr]);
+    // 2. 如果沒找到，或沒有舊名字 (代表是新建模式)，就用新名字找
+    if (rowIndex === -1) {
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][0]).trim() === String(newName).trim()) {
+          rowIndex = i + 1;
+          break;
+        }
+      }
     }
-    return { success: true, message: '範本儲存成功' };
+
+    // 3. 覆蓋或新增
+    if (rowIndex > 0) {
+      sheet.getRange(rowIndex, 1).setValue(newName); // 更新名稱
+      sheet.getRange(rowIndex, 2).setValue(jsonStr); // 更新流程 JSON
+    } else {
+      sheet.appendRow([newName, jsonStr]);
+    }
+    return { success: true, message: '範本儲存成功！' };
   } catch(e) {
     return { success: false, message: e.message };
   }
@@ -247,7 +265,7 @@ function api_deleteTemplate(name) {
 }
 
 // ==========================================
-// [強效保底版] 建立新專案 (含 WorkflowTemplates 範本自動抓取與 PM 關卡自動啟動)
+// 💡 [Phase B 更新版] 建立新專案 (預設 Pending Start，等待手動啟動)
 // ==========================================
 function api_createProject(payload) {
   try {
@@ -258,14 +276,12 @@ function api_createProject(payload) {
     const timeStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd HH:mm");
     const masterPmName = payload.pmName || payload.pm || '未指定';
 
-    // 💡 1. 讀取 WorkflowTemplates 範本庫作為防護備援[cite: 1, 2]
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const templateSheet = ss.getSheetByName('WorkflowTemplates');
     let templatesData = templateSheet ? templateSheet.getDataRange().getValues() : [];
 
     let delivList = payload.deliverables || [];
     
-    // 🛡️ 徹底防護：只要發現 deliverables 是空的，強制去 WorkflowTemplates 抓取「標準 Advertorial」範本！[cite: 1]
     if (!Array.isArray(delivList) || delivList.length === 0) {
       var templateName = payload.productType || payload.templateName || '標準 Advertorial';
       var workflowSteps = [];
@@ -305,7 +321,6 @@ function api_createProject(payload) {
         }
       }
 
-      // 保底 4 關流程[cite: 2]
       if (!steps || steps.length === 0) {
         steps = [
           { step: 1, name: 'PM 開案與 Briefing', dept: 'PM', fields: ['URL'] },
@@ -323,13 +338,14 @@ function api_createProject(payload) {
           step: sIdx + 1,
           name: s.name || ('步驟 ' + (sIdx + 1)),
           dept: dName,
-          assignee: defaultAssignee, // 💡 PM 自動同步指派[cite: 5]
-          status: sIdx === 0 ? 'In Progress' : 'Pending', // 💡 關卡 Step 1 自動開啟為 In Progress！[cite: 2, 5]
-          isStarted: sIdx === 0 ? true : false,
+          assignee: defaultAssignee,
+          status: 'Pending Start', // 💡 回歸待啟動
+          isStarted: false,        // 💡 尚未啟動
           fields: s.fields || ['URL'],
           parallelGroup: s.parallelGroup || s.group || '',
           keyDate: launchDeadlineStr,
-          deadline: launchDeadlineStr
+          deadline: launchDeadlineStr,
+          accumulatedDays: 0      // ⏱️ 初始化累計耗時
         };
       });
 
@@ -337,14 +353,14 @@ function api_createProject(payload) {
         id: 'deliv_' + (idx + 1) + '_' + new Date().getTime(),
         name: d.name || ('篇章/任務 ' + (idx + 1)),
         type: tplName,
-        status: 'In Progress', // 💡 任務項目自動設為正式啟動[cite: 2, 5]
+        status: 'Pending Start',  // 💡 任務預設待啟動
         currentStep: 1,
         workflow: formattedSteps
       };
     });
 
     const workflowData = { deliverables: deliverables };
-    const auditLog = [{ timestamp: timeStr, user: masterPmName, action: 'Create & Start Project', details: '建立了此專案並正式啟動專案流程' }];
+    const auditLog = [{ timestamp: timeStr, user: masterPmName, action: 'Create Project', details: '建立了此專案 (待啟動)' }];
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
@@ -367,20 +383,23 @@ function api_createProject(payload) {
     if (idxPM >= 0) rowData[idxPM] = masterPmName;
     if (idxSubmission >= 0) rowData[idxSubmission] = payload.tentativeDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
     if (idxLaunch >= 0) rowData[idxLaunch] = payload.deadline || payload.launchDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
-    if (idxStatus >= 0) rowData[idxStatus] = 'In Progress'; // 💡 專案狀態預設為 In Progress，免除手動點擊啟動[cite: 2, 5]
+    if (idxStatus >= 0) rowData[idxStatus] = 'Pending Start'; // 💡 預設 Pending Start
     if (idxProduct >= 0) rowData[idxProduct] = JSON.stringify(workflowData);
     if (idxLog >= 0) rowData[idxLog] = JSON.stringify(auditLog);
 
     sheet.appendRow(rowData);
 
-    return { success: true, message: '專案開案成功並已自動啟動！' };
+    // 💡【新增全域廣播】開案成功，立刻通知所有同仁的看板重讀、跳出新卡片！
+    notifyFirebaseUpdate(payload.jobNumber, Session.getActiveUser().getEmail(), masterPmName, true);
+
+    return { success: true, message: '專案建立成功！' };
   } catch(e) {
     return { success: false, message: e.message };
   }
 }
 
 // ==========================================
-// 💡 [權限修復版] 我的任務看板資料 (加入 Member 嚴格個人卡片隔離)
+// 💡 [更新版] 我的任務看板數據 (單一任務隱藏 -P1 版)
 // ==========================================
 function api_getDashboardData(simEmail) {
   try {
@@ -389,9 +408,6 @@ function api_getDashboardData(simEmail) {
     const userName = user ? user.name : userEmail.split('@')[0];
     const userRole = user ? user.role : 'Member';
     const userDept = user ? user.department : '';
-
-    // 判斷是否為管理層或部門主管
-    const isManager = ['Admin', 'Management', 'Head of PM'].includes(userRole) || (userRole === 'Team Head');
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if(!sheet) return { success: true, data: { overdue:[], dueSoon:[], onTrack:[], upcoming:[], paused:[] } };
@@ -434,23 +450,58 @@ function api_getDashboardData(simEmail) {
       }
 
       if (wfData && wfData.deliverables) {
-        wfData.deliverables.forEach(d => {
+        const deliverableCount = wfData.deliverables.length; // 💡 取得子項目總數
+
+        wfData.deliverables.forEach((d, dIdx) => {
           if (d.status === 'Completed' || d.status === 'Deleted' || d.status === 'Recycle Bin') return;
 
-          const currentStepObj = d.workflow ? d.workflow.find(s => s.step === d.currentStep) : null;
-          const currentStepName = currentStepObj ? currentStepObj.name : '未開始';
-          const currentAssignee = currentStepObj ? currentStepObj.assignee : '';
+          // 💡 核心邏輯：如果任務大於 1 個才加 -P1、-P2，如果只有 1 個則保持原名
+          const displayJobNum = (deliverableCount > 1 && rowJobNum) ? `${rowJobNum}-P${dIdx + 1}` : rowJobNum;
 
-          // 💡 權限隔離：一般 Member 在「我的任務」只看得到【指派給自己】或【自己擔當 PM】的卡片！
-          if (!isManager) {
-            const isMyTask = (currentAssignee && currentAssignee.toLowerCase() === userName.toLowerCase()) || 
-                             (pmName && pmName.toLowerCase() === userName.toLowerCase());
-            if (!isMyTask) return; // 跳過不屬於該同仁的卡片
+          let activeSteps = d.workflow ? d.workflow.filter(s => s.status === 'In Progress') : [];
+          if (activeSteps.length === 0 && d.workflow) {
+            let fallback = d.workflow.find(s => s.step === d.currentStep);
+            if (fallback) activeSteps.push(fallback);
+          }
+          const primaryActiveStep = activeSteps.length > 0 ? activeSteps[0] : null;
+
+          let isMyTask = false;
+          let isUpcomingForUser = false;
+
+          const isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(userRole);
+          const isProjectPM = pmName && pmName.toLowerCase() === userName.toLowerCase();
+
+          if (isSuperManager || isProjectPM) {
+            isMyTask = true;
+          } else {
+            let activeMatch = false;
+            let futureMatch = false;
+
+            if (userRole === 'Team Head') {
+              activeMatch = activeSteps.some(s => s.dept === userDept);
+              futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
+            } else {
+              activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+              futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+            }
+
+            if (activeMatch) {
+              isMyTask = true;
+            } else if (futureMatch) {
+              isMyTask = true;
+              isUpcomingForUser = true; 
+            }
           }
 
+          if (!isMyTask) return; 
+
+          const displayStep = primaryActiveStep;
+          const currentStepName = displayStep ? (displayStep.dept + ' ' + displayStep.name) : '未開始';
+          const currentAssignee = displayStep ? displayStep.assignee : '';
+
           let effectiveDeadlineStr = '';
-          if (currentStepObj && (currentStepObj.keyDate || currentStepObj.deadline)) {
-            effectiveDeadlineStr = currentStepObj.keyDate || currentStepObj.deadline;
+          if (displayStep && (displayStep.keyDate || displayStep.deadline)) {
+            effectiveDeadlineStr = displayStep.keyDate || displayStep.deadline;
           } else if (d.mainDeadline) {
             effectiveDeadlineStr = d.mainDeadline;
           } else if (idxDeadline >= 0 && data[i][idxDeadline]) {
@@ -459,40 +510,44 @@ function api_getDashboardData(simEmail) {
               effectiveDeadlineStr = Utilities.formatDate(parsed, "GMT+8", "yyyy-MM-dd");
             }
           }
-
           if (!effectiveDeadlineStr) effectiveDeadlineStr = Utilities.formatDate(today, "GMT+8", "yyyy-MM-dd");
 
           let deadlineDate = new Date(effectiveDeadlineStr);
           const daysLeft = Math.ceil((deadlineDate - today) / (1000 * 60 * 60 * 24));
 
           const item = {
-            jobNumber: rowJobNum,
-            client: clientVal,
-            taskName: d.name || '未命名任務',
-            type: d.type || 'Standard',
-            status: d.status || 'Pending Start',
-            deadline: effectiveDeadlineStr,
-            daysLeft: daysLeft,
-            currentStepName: currentStepName,
-            assignee: currentAssignee,
-            pmName: pmName,
-            salesName: salesName
+            jobNumber: displayJobNum, 
+            client: clientVal, taskName: d.name || '未命名任務',
+            type: d.type || 'Standard', status: d.status || 'Pending Start',
+            deadline: effectiveDeadlineStr, daysLeft: daysLeft,
+            currentStepName: currentStepName, assignee: currentAssignee,
+            pmName: pmName, salesName: salesName
           };
 
-          if (d.status === 'Paused' || pStatus.includes('pause')) {
+          let isPaused = d.status === 'Paused' || pStatus.includes('pause');
+          let isActive = primaryActiveStep && primaryActiveStep.status === 'In Progress';
+
+          if (isPaused) {
             result.paused.push(item);
-          } else if (d.status === 'Pending Start' || d.status === 'Not Started' || pStatus.includes('pending')) {
-            result.upcoming.push(item);
-          } else if (daysLeft < 0) {
-            result.overdue.push(item);
-          } else if (daysLeft <= 3) {
-            result.dueSoon.push(item);
+          } else if (isUpcomingForUser) {
+            result.upcoming.push(item); 
+          } else if (isActive) {
+            if (daysLeft < 0) result.overdue.push(item);
+            else if (daysLeft <= 3) result.dueSoon.push(item);
+            else result.onTrack.push(item);
           } else {
-            result.onTrack.push(item);
+            result.upcoming.push(item);
           }
         });
       }
     }
+    
+    const sortByDeadline = (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+    result.overdue.sort(sortByDeadline);
+    result.dueSoon.sort(sortByDeadline);
+    result.onTrack.sort(sortByDeadline);
+    result.upcoming.sort(sortByDeadline);
+    result.paused.sort(sortByDeadline);
 
     return { success: true, data: result };
   } catch(e) {
@@ -500,478 +555,497 @@ function api_getDashboardData(simEmail) {
   }
 }
 
-
-/*
-
 // ==========================================
-// 💡 [分流修復版] 獲取部門營運指揮中心數據 (管線去重與全欄位精準流轉)
+// 💡 1. 取得單一專案工作流資料 (100% 自動對齊 pmName 欄位)
 // ==========================================
-function api_getDeptOperationData(deptName, timeRange, customStart, customEnd) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Projects');
-    const usersSheet = ss.getSheetByName('Users');
-    
-    const now = new Date();
-    const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
-
-    deptName = (deptName || 'Editorial').trim();
-    timeRange = timeRange || 'NEXT_14_DAYS';
-
-    let membersMap = {};
-    if (usersSheet) {
-      const uData = usersSheet.getDataRange().getValues();
-      if (uData.length > 1) {
-        const headersU = uData[0].map(h => String(h || '').trim().toLowerCase());
-        const idxDept = headersU.findIndex(h => h === 'department' || h === 'team' || h === 'dept');
-        const idxName = headersU.findIndex(h => h === 'name' || h === 'username');
-
-        for (let i = 1; i < uData.length; i++) {
-          const d = idxDept >= 0 ? String(uData[i][idxDept] || '').trim() : '';
-          const n = idxName >= 0 ? String(uData[i][idxName] || '').trim() : '';
-          if (d.toLowerCase() === deptName.toLowerCase() && n) {
-            membersMap[n] = { name: n, inProgress: 0, completed: 0, revisions: 0 };
-          }
-        }
-      }
-    }
-
-    let kpi = { overdue: 0, dueSoon: 0, unassigned: 0, onTrack: 0 };
-    let calendarMap = {};
-    let calendarTasks = [];
-    let riskTasks = [];
-    let activeTasks = [];
-    let pipelineTasks = [];
-
-    const fortyEightHoursLater = new Date(now.getTime() + (48 * 60 * 60 * 1000));
-
-    if (sheet) {
-      const data = sheet.getDataRange().getValues();
-      if (data.length > 1) {
-        const headers = data[0].map(h => String(h || '').trim().toLowerCase());
-        const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-        const idxClient = headers.findIndex(h => h.includes('client'));
-        const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-        const idxDeadline = headers.findIndex(h => h.includes('launch') || h.includes('deadline'));
-        const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
-
-        for (let i = 1; i < data.length; i++) {
-          try {
-            const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
-            if (!jobNumber || jobNumber.toLowerCase() === 'jobnumber') continue;
-
-            const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
-            if (pStatus === 'Recycle Bin' || pStatus === 'Cancelled' || pStatus === 'Paused') continue;
-
-            const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '客戶';
-            const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
-
-            let deadlineStr = todayStr;
-            if (idxDeadline >= 0 && data[i][idxDeadline]) {
-              let parsed = new Date(data[i][idxDeadline]);
-              if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
-                deadlineStr = Utilities.formatDate(parsed, "GMT+8", "yyyy-MM-dd");
-              }
-            }
-
-            let wfData = {};
-            for (let c = 0; c < data[i].length; c++) {
-              let cellStr = String(data[i][c] || '');
-              if (cellStr.includes('deliverables')) { 
-                try { wfData = JSON.parse(cellStr); break; } catch(e){} 
-              }
-            }
-
-            if (wfData && wfData.deliverables && Array.isArray(wfData.deliverables)) {
-              wfData.deliverables.forEach(d => {
-                if (!d || d.status === 'Completed') return;
-
-                if (d.workflow && Array.isArray(d.workflow)) {
-                  let hasActiveInMyDept = false;
-
-                  // 第一輪：檢查目前部門是否有正在執行的關卡
-                  d.workflow.forEach((s) => {
-                    const sDept = String(s.dept || '').trim().toLowerCase();
-                    const isMyDept = sDept === deptName.toLowerCase();
-                    if (isMyDept && (s.status === 'In Progress' || s.step === d.currentStep)) {
-                      hasActiveInMyDept = true;
-                    }
-                  });
-
-                  d.workflow.forEach((s) => {
-                    if (!s) return;
-                    const sDept = String(s.dept || '').trim().toLowerCase();
-                    const targetDept = deptName.toLowerCase();
-                    const isMyDept = sDept === targetDept;
-
-                    let assignee = s.assignee || '';
-                    if (!assignee && isMyDept && (targetDept === 'pm') && pmName) {
-                      assignee = pmName;
-                    }
-
-                    // 1. 當前關卡在我們部門（進行中 / 待分配 / 逾期）
-                    if (isMyDept && (s.status === 'In Progress' || s.step === d.currentStep)) {
-                      if (assignee) {
-                        if (!membersMap[assignee]) {
-                          membersMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
-                        }
-                        membersMap[assignee].inProgress++;
-                      }
-
-                      const effectiveDate = s.keyDate || deadlineStr;
-                      calendarMap[effectiveDate] = (calendarMap[effectiveDate] || 0) + 1;
-
-                      const taskObj = {
-                        jobNumber: jobNumber,
-                        client: clientName,
-                        deliverableId: d.id,
-                        taskName: d.name || '任務篇章',
-                        stepNumber: s.step,
-                        stepName: s.name || ('Step ' + s.step),
-                        assignee: assignee,
-                        deadline: effectiveDate,
-                        isOverdue: effectiveDate < todayStr
-                      };
-
-                      calendarTasks.push(taskObj);
-
-                      const taskDeadlineDate = new Date(effectiveDate);
-                      if (effectiveDate < todayStr) {
-                        kpi.overdue++;
-                        riskTasks.push(taskObj);
-                      } else if (!assignee) {
-                        kpi.unassigned++;
-                        riskTasks.push(taskObj);
-                      } else if (taskDeadlineDate <= fortyEightHoursLater) {
-                        kpi.dueSoon++;
-                        activeTasks.push(taskObj);
-                      } else {
-                        kpi.onTrack++;
-                        activeTasks.push(taskObj);
-                      }
-                    }
-
-                    // 2. 未來預備管線：只有當該專案「當前不在我們部門執行」時，後續關卡才納入未來管線！
-                    if (isMyDept && s.status === 'Pending' && !hasActiveInMyDept && s.step > d.currentStep) {
-                      const currentFront = d.workflow.find(item => item && item.step === d.currentStep);
-                      pipelineTasks.push({
-                        jobNumber: jobNumber,
-                        client: clientName,
-                        deliverableId: d.id,
-                        taskName: d.name || '任務篇章',
-                        stepNumber: s.step,
-                        stepName: s.name || ('Step ' + s.step),
-                        assignee: assignee || '未指定',
-                        frontDept: currentFront ? (currentFront.dept || 'PM') : 'PM',
-                        currentFrontStep: currentFront ? ('Step ' + currentFront.step + ' (' + (currentFront.name || '') + ')') : '前置關卡',
-                        frontAssignee: currentFront ? (currentFront.assignee || (currentFront.dept + ' 未指派')) : '未指派',
-                        estimatedArrival: (d.workflow[0] && d.workflow[0].keyDate) ? d.workflow[0].keyDate : deadlineStr
-                      });
-                    }
-
-                  });
-                }
-              });
-            }
-          } catch(errRow) {
-            console.error('Row parse error:', errRow);
-          }
-        }
-      }
-    }
-
-    return {
-      success: true,
-      data: {
-        kpi: kpi,
-        capacityList: Object.values(membersMap),
-        calendarMap: calendarMap,
-        calendarTasks: calendarTasks,
-        riskTasks: riskTasks,
-        activeTasks: activeTasks,
-        pipelineTasks: pipelineTasks
-      }
-    };
-
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
-
-*/
-
 function api_getProjectWorkflow(jobNumber) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if (!sheet) throw new Error('找不到 Projects 工作表');
 
     const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h).trim().toLowerCase());
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
 
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
     const idxClient = headers.findIndex(h => h.includes('client'));
-    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-    const idxDeadline = headers.findIndex(h => h.includes('launch') || h.includes('deadline'));
+    const idxPM = headers.findIndex(h => h === 'pmname' || h === 'pm');
+    const idxSales = headers.findIndex(h => h.includes('salesperson') || h.includes('sales'));
+    const idxDeadline = headers.findIndex(h => h.includes('launchdate') || h.includes('deadline'));
+    const idxProd = headers.findIndex(h => h === 'productname' || h.includes('product'));
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
 
-    const searchTarget = String(jobNumber).trim().toLowerCase();
+    function cleanYMD(raw) {
+      if (!raw) return '未設定';
+      if (raw instanceof Date) return Utilities.formatDate(raw, "GMT+8", "yyyy-MM-dd");
+      let str = String(raw).trim();
+      if (str.includes('GMT') || str.includes('Standard Time') || str.includes('T')) {
+        let d = new Date(str);
+        if (!isNaN(d.getTime())) return Utilities.formatDate(d, "GMT+8", "yyyy-MM-dd");
+      }
+      return str.split('T')[0].split(' ')[0];
+    }
 
     for (let i = 1; i < data.length; i++) {
-      const rowJob = String(data[i][idxJobNum >= 0 ? idxJobNum : 0] || '').trim().toLowerCase();
-      
-      if (rowJob === searchTarget) {
-        let deadlineDate = new Date();
-        if (idxDeadline >= 0 && data[i][idxDeadline]) {
-          let parsed = new Date(data[i][idxDeadline]);
-          if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) deadlineDate = parsed;
-        }
+      if (String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
+        const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
+        const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
+        const salesPerson = idxSales >= 0 ? String(data[i][idxSales] || '').trim() : '';
+        const mainDeadline = cleanYMD(idxDeadline >= 0 ? data[i][idxDeadline] : '');
 
-        let wfCol = -1;
         let wfData = {};
-        let logData = [];
-
-        for (let c = 0; c < data[i].length; c++) {
-          let cellStr = String(data[i][c] || '');
-          if (cellStr.includes('deliverables')) { wfCol = c + 1; try { wfData = JSON.parse(cellStr); } catch(e){} }
-          if (cellStr.includes('timestamp') && cellStr.includes('action')) { try { logData = JSON.parse(cellStr); } catch(e){} }
-        }
-
-        if (!wfData.deliverables || wfData.deliverables.length === 0) {
-          wfData = { deliverables: [] };
-        }
-
-        let hasChanges = false;
-        (wfData.deliverables || []).forEach(d => {
-          if (d.workflow) {
-            for (let sIdx = 0; sIdx < d.workflow.length; sIdx++) {
-              let step = d.workflow[sIdx];
-              if (step.status === 'Completed' && step.parallelGroup) {
-                let nextStep = d.workflow.find((s, idx) => idx > sIdx && (!s.parallelGroup || s.parallelGroup !== step.parallelGroup) && s.status === 'Pending');
-                if (nextStep) {
-                  nextStep.status = 'In Progress';
-                  if (nextStep.parallelGroup) {
-                    d.workflow.filter(s => s.parallelGroup === nextStep.parallelGroup).forEach(s => s.status = 'In Progress');
-                  }
-                  hasChanges = true;
-                }
-              }
-            }
+        let cellStr = idxProd >= 0 ? String(data[i][idxProd] || '') : '';
+        if (!cellStr.startsWith('{')) {
+          for (let c = 0; c < data[i].length; c++) {
+            let colVal = String(data[i][c] || '');
+            if (colVal.includes('deliverables')) { cellStr = colVal; break; }
           }
-        });
+        }
+        if (cellStr.startsWith('{')) {
+          try { wfData = JSON.parse(cellStr); } catch(e) {}
+        }
 
-        if (hasChanges && wfCol > 0) {
-          sheet.getRange(i + 1, wfCol).setValue(JSON.stringify(wfData));
+        // 💡 [PM 讀取自動覆寫] 所有 dept === 'PM' 的關卡，100% 動態對齊 Projects 表內的 pmName
+        if (pmName && wfData.deliverables) {
+          wfData.deliverables.forEach(d => {
+            if (d.workflow) {
+              d.workflow.forEach(s => {
+                if (String(s.dept || '').toUpperCase() === 'PM') {
+                  s.assignee = pmName;
+                }
+              });
+            }
+          });
+        }
+
+        let auditLog = [];
+        if (idxAudit >= 0) {
+          let logStr = String(data[i][idxAudit] || '').trim();
+          if (logStr.startsWith('[')) { try { auditLog = JSON.parse(logStr); } catch(e){} }
         }
 
         return {
           success: true,
           data: {
-            jobNumber: data[i][idxJobNum >= 0 ? idxJobNum : 0],
-            client: idxClient >= 0 ? data[i][idxClient] : '未指定客戶',
-            pmName: idxPM >= 0 ? data[i][idxPM] : '未指定',
-            mainDeadline: Utilities.formatDate(deadlineDate, "GMT+8", "yyyy-MM-dd"),
+            jobNumber: jobNumber,
+            client: clientName,
+            pmName: pmName,
+            salesPerson: salesPerson,
+            mainDeadline: mainDeadline,
             workflowData: wfData,
-            auditLog: logData
+            auditLog: auditLog
           }
         };
       }
     }
     throw new Error('找不到專案 ' + jobNumber);
-  } catch(e) {
-    return { success: false, message: e.message };
-  }
-}
-
-function api_getCompletedProjects(keyword, startDate, endDate) {
-  try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    if (!sheet) return { success: true, data: [] };
-
-    const userEmail = Session.getActiveUser().getEmail();
-    const currentUser = getUserByEmail(userEmail);
-
-    const isSuperManager = currentUser && (['Admin', 'Management', 'Head of PM'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
-    const isTeamHead = currentUser && currentUser.role === 'Team Head';
-    const userName = currentUser ? currentUser.name : userEmail.split('@')[0];
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return { success: true, data: [] };
-
-    const headers = data[0].map(h => String(h).trim().toLowerCase());
-
-    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-    const idxClient = headers.findIndex(h => h.includes('client'));
-    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-
-    let historyList = [];
-    const searchKw = String(keyword || '').trim().toLowerCase();
-
-    for (let i = 1; i < data.length; i++) {
-      const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : String(data[i][0] || '').trim();
-      if (!jobNumber || jobNumber.toLowerCase() === 'jobnumber') continue;
-
-      const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
-      const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
-
-      let wfData = {};
-      for (let c = 0; c < data[i].length; c++) {
-        let cellStr = String(data[i][c] || '');
-        if (cellStr.includes('deliverables')) {
-          try { wfData = JSON.parse(cellStr); break; } catch(e){}
-        }
-      }
-
-      if (wfData.deliverables) {
-        wfData.deliverables.forEach(d => {
-          if (d.status === 'Completed') {
-            let canView = false;
-            if (isSuperManager) {
-              canView = true;
-            } else if (pmName === userName) {
-              canView = true;
-            } else if (d.workflow) {
-              canView = d.workflow.some(s => (isTeamHead && currentUser && s.dept === currentUser.department) || (s.assignee === userName));
-            }
-
-            if (canView) {
-              const finishStep = d.workflow ? d.workflow.find(s => s.name.includes('專案完成') || s.name.includes('完成')) : null;
-              let launchUrl = '';
-              if (finishStep && finishStep.submittedData) {
-                launchUrl = Object.values(finishStep.submittedData)[0] || '';
-              }
-
-              const matchKw = !searchKw || 
-                jobNumber.toLowerCase().includes(searchKw) || 
-                clientName.toLowerCase().includes(searchKw) || 
-                d.name.toLowerCase().includes(searchKw) ||
-                pmName.toLowerCase().includes(searchKw);
-              
-              if (matchKw) {
-                historyList.push({
-                  jobNumber: jobNumber,
-                  client: clientName,
-                  pmName: pmName,
-                  deliverableName: d.name,
-                  completedAt: finishStep ? finishStep.completedAt : '已完成',
-                  launchUrl: launchUrl
-                });
-              }
-            }
-          }
-        });
-      }
-    }
-
-    return { success: true, data: historyList };
   } catch (e) {
     return { success: false, message: e.message };
   }
 }
 
-function api_updateWorkflowState(jobNumber, deliverableId, payload) {
+// ==========================================
+// 💡 修正 api_dispatchWorkflowStep (全 PM 關卡雙向同步修復)
+// ==========================================
+function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee) {
   try {
     const userEmail = Session.getActiveUser().getEmail();
-    const userName = userEmail.split('@')[0];
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
     const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h).trim().toLowerCase());
-    
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
+    const idxPM = headers.findIndex(h => h === 'pmname' || h === 'pm');
 
-    let rowIndex = -1;
-    for(let i = 1; i < data.length; i++) {
-      if(String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
-    if (rowIndex === -1) throw new Error('找不到該專案');
+    const nowIso = new Date().toISOString();
+    const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
 
-    let wfCol = -1, logCol = -1;
-    let wfData = {}, logData = [];
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (currentJob.toLowerCase() === String(jobNumber).trim().toLowerCase()) {
 
-    for (let c = 0; c < data[rowIndex - 1].length; c++) {
-      let cellStr = String(data[rowIndex - 1][c] || '');
-      if (cellStr.includes('deliverables')) { wfCol = c + 1; try { wfData = JSON.parse(cellStr); } catch(e){} }
-      if (cellStr.includes('timestamp') && cellStr.includes('action')) { logCol = c + 1; try { logData = JSON.parse(cellStr); } catch(e){} }
-    }
+        let cellColIdx = -1;
+        let cellStr = '';
+        for (let c = 0; c < data[i].length; c++) {
+          let colVal = String(data[i][c] || '');
+          if (colVal.includes('deliverables') && colVal.includes(deliverableId)) {
+            cellStr = colVal;
+            cellColIdx = c;
+            break;
+          }
+        }
 
-    if (wfCol === -1) wfCol = 8;
-    if (logCol === -1) logCol = 9;
+        if (cellColIdx >= 0 && cellStr.startsWith('{')) {
+          let wfData = JSON.parse(cellStr);
+          let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
 
-    let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
-    if (!targetD) throw new Error('找不到該子項目');
+          if (targetD && targetD.workflow) {
+            let targetS = targetD.workflow.find(s => s.step === parseFloat(stepNumber));
+            if (targetS) {
+              let oldAssignee = targetS.assignee || '未指派';
+              let isPMDept = String(targetS.dept || '').toUpperCase() === 'PM';
 
-    const now = new Date();
-    const timeStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd HH:mm");
+              // (1) 無論在哪一個 PM 關卡點擊更換，一律同步更新 Projects 表內的 pmName 欄位
+              if (isPMDept && idxPM >= 0) {
+                sheet.getRange(i + 1, idxPM + 1).setValue(assignee);
+              }
 
-    if (payload.action === 'START') {
-      targetD.status = 'In Progress';
-      targetD.currentStep = 1;
-      if (idxStatus >= 0) sheet.getRange(rowIndex, idxStatus + 1).setValue('In Progress');
-      
-      const step1 = targetD.workflow.find(s => s.step === 1);
-      if (step1) {
-        step1.status = 'In Progress';
-        if (step1.parallelGroup) {
-          targetD.workflow.filter(s => s.parallelGroup && s.parallelGroup === step1.parallelGroup).forEach(s => s.status = 'In Progress');
+              // (2) 若更換的是 PM 關卡，將專案內所有屬於 PM 的關卡負責人同步更新為新 PM
+              if (isPMDept) {
+                (wfData.deliverables || []).forEach(d => {
+                  (d.workflow || []).forEach(s => {
+                    if (String(s.dept || '').toUpperCase() === 'PM') {
+                      s.assignee = assignee;
+                    }
+                  });
+                });
+              } else {
+                targetS.assignee = assignee;
+              }
+
+              let isCurrentTurn = (targetS.step === targetD.currentStep) || 
+                                  targetD.workflow.filter(s => s.step < targetS.step && !s.parallelGroup).every(s => s.status === 'Completed');
+
+              if (isCurrentTurn) {
+                if (targetS.status === 'Pending Start' || targetS.status === 'Pending') {
+                  targetS.status = 'In Progress';
+                  targetS.startedAt = nowIso;
+                  if (targetS.pendingAssignmentAt) {
+                    targetS.dispatchWaitMs = (targetS.dispatchWaitMs || 0) + Math.max(0, new Date().getTime() - new Date(targetS.pendingAssignmentAt).getTime());
+                    targetS.pendingAssignmentAt = null;
+                  }
+                }
+              }
+
+              sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
+
+              if (idxAudit >= 0) {
+                let logs = [];
+                let cellStrLog = String(data[i][idxAudit] || '').trim();
+                if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
+
+                let actionText = isPMDept 
+                  ? `將專案 PM 及所有 PM 關卡負責人由 [${oldAssignee}] 更換為 [${assignee}]`
+                  : (oldAssignee === '未指派'
+                     ? `將 Step ${targetS.step} [${targetS.name}] 指派給 [${assignee}]`
+                     : `將 Step ${targetS.step} 的負責人由 [${oldAssignee}] 更換為 [${assignee}]`);
+
+                logs.unshift({ timestamp: nowStr, user: activeUser, action: 'Dispatch Task', details: actionText });
+                sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+              }
+
+              if (typeof notifyFirebaseUpdate === 'function') {
+                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+              }
+
+              return { success: true, message: '派案與 PM 資料同步成功！' };
+            }
+          }
         }
       }
+    }
+    throw new Error('找不到對應專案或關卡');
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
 
-      logData.unshift({ timestamp: timeStr, user: userName, action: 'Start Deliverable', details: `啟動了任務 [${targetD.name}]` });
-    } else if (payload.action === 'SUBMIT') {
-      let targetStepNum = payload.stepNumber || targetD.currentStep;
-      let currentStepObj = targetD.workflow.find(s => s.step === targetStepNum);
-      
-      if (currentStepObj) {
-        currentStepObj.status = 'Completed';
-        currentStepObj.completedAt = timeStr;
-        currentStepObj.submittedData = payload.inputs || {};
-      }
+// ==========================================
+// 💡 3. 更換 PM API (同步寫入 pmName 欄位並更新所有 PM 關卡)
+// ==========================================
+function api_reassignPM(jobNumber, newPM) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
 
-      let currentGroup = currentStepObj ? currentStepObj.parallelGroup : '';
-      
-      for (let i = 0; i < targetD.workflow.length; i++) {
-        let s = targetD.workflow[i];
-        if (s.status === 'Pending') {
-          if (!currentGroup || s.parallelGroup !== currentGroup) {
-            s.status = 'In Progress';
-            if (s.parallelGroup) {
-              targetD.workflow.filter(item => item.parallelGroup === s.parallelGroup).forEach(item => item.status = 'In Progress');
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxPM = headers.findIndex(h => h === 'pmname' || h === 'pm');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
+    const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
+        
+        let oldPM = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '未設定';
+
+        // 💡 (1) 寫入 Projects 工作表欄位 pmName
+        if (idxPM >= 0) {
+          sheet.getRange(i + 1, idxPM + 1).setValue(newPM);
+        }
+
+        // 💡 (2) 找到 JSON，將所有 dept === 'PM' 的關卡同步為 newPM
+        for (let c = 0; c < data[i].length; c++) {
+          let cellStr = String(data[i][c] || '');
+          if (cellStr.startsWith('{') && cellStr.includes('deliverables')) {
+            let wfData = JSON.parse(cellStr);
+            if (wfData.deliverables) {
+              wfData.deliverables.forEach(d => {
+                if (d.workflow) {
+                  d.workflow.forEach(s => {
+                    if (String(s.dept || '').toUpperCase() === 'PM') {
+                      s.assignee = newPM;
+                    }
+                  });
+                }
+              });
+              sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
             }
             break;
           }
         }
-      }
 
-      if (!targetD.workflow.some(s => s.status !== 'Completed')) {
-        targetD.status = 'Completed';
-      }
+        if (idxAudit >= 0) {
+          let logs = [];
+          let logStr = String(data[i][idxAudit] || '').trim();
+          if (logStr.startsWith('[')) { try { logs = JSON.parse(logStr); } catch(e){} }
 
-      logData.unshift({ timestamp: timeStr, user: userName, action: 'Submit Step', details: `完成了 [${targetD.name}] 的 ${currentStepObj ? currentStepObj.name : ''}` });
-    }
-
-
-// 💡 [關鍵修正] 提交步驟後，自動將 currentStep 更新為當前正處於 In Progress 的步驟
-      if (targetD && targetD.workflow) {
-        let activeStepObj = targetD.workflow.find(s => s.status === 'In Progress');
-        if (activeStepObj) {
-          targetD.currentStep = activeStepObj.step;
-        } else if (!targetD.workflow.some(s => s.status !== 'Completed')) {
-          // 如果全數完成，將 currentStep 設定為最後一步
-          targetD.currentStep = targetD.workflow.length;
+          logs.unshift({
+            timestamp: nowStr,
+            user: activeUser,
+            action: 'Reassign PM',
+            details: `將專案負責 PM 由 [${oldPM}] 更換為 [${newPM}]，已自動同步所有 PM 關卡`
+          });
+          sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
         }
+
+        if (typeof notifyFirebaseUpdate === 'function') {
+          notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+        }
+
+        return { success: true, message: 'PM 更換成功，所有 PM 關卡已自動同步！' };
       }
-
-
-    sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
-    sheet.getRange(rowIndex, logCol).setValue(JSON.stringify(logData));
-
-    return { success: true, message: '更新成功！' };
-  } catch(e) {
+    }
+    throw new Error('找不到專案 ' + jobNumber);
+  } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+// ==========================================
+// 💡 取得已完成專案歷史紀錄 (強制鎖定 YYYY-MM-DD 日期格式)
+// ==========================================
+function api_getCompletedProjects(keyword, startDate, endDate) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { success: true, data: [] };
+
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+
+    const idxJobNum   = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxClient   = headers.findIndex(h => h.includes('client'));
+    const idxPM       = headers.findIndex(h => h.includes('pmname') || h === 'pm');
+    const idxDeadline = headers.findIndex(h => h.includes('launchdate') || h.includes('deadline'));
+    const idxStatus   = headers.findIndex(h => h === 'status' || h === 'project_status');
+
+    let list = [];
+    const kw = String(keyword || '').trim().toLowerCase();
+
+    for (let i = 1; i < data.length; i++) {
+      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
+      
+      // 僅抓取 Completed 狀態的專案
+      if (pStatus === 'Completed') {
+        const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+        const client    = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
+        const pmName    = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
+        const rawDate   = idxDeadline >= 0 ? data[i][idxDeadline] : '';
+
+        let deadlineStr = '';
+        if (rawDate) {
+          let d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            deadlineStr = Utilities.formatDate(d, "GMT+8", "yyyy-MM-dd");
+          } else {
+            deadlineStr = String(rawDate).split('T')[0].split(' ')[0];
+          }
+        }
+
+        // 關鍵字搜尋過濾
+        if (kw && !jobNumber.toLowerCase().includes(kw) && 
+            !client.toLowerCase().includes(kw) && 
+            !pmName.toLowerCase().includes(kw)) {
+          continue;
+        }
+
+        // 日期區間過濾
+        if (startDate && deadlineStr < startDate) continue;
+        if (endDate && deadlineStr > endDate) continue;
+
+        list.push({
+          jobNumber: jobNumber,
+          client: client,
+          pmName: pmName,
+          deadline: deadlineStr,
+          status: pStatus
+        });
+      }
+    }
+
+    return { success: true, data: list };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+    
+
+// ==========================================
+// 💡 更新工作流狀態 API (貼在 UserLogic.gs)
+// 自動推進關卡、紀錄時間、當所有 Deliverable 結案時自動同步 Column E 專案總狀態為 Completed
+// ==========================================
+function api_updateWorkflowState(jobNumber, deliverableId, payload) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    const idxProd = headers.findIndex(h => h === 'productname' || h.includes('product'));
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd HH:mm");
+
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (currentJob.toLowerCase() === String(jobNumber).trim().toLowerCase()) {
+        
+        let cellColIdx = -1;
+        let cellStr = idxProd >= 0 ? String(data[i][idxProd] || '') : '';
+        if (cellStr.startsWith('{')) {
+          cellColIdx = idxProd;
+        } else {
+          for (let c = 0; c < data[i].length; c++) {
+            let colVal = String(data[i][c] || '');
+            if (colVal.includes('deliverables') && colVal.includes(deliverableId)) {
+              cellStr = colVal;
+              cellColIdx = c;
+              break;
+            }
+          }
+        }
+
+        if (cellColIdx < 0 || !cellStr.startsWith('{')) {
+          throw new Error('找不到對應子項目的工作流 JSON 資料');
+        }
+
+        let wfData = JSON.parse(cellStr);
+        let deliverable = (wfData.deliverables || []).find(d => d.id === deliverableId);
+        if (!deliverable) throw new Error('找不到對應子項目');
+
+        const action = payload.action;
+        const stepNum = parseFloat(payload.stepNumber);
+
+        if (action === 'START') {
+          deliverable.status = 'In Progress';
+          deliverable.startedAt = nowIso;
+          if (deliverable.workflow && deliverable.workflow.length > 0) {
+            deliverable.workflow[0].status = 'In Progress';
+            deliverable.workflow[0].startedAt = nowIso;
+            deliverable.workflow[0].isStarted = true;
+          }
+        } else if (action === 'SUBMIT') {
+          let currentStepObj = deliverable.workflow.find(s => s.step === stepNum);
+          if (currentStepObj) {
+            currentStepObj.status = 'Completed';
+            currentStepObj.completedAt = nowStr;
+            currentStepObj.completedAtIso = nowIso;
+            if (payload.inputs) {
+              currentStepObj.submittedData = payload.inputs;
+            }
+
+            if (currentStepObj.startedAt) {
+              let startMs = new Date(currentStepObj.startedAt).getTime();
+              currentStepObj.accumulatedMs = (currentStepObj.accumulatedMs || 0) + Math.max(0, now.getTime() - startMs);
+            }
+
+            let nextStepObj = deliverable.workflow.find(s => s.step > stepNum && s.status !== 'Completed');
+            if (nextStepObj) {
+              deliverable.currentStep = nextStepObj.step;
+              if (nextStepObj.assignee) {
+                nextStepObj.status = 'In Progress';
+                nextStepObj.startedAt = nowIso;
+                nextStepObj.pendingAssignmentAt = null;
+              } else {
+                nextStepObj.pendingAssignmentAt = nowIso;
+              }
+            } else {
+              deliverable.status = 'Completed';
+              deliverable.completedAt = nowStr;
+              deliverable.completedAtIso = nowIso;
+            }
+          }
+        }
+
+        sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
+
+        // 💡 當所有未刪除子項目均完工時，自動同步 Column E 專案總狀態為 Completed
+        let allDeliverablesCompleted = (wfData.deliverables || [])
+          .filter(d => d.status !== 'Deleted')
+          .every(d => d.status === 'Completed');
+
+        if (allDeliverablesCompleted && idxStatus >= 0) {
+          sheet.getRange(i + 1, idxStatus + 1).setValue('Completed');
+        } else if (idxStatus >= 0 && String(data[i][idxStatus]).trim() === 'Pending Start') {
+          sheet.getRange(i + 1, idxStatus + 1).setValue('In Progress');
+        }
+
+        if (idxAudit >= 0) {
+          let logs = [];
+          let logStr = String(data[i][idxAudit] || '').trim();
+          if (logStr.startsWith('[')) { try { logs = JSON.parse(logStr); } catch(e){} }
+
+          let logDetail = action === 'START' 
+            ? `啟動了子項目 [${deliverable.name}]` 
+            : `完成了 Step ${stepNum} 的關卡工作`;
+
+          logs.unshift({ timestamp: nowStr, user: activeUser, action: action, details: logDetail });
+          sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+        }
+
+        if (typeof notifyFirebaseUpdate === 'function') {
+          notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+        }
+
+        return { success: true, message: '工作流狀態更新成功！' };
+      }
+    }
+    throw new Error('找不到專案 ' + jobNumber);
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// 💡 寫入 textJobType Log 的專用輔助函數
+function writeTextJobTypeLog(sheet, rowIndex, idxLog, timeStr, user, action, details) {
+  if (idxLog < 0) return;
+  let logStr = String(sheet.getRange(rowIndex, idxLog + 1).getValue() || '').trim();
+  let logArray = [];
+  if (logStr.startsWith('[')) {
+    try { logArray = JSON.parse(logStr); } catch(e) {}
+  }
+  logArray.unshift({ timestamp: timeStr, user: user, action: action, details: details });
+  sheet.getRange(rowIndex, idxLog + 1).setValue(JSON.stringify(logArray));
 }
 
 function api_getRecycleBinProjects() {
@@ -1366,7 +1440,9 @@ function api_appendStepData(jobNumber, deliverableId, stepNumber, title, content
   }
 }
 
-// 💡 補齊 API：正式啟動客戶審批
+// ==========================================
+// 💡 [更新版] 正式啟動客戶審批 (結算準備時間，啟動審批馬錶)
+// ==========================================
 function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
@@ -1374,7 +1450,6 @@ function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
-
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
 
     let rowIndex = -1;
@@ -1387,10 +1462,7 @@ function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
 
     if (rowIndex === -1) throw new Error('找不到專案 ' + jobNumber);
 
-    let wfCol = -1;
-    let logCol = -1;
-    let wfData = {};
-    let logData = [];
+    let wfCol = -1, logCol = -1, wfData = {}, logData = [];
 
     for (let c = 0; c < data[rowIndex - 1].length; c++) {
       let cellStr = String(data[rowIndex - 1][c] || '');
@@ -1407,9 +1479,22 @@ function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
     let targetStep = targetD.workflow.find(s => s.step === stepNumber);
     if (targetStep) {
       targetStep.reviewStatus = 'Reviewing';
-
+      
       const now = new Date();
+      const nowIso = now.toISOString();
       const timeStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd HH:mm");
+      
+      // 💡 [核心算式] 結算「等待 PM 處理/準備的時間」，並正式開啟客戶審批的馬錶！
+      if (!targetStep.startedAt) {
+        targetStep.startedAt = nowIso;
+        if (targetStep.pendingAssignmentAt) {
+          let waitMs = Math.max(0, now.getTime() - new Date(targetStep.pendingAssignmentAt).getTime());
+          targetStep.dispatchWaitMs = waitMs;
+        } else {
+          targetStep.dispatchWaitMs = 0;
+        }
+      }
+
       const userEmail = Session.getActiveUser().getEmail();
       const userName = userEmail.split('@')[0];
 
@@ -1495,7 +1580,7 @@ function api_insertWorkflowStep(jobNumber, deliverableId, insertAfterStep, newSt
 }
 
 // ==========================================
-// 💡 部門營運數據 API (顯示真實關卡現狀版)
+// 💡 部門營運數據 API (去重優化版：1 項目 1 卡片 + 精準統計關卡數)
 // ==========================================
 function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
   try {
@@ -1519,14 +1604,17 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
     let activeTasks = [];
     let pipelineTasks = [];
     let clientReviewTasks = [];
-    let completedTasks = [];
+    
+    // 💡 暫存檔：用於對 Completed 項目進行去重
+    let completedMap = {};
+    let totalCompletedStepsCount = 0; // 統計 5 天內完成的關卡總次數
 
     const now = new Date();
     const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
 
     for (let i = 1; i < data.length; i++) {
       const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
-      if (pStatus === 'Completed' || pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
+      if (pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
 
       let wfData = {};
       for (let c = 0; c < data[i].length; c++) {
@@ -1537,59 +1625,77 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
       }
 
       if (wfData && wfData.deliverables) {
-        wfData.deliverables.forEach(d => {
+        const deliverableCount = wfData.deliverables.length; 
+
+        wfData.deliverables.forEach((d, dIdx) => { 
           if (d.status === 'Deleted') return;
 
-          const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '') : '';
+          const baseJobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '') : '';
+          const jobNumber = (deliverableCount > 1 && baseJobNumber) ? `${baseJobNumber}-P${dIdx + 1}` : baseJobNumber; 
+          
           const client = idxClient >= 0 ? String(data[i][idxClient] || '') : '';
           const pmName = idxPM >= 0 ? String(data[i][idxPM] || '') : '';
 
           if (!d.workflow || d.workflow.length === 0) return;
 
-          // 1. 組員產能統計
+          // ----------------------------------------------------
+          // 💡 1. 採計產能與已完成關卡（進行去重，1 項目僅留 1 卡片）
+          // ----------------------------------------------------
           d.workflow.forEach(s => {
             const sDept = String(s.dept || '').trim().toLowerCase();
             const assignee = String(s.assignee || '').trim();
-            if (sDept === targetDept.toLowerCase() && assignee) {
-              if (!capacityMap[assignee]) {
-                capacityMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
+
+            if (sDept === targetDept.toLowerCase()) {
+              if (assignee) {
+                if (!capacityMap[assignee]) {
+                  capacityMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
+                }
+                if (s.status === 'In Progress') capacityMap[assignee].inProgress++;
+                if (s.status === 'Completed') capacityMap[assignee].completed++;
               }
-              if (s.status === 'In Progress') capacityMap[assignee].inProgress++;
-              if (s.status === 'Completed') capacityMap[assignee].completed++;
+
+              if (s.status === 'Completed') {
+                let compDateStr = todayStr;
+                if (s.completedAt) compDateStr = String(s.completedAt).split(' ')[0];
+                else if (s.completedAtIso) compDateStr = String(s.completedAtIso).split('T')[0];
+
+                let compDate = new Date(compDateStr);
+                let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
+
+                if (isNaN(diffDays) || diffDays <= 5) {
+                  totalCompletedStepsCount++; // 關卡總次數 +1
+
+                  const delivKey = jobNumber + '_' + (d.id || dIdx);
+                  const compTask = {
+                    jobNumber: jobNumber, 
+                    client: client,
+                    taskName: d.name || '未命名任務',
+                    stepNumber: s.step,
+                    stepName: s.name || ('Step ' + s.step),
+                    assignee: assignee || pmName,
+                    deliverableId: d.id,
+                    deadline: compDateStr,
+                    category: 'COMPLETED'
+                  };
+
+                  // 💡 去重覆蓋：同個項目若有多個關卡完成，只保留最新完成的那一個關卡資訊
+                  completedMap[delivKey] = compTask;
+                }
+              }
             }
           });
 
-          // 2. 互斥歸類與動態卡片封面標籤
-          const activeStep = d.workflow.find(s => s.status === 'In Progress');
+          // ----------------------------------------------------
+          // 💡 2. 處理進行中 (In Progress) 與預備管線 (Pipeline)
+          // ----------------------------------------------------
+          let activeStep = d.workflow.find(s => s.status === 'In Progress');
           const allCompleted = d.status === 'Completed' || d.workflow.every(s => s.status === 'Completed');
-          const deptCompletedSteps = d.workflow.filter(s => String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase() && s.status === 'Completed');
 
-          if (allCompleted) {
-            // 全數完成 -> 封面關卡標示為「已完成」
-            if (deptCompletedSteps.length > 0) {
-              const lastStep = deptCompletedSteps[deptCompletedSteps.length - 1];
-              let compDateStr = lastStep.completedAt ? lastStep.completedAt.split(' ')[0] : todayStr;
-              let compDate = new Date(compDateStr);
-              let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
+          if (!activeStep && !allCompleted && d.workflow.length > 0) {
+            activeStep = d.workflow.find(s => s.step === d.currentStep) || d.workflow[0];
+          }
 
-              if (diffDays <= 5) {
-                const compTask = {
-                  jobNumber: jobNumber,
-                  client: client,
-                  taskName: d.name || '未命名任務',
-                  stepNumber: lastStep.step,
-                  stepName: '已完成', // 💡 整體皆已完成，封面明確印出「已完成」
-                  assignee: lastStep.assignee || pmName,
-                  deliverableId: d.id,
-                  deadline: compDateStr,
-                  category: 'COMPLETED'
-                };
-                completedTasks.push(compTask);
-                calendarTasks.push(compTask);
-                calendarMap[compDateStr] = (calendarMap[compDateStr] || 0) + 1;
-              }
-            }
-          } else if (activeStep) {
+          if (activeStep && !allCompleted) {
             const activeDept = String(activeStep.dept || '').trim().toLowerCase();
             const assignee = String(activeStep.assignee || '').trim();
             const deadline = activeStep.deadline || activeStep.keyDate || todayStr;
@@ -1604,14 +1710,15 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
               let taskCategory = 'ACTIVE';
               if (isClientReview) taskCategory = 'CLIENT_REVIEW';
               else if (deadline < todayStr) taskCategory = 'OVERDUE';
-              else if (!assignee) taskCategory = 'UNASSIGNED';
+              else if (!assignee || assignee === '未指派') taskCategory = 'UNASSIGNED';
               else {
                 let daysLeft = Math.ceil((new Date(deadline) - new Date(todayStr)) / 86400000);
                 if (daysLeft <= 2) taskCategory = 'DUE_SOON';
+                else if (activeStep.status === 'Pending Start' || activeStep.status === 'Pending') taskCategory = 'PIPELINE';
               }
 
               const taskObj = {
-                jobNumber: jobNumber,
+                jobNumber: jobNumber, 
                 client: client,
                 taskName: d.name || '未命名任務',
                 stepNumber: activeStep.step,
@@ -1624,57 +1731,63 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
                 category: taskCategory
               };
 
-              if (deadline) {
+              if (deadline && taskCategory !== 'PIPELINE') {
                 calendarTasks.push(taskObj);
                 calendarMap[deadline] = (calendarMap[deadline] || 0) + 1;
               }
 
               if (taskCategory === 'CLIENT_REVIEW') clientReviewTasks.push(taskObj);
               else if (taskCategory === 'OVERDUE' || taskCategory === 'UNASSIGNED') riskTasks.push(taskObj);
-              else activeTasks.push(taskObj);
-
-            } else {
-              // 當前關卡在其他部門
-              const futureStep = d.workflow.find(s => s.step > activeStep.step && String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase());
-              if (futureStep) {
+              else if (taskCategory === 'PIPELINE') {
                 pipelineTasks.push({
-                  jobNumber: jobNumber,
+                  jobNumber: jobNumber, 
                   client: client,
                   taskName: d.name || '未命名任務',
-                  stepName: futureStep.name,
-                  currentFrontStep: currentRealStepName + ' (' + activeStep.dept + ')',
+                  stepNumber: activeStep.step,
+                  stepName: currentRealStepName,
+                  assignee: assignee || pmName,
+                  frontDept: 'PM',
+                  currentFrontStep: '待啟動 (Pending Start)',
+                  frontAssignee: pmName || '未指派',
+                  estimatedArrival: deadline,
                   pmName: pmName,
                   deliverableId: d.id
                 });
-              } else if (deptCompletedSteps.length > 0) {
-                // 本部門已完成，但專案整體卡在下游關卡 -> 封面顯示真實當前關卡 (如 Client Review)
-                const lastStep = deptCompletedSteps[deptCompletedSteps.length - 1];
-                let compDateStr = lastStep.completedAt ? lastStep.completedAt.split(' ')[0] : todayStr;
-                let compDate = new Date(compDateStr);
-                let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
+              }
+              else activeTasks.push(taskObj);
 
-                if (diffDays <= 5) {
-                  const compTask = {
-                    jobNumber: jobNumber,
-                    client: client,
-                    taskName: d.name || '未命名任務',
-                    stepNumber: lastStep.step,
-                    stepName: currentRealStepName, // 💡 印出專案當前真實關卡 (如 Client Review)
-                    assignee: lastStep.assignee || pmName,
-                    deliverableId: d.id,
-                    deadline: compDateStr,
-                    category: 'COMPLETED'
-                  };
-                  completedTasks.push(compTask);
-                  calendarTasks.push(compTask);
-                  calendarMap[compDateStr] = (calendarMap[compDateStr] || 0) + 1;
-                }
+            } else {
+              const futureStep = d.workflow.find(s => s.step > activeStep.step && String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase() && s.status !== 'Completed');
+              if (futureStep) {
+                pipelineTasks.push({
+                  jobNumber: jobNumber, 
+                  client: client,
+                  taskName: d.name || '未命名任務',
+                  stepNumber: futureStep.step,
+                  stepName: futureStep.name,
+                  assignee: futureStep.assignee || '未指定',
+                  frontDept: activeStep.dept || 'PM',
+                  currentFrontStep: currentRealStepName + ' (' + activeStep.dept + ')',
+                  frontAssignee: activeStep.assignee || (activeStep.dept + ' 未指派'),
+                  estimatedArrival: deadline,
+                  pmName: pmName,
+                  deliverableId: d.id
+                });
               }
             }
           }
         });
       }
     }
+
+    // 將去重後的物件轉為陣列
+    const completedTasks = Object.keys(completedMap).map(k => completedMap[k]);
+    
+    // 把去重後的已完成卡片併入日曆呈現
+    completedTasks.forEach(ct => {
+      calendarTasks.push(ct);
+      calendarMap[ct.deadline] = (calendarMap[ct.deadline] || 0) + 1;
+    });
 
     const capacityList = Object.keys(capacityMap).map(k => capacityMap[k]);
 
@@ -1688,7 +1801,8 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
         activeTasks: activeTasks,
         pipelineTasks: pipelineTasks,
         clientReviewTasks: clientReviewTasks,
-        completedTasks: completedTasks
+        completedTasks: completedTasks,
+        totalCompletedStepsCount: totalCompletedStepsCount // 💡 回傳真實關卡完成次數
       }
     };
   } catch (e) {
@@ -1696,11 +1810,24 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
   }
 }
 
-// 快捷死線調整回寫 API
+// ==========================================
+// 💡 修改單一關卡死線 (自動寫入 Log 日誌)
+// ==========================================
 function api_updateStepDeadline(deliverableId, stepNumber, newDeadline) {
   try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
     const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+
+    const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
 
     for (let i = 1; i < data.length; i++) {
       for (let c = 0; c < data[i].length; c++) {
@@ -1708,74 +1835,49 @@ function api_updateStepDeadline(deliverableId, stepNumber, newDeadline) {
         if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
           let wfData = JSON.parse(cellStr);
           let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+
           if (targetD && targetD.workflow) {
-            let targetS = targetD.workflow.find(s => s.step === parseInt(stepNumber));
+            let targetS = targetD.workflow.find(s => s.step === parseFloat(stepNumber));
             if (targetS) {
+              let oldDeadline = targetS.keyDate || targetS.deadline || '未設定';
               targetS.keyDate = newDeadline;
+              targetS.deadline = newDeadline;
+
               sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
-              return { success: true, message: '成功更新死線！' };
-            }
-          }
-        }
-      }
-    }
-    throw new Error('找不到該關卡項目');
-  } catch(e) {
-    return { success: false, message: e.message };
-  }
-}
 
-// 💡 補齊 API：快捷派案與組員指派 (若指派的是 PM 關卡，自動雙向同步回寫 Projects 表的 pmName)
-function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee, currentDept) {
-  try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    if (!sheet) throw new Error('找不到 Projects 工作表');
+              // 💡 寫入 Audit Log
+              if (idxAudit >= 0) {
+                let logs = [];
+                let cellStrLog = String(data[i][idxAudit] || '').trim();
+                if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
 
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
-
-    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-
-    for (let i = 1; i < data.length; i++) {
-      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
-      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
-
-        for (let c = 0; c < data[i].length; c++) {
-          let cellStr = String(data[i][c] || '');
-          if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
-            let wfData = JSON.parse(cellStr);
-            let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
-
-            if (targetD && targetD.workflow) {
-              let targetS = targetD.workflow.find(s => s.step === parseInt(stepNumber));
-              if (targetS) {
-                targetS.assignee = assignee;
-                targetS.status = 'In Progress';
-
-                // 💡 雙向同步：若被指派的是 PM 關卡，一併回寫更新 Projects 表的 pmName 欄位！
-                if (targetS.dept && targetS.dept.toUpperCase() === 'PM' && idxPM >= 0) {
-                  sheet.getRange(i + 1, idxPM + 1).setValue(assignee);
-                  
-                  // 同步該專案所有其他 PM 關卡
-                  (targetD.workflow || []).forEach(s => {
-                    if (s.dept && s.dept.toUpperCase() === 'PM') s.assignee = assignee;
-                  });
-                }
-
-                sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
-                return { success: true, message: '派案成功！已指派給 ' + assignee };
+                logs.unshift({
+                  timestamp: nowStr,
+                  user: activeUser,
+                  action: 'Update Step Deadline',
+                  details: `將 Step ${targetS.step} [${targetS.name}] 的關卡死線由 [${oldDeadline}] 調整為 [${newDeadline}]`
+                });
+                sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
+
+              let jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '') : '';
+              if (typeof notifyFirebaseUpdate === 'function') {
+                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+              }
+
+              return { success: true, message: '關卡死線更新成功！' };
             }
           }
         }
       }
     }
-    throw new Error('找不到該關卡項目');
+    throw new Error('找不到對應關卡');
   } catch (e) {
     return { success: false, message: e.message };
   }
 }
+
+
 
 // 💡 補齊 API：修改專案總死線 (Launch Date)
 function api_updateProjectDeadline(jobNumber, newDeadline) {
@@ -1924,6 +2026,9 @@ function api_getDeptMembers(deptName) {
 
 function api_submitWorkflowStep(jobNumber, deliverableId, stepNumber, formData, userEmail) {
   try {
+    // 💡 翻譯蒟蒻在這裡！把 1A-P1 的尾巴砍掉，變回 1A
+    jobNumber = String(jobNumber).split('-P')[0];
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h || '').trim().toLowerCase());
@@ -1973,135 +2078,8 @@ function api_submitWorkflowStep(jobNumber, deliverableId, stepNumber, formData, 
   }
 }
 
-// ==========================================
-// 💡 [補齊 API 1] 更換專案總 PM (自動雙向同步所有 PM 關卡)
-// ==========================================
-function api_reassignPM(jobNumber, newPmName) {
-  try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    if (!sheet) throw new Error('找不到 Projects 工作表');
 
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
 
-    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-    const idxLog = headers.findIndex(h => h.includes('textjobtype') || h.includes('log') || h.includes('audit'));
-
-    let rowIndex = -1;
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][idxJobNum]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
-
-    if (rowIndex === -1) throw new Error('找不到編號為 [' + jobNumber + '] 的專案');
-
-    // 1. 更新 Projects 工作表欄位中的 pmName
-    if (idxPM >= 0) {
-      sheet.getRange(rowIndex, idxPM + 1).setValue(newPmName);
-    }
-
-    // 2. 雙向同步：走訪 JSON，將所有 dept === 'PM' 的關卡 assignee 一併更新為新 PM
-    for (let c = 0; c < data[rowIndex - 1].length; c++) {
-      let cellStr = String(data[rowIndex - 1][c] || '');
-      if (cellStr.includes('deliverables')) {
-        try {
-          let wfData = JSON.parse(cellStr);
-          (wfData.deliverables || []).forEach(d => {
-            (d.workflow || []).forEach(s => {
-              if (s.dept && s.dept.toUpperCase() === 'PM') {
-                s.assignee = newPmName;
-              }
-            });
-          });
-          sheet.getRange(rowIndex, c + 1).setValue(JSON.stringify(wfData));
-        } catch(e) {}
-        break;
-      }
-    }
-
-    // 3. 寫入活動日誌 (Log)
-    if (idxLog >= 0) {
-      let logStr = String(data[rowIndex - 1][idxLog] || '').trim();
-      let logArray = [];
-      if (logStr.startsWith('[')) {
-        try { logArray = JSON.parse(logStr); } catch(e) {}
-      }
-      
-      const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
-      const userEmail = Session.getActiveUser().getEmail();
-      const userName = userEmail ? userEmail.split('@')[0] : 'System';
-
-      logArray.unshift({
-        timestamp: nowStr,
-        user: userName,
-        action: 'Reassign PM',
-        details: `將專案負責 PM 更換為：${newPmName}`
-      });
-
-      sheet.getRange(rowIndex, idxLog + 1).setValue(JSON.stringify(logArray));
-    }
-
-    return { success: true, message: '專案負責 PM 更換成功！' };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
-
-// ==========================================
-// 💡 [修復 API 2] 關卡指派 (指派 PM 關卡時自動同步總 PM 與 Step 4)
-// ==========================================
-function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee, currentDept) {
-  try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    if (!sheet) throw new Error('找不到 Projects 工作表');
-
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
-
-    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
-
-    for (let i = 1; i < data.length; i++) {
-      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
-      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
-
-        for (let c = 0; c < data[i].length; c++) {
-          let cellStr = String(data[i][c] || '');
-          if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
-            let wfData = JSON.parse(cellStr);
-            let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
-
-            if (targetD && targetD.workflow) {
-              let targetS = targetD.workflow.find(s => s.step === parseInt(stepNumber));
-              if (targetS) {
-                targetS.assignee = assignee;
-                targetS.status = 'In Progress';
-
-                // 💡 若指派的是 PM 關卡，自動同步回寫 Projects 表的 pmName 及專案內所有 PM 關卡！
-                if (targetS.dept && targetS.dept.toUpperCase() === 'PM') {
-                  if (idxPM >= 0) sheet.getRange(i + 1, idxPM + 1).setValue(assignee);
-                  
-                  (targetD.workflow || []).forEach(s => {
-                    if (s.dept && s.dept.toUpperCase() === 'PM') s.assignee = assignee;
-                  });
-                }
-
-                sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
-                return { success: true, message: '派案成功！已指派給 ' + assignee };
-              }
-            }
-          }
-        }
-      }
-    }
-    throw new Error('找不到該關卡項目');
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
 
 
 // ==========================================
@@ -2146,4 +2124,783 @@ function fixAllProjectCurrentSteps() {
   }
   Logger.log(`🎉 校正完成！共修正了 ${updatedCount} 個專案的 currentStep！`);
   return `🎉 校正完成！共修正了 ${updatedCount} 個專案的 currentStep！`;
+
+}
+
+// ==========================================
+// ⏱️ Phase B: 專案耗時與工作天計算機 (扣除週六日，精確至小數點)
+// ==========================================
+function calculateWorkingDays(startDateStr, endDateStr) {
+  if (!startDateStr || !endDateStr) return 0;
+  
+  let start = new Date(startDateStr);
+  let end = new Date(endDateStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return 0;
+
+  let diffMs = end.getTime() - start.getTime();
+  let totalDays = diffMs / (1000 * 60 * 60 * 24); 
+
+  let weekendDays = 0;
+  let cur = new Date(start);
+  cur.setHours(0,0,0,0);
+  let endMidnight = new Date(end);
+  endMidnight.setHours(0,0,0,0);
+
+  while (cur <= endMidnight) {
+    let day = cur.getDay();
+    if (day === 0 || day === 6) weekendDays++; 
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  let workingDays = totalDays - weekendDays;
+  return Math.max(0, Number(workingDays.toFixed(2))); 
+}
+
+// ==========================================
+// 💡 [補齊 API] 客戶退回修改 (Client Revision) - 支援 Phase B 計時累加
+// ==========================================
+function api_triggerClientRevision(jobNumber, deliverableId, stepNumber, feedback) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
+
+        for (let c = 0; c < data[i].length; c++) {
+          let cellStr = String(data[i][c] || '');
+          if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
+            let wfData = JSON.parse(cellStr);
+            let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+
+            if (targetD && targetD.workflow) {
+              // 找到要被「退回重做」的目標關卡
+              let targetS = targetD.workflow.find(s => s.step === parseInt(stepNumber));
+              if (targetS) {
+                
+                const nowIso = new Date().toISOString();
+
+                // 1. 將目標關卡改回 In Progress 並重新啟動馬錶
+                targetS.status = 'In Progress';
+                targetS.completedAt = null;
+                targetS.completedAtIso = null;
+                targetS.remarks = `【客戶退回修改】${feedback}`; // 顯示退回理由
+                
+                // 💡 雙軌計時：如果有關卡負責人，立刻開始計時；沒有則進入等待派案
+                if (targetS.assignee) {
+                  targetS.startedAt = nowIso; 
+                  targetS.dispatchWaitMs = 0;
+                } else {
+                  targetS.startedAt = null;
+                  targetS.pendingAssignmentAt = nowIso;
+                }
+                
+                // 2. 將目標關卡「之後」一直到「現在」的所有關卡，全部重置為 Pending
+                targetD.workflow.forEach(s => {
+                  if (s.step > targetS.step && s.status !== 'Pending Start') {
+                    s.status = 'Pending';
+                    s.startedAt = null;
+                    s.pendingAssignmentAt = null;
+                    s.completedAt = null;
+                    s.completedAtIso = null;
+                    s.reviewStatus = null; // 清除審批狀態
+                    s.remarks = ''; // 清除後續關卡的警告
+                    // 💡 注意：我們保留了 s.accumulatedMs (累計耗時)，確保之前的努力不會白費
+                  }
+                });
+
+                // 3. 調整當前步驟指標
+                targetD.currentStep = targetS.step;
+                targetD.status = 'In Progress';
+
+                sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
+
+                // 4. 寫入活動日誌 (Log)
+                if (idxAudit >= 0) {
+                  let logs = [];
+                  let cellStrLog = String(data[i][idxAudit] || '').trim();
+                  if (cellStrLog.startsWith('[')) {
+                    try { logs = JSON.parse(cellStrLog); } catch(e) {}
+                  } else if (cellStrLog) {
+                    logs = [{ timestamp: "系統紀錄", user: "System", action: cellStrLog }];
+                  }
+                  
+                  const activeUser = Session.getActiveUser().getEmail().split('@')[0];
+                  const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+                  
+                  logs.unshift({
+                    timestamp: nowStr,
+                    user: activeUser,
+                    action: `退回修改 (Revision)`,
+                    details: `客戶退回至 Step ${targetS.step} [${targetS.name}]。原因：${feedback}`
+                  });
+                  sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+                }
+
+                return { success: true, message: '成功退回修改！' };
+              }
+            }
+          }
+        }
+      }
+    }
+    throw new Error('找不到該關卡項目');
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ==========================================
+// 💡 Phase C: 關卡強制退回上一步 (Rollback)
+// ==========================================
+function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, reason) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
+
+        for (let c = 0; c < data[i].length; c++) {
+          let cellStr = String(data[i][c] || '');
+          if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
+            let wfData = JSON.parse(cellStr);
+            let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+
+            if (targetD && targetD.workflow) {
+              let rollbackStepNum = parseInt(targetStepNumber);
+              let targetS = targetD.workflow.find(s => s.step === rollbackStepNum);
+              if (!targetS) throw new Error('找不到目標退回關卡');
+
+              const nowIso = new Date().toISOString();
+
+              // 1. 將目標關卡設回 In Progress
+              targetS.status = 'In Progress';
+              targetS.completedAt = null;
+              targetS.completedAtIso = null;
+              targetS.remarks = `【PM 強制退回】${reason}`;
+
+              if (targetS.assignee) {
+                targetS.startedAt = nowIso;
+                targetS.dispatchWaitMs = 0;
+              } else {
+                targetS.startedAt = null;
+                targetS.pendingAssignmentAt = nowIso;
+              }
+
+              // 2. 將目標關卡之後的所有關卡重置為 Pending
+              targetD.workflow.forEach(s => {
+                if (s.step > rollbackStepNum) {
+                  s.status = 'Pending';
+                  s.startedAt = null;
+                  s.pendingAssignmentAt = null;
+                  s.completedAt = null;
+                  s.completedAtIso = null;
+                  s.reviewStatus = null;
+                  s.remarks = '';
+                }
+              });
+
+              targetD.currentStep = rollbackStepNum;
+              targetD.status = 'In Progress';
+
+              if (idxStatus >= 0) sheet.getRange(i + 1, idxStatus + 1).setValue('In Progress');
+              sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
+
+              // 3. 寫入活動日誌
+              if (idxAudit >= 0) {
+                let logs = [];
+                let cellStrLog = String(data[i][idxAudit] || '').trim();
+                if (cellStrLog.startsWith('[')) {
+                  try { logs = JSON.parse(cellStrLog); } catch(e) {}
+                }
+                const activeUser = Session.getActiveUser().getEmail().split('@')[0];
+                const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+                
+                logs.unshift({
+                  timestamp: nowStr,
+                  user: activeUser,
+                  action: 'Rollback Step',
+                  details: `將關卡強制退回至 Step ${targetS.step} [${targetS.name}]。原因：${reason}`
+                });
+                sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+              }
+
+              return { success: true, message: `已成功將專案退回至 Step ${rollbackStepNum}` };
+            }
+          }
+        }
+      }
+    }
+    throw new Error('找不到對應專案或子項目');
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ==========================================
+// 💡 Phase C: 重啟已結案專案 (Restart Project)
+// ==========================================
+function api_restartProject(jobNumber, deliverableId, resetToStep1, reason) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
+
+        for (let c = 0; c < data[i].length; c++) {
+          let cellStr = String(data[i][c] || '');
+          if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
+            let wfData = JSON.parse(cellStr);
+            let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+
+            if (targetD && targetD.workflow) {
+              const nowIso = new Date().toISOString();
+
+              targetD.status = 'In Progress';
+              if (idxStatus >= 0) sheet.getRange(i + 1, idxStatus + 1).setValue('In Progress');
+
+              if (resetToStep1) {
+                // 完全重置回 Step 1
+                targetD.currentStep = 1;
+                targetD.workflow.forEach((s, idx) => {
+                  if (idx === 0) {
+                    s.status = 'In Progress';
+                    s.startedAt = nowIso;
+                    s.completedAt = null;
+                    s.completedAtIso = null;
+                    s.remarks = `【專案重啟】${reason}`;
+                  } else {
+                    s.status = 'Pending';
+                    s.startedAt = null;
+                    s.pendingAssignmentAt = null;
+                    s.completedAt = null;
+                    s.completedAtIso = null;
+                    s.reviewStatus = null;
+                    s.remarks = '';
+                  }
+                });
+              } else {
+                // 保留現有進度，僅將最後一關重開啟
+                let lastStep = targetD.workflow[targetD.workflow.length - 1];
+                if (lastStep) {
+                  lastStep.status = 'In Progress';
+                  lastStep.startedAt = nowIso;
+                  lastStep.completedAt = null;
+                  lastStep.completedAtIso = null;
+                  lastStep.remarks = `【專案重啟】${reason}`;
+                  targetD.currentStep = lastStep.step;
+                }
+              }
+
+              sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
+
+              if (idxAudit >= 0) {
+                let logs = [];
+                let cellStrLog = String(data[i][idxAudit] || '').trim();
+                if (cellStrLog.startsWith('[')) {
+                  try { logs = JSON.parse(cellStrLog); } catch(e) {}
+                }
+                const activeUser = Session.getActiveUser().getEmail().split('@')[0];
+                const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+                
+                logs.unshift({
+                  timestamp: nowStr,
+                  user: activeUser,
+                  action: 'Restart Project',
+                  details: `重啟專案 [${targetD.name}] (${resetToStep1 ? '重置至 Step 1' : '恢復結案前狀態'})。原因：${reason}`
+                });
+                sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+              }
+
+              return { success: true, message: '專案已成功重啟！' };
+            }
+          }
+        }
+      }
+    }
+    throw new Error('找不到對應專案或子項目');
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ==========================================
+// 💡 Phase D: 專屬 Client 中繼節點的「無限修改展開引擎」
+// ==========================================
+function api_triggerDynamicClientRevision(jobNumber, deliverableId, stepNumber, feedback) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
+
+        for (let c = 0; c < data[i].length; c++) {
+          let cellStr = String(data[i][c] || '');
+          if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
+            let wfData = JSON.parse(cellStr);
+            let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+
+            if (targetD && targetD.workflow) {
+              
+              let targetIdx = targetD.workflow.findIndex(s => s.step === parseFloat(stepNumber));
+              let targetS = targetD.workflow[targetIdx];
+              if (!targetS) throw new Error('找不到目標退回關卡');
+
+              // 尋找最近一個非 Client 的「製作關卡」以繼承部門名稱
+              let prevS = targetD.workflow.slice(0, targetIdx).reverse().find(s => s.dept !== 'Client');
+              if (!prevS) prevS = { dept: 'Editorial', name: '前置作業' };
+
+              const nowIso = new Date().toISOString();
+              const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+
+              // 1. 將當前的 Client 關卡標記為完成 (因為審批動作本身結束了，進入修改)
+              targetS.status = 'Completed';
+              targetS.completedAt = nowStr;
+              targetS.completedAtIso = nowIso;
+              targetS.submittedData = { "客戶意見": feedback };
+              
+              if (targetS.startedAt) {
+                targetS.accumulatedMs = (targetS.accumulatedMs || 0) + Math.max(0, new Date().getTime() - new Date(targetS.startedAt).getTime());
+              }
+
+              // 2. 小數點推算法：生成 3a 與 3b (或 3.01, 3.02)
+              let baseStep = Math.floor(targetS.step); 
+              let subStepCount = targetD.workflow.filter(s => Math.floor(s.step) === baseStep).length;
+              
+              let newStepA_num = baseStep + (subStepCount * 0.01);
+              let newStepB_num = baseStep + ((subStepCount + 1) * 0.01);
+
+              let stepA_Editor = {
+                step: newStepA_num,
+                name: `[退回修改] ${prevS.name}`,
+                dept: prevS.dept,
+                assignee: targetS.assignee, // 由原負責聯絡的同事執行修改
+                status: 'In Progress',
+                startedAt: nowIso,
+                dispatchWaitMs: 0,
+                remarks: `【客戶修改要求】${feedback}`,
+                isSubStep: true,
+                baseStep: baseStep,
+                parallelGroup: targetS.parallelGroup || ''
+              };
+
+              let stepB_Client = {
+                step: newStepB_num,
+                name: `Client 再次審批`,
+                dept: 'Client',
+                assignee: targetS.assignee,
+                status: 'Pending',
+                startedAt: null,
+                isSubStep: true,
+                baseStep: baseStep,
+                parallelGroup: targetS.parallelGroup || ''
+              };
+
+              // 3. 動態陣列插隊 (splice)
+              targetD.workflow.splice(targetIdx + 1, 0, stepA_Editor, stepB_Client);
+              
+              // 確保順序正確
+              targetD.workflow.sort((a, b) => a.step - b.step);
+              targetD.currentStep = stepA_Editor.step;
+
+              // 4. 退件計數器 (奧客警報數據源🚨)
+              targetD.revisionCount = (targetD.revisionCount || 0) + 1;
+
+              sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
+
+              // 5. 寫入日誌
+              if (idxAudit >= 0) {
+                let logs = [];
+                let cellStrLog = String(data[i][idxAudit] || '').trim();
+                if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
+                const activeUser = Session.getActiveUser().getEmail().split('@')[0];
+                
+                let alertStr = targetD.revisionCount >= 5 ? ' 🚨[奧客警報: 第 '+targetD.revisionCount+' 次退件]' : '';
+
+                logs.unshift({
+                  timestamp: nowStr,
+                  user: activeUser,
+                  action: `Client Revision${alertStr}`,
+                  details: `客戶退回修改，新增關卡 [修改 ${prevS.name}]。意見：${feedback}`
+                });
+                sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+              }
+
+              return { success: true, message: `已產生修改流程，此項目為第 ${targetD.revisionCount} 次退回！` };
+            }
+          }
+        }
+      }
+    }
+    throw new Error('找不到對應專案或子項目');
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// 💡 輔助函數：將毫秒轉換為 天/小時/分鐘 (用於後端)
+function formatMsToText(ms) {
+  if (!ms || ms <= 0) return '少於 1 分鐘';
+  let totalMins = Math.floor(ms / (1000 * 60));
+  let mins = totalMins % 60;
+  let totalHours = Math.floor(totalMins / 60);
+  let hours = totalHours % 24;
+  let days = Math.floor(totalHours / 24);
+  let res = '';
+  if (days > 0) res += days + '天 ';
+  if (hours > 0) res += hours + '小時 ';
+  res += mins + '分鐘';
+  return res.trim();
+}
+
+function api_sendNudge(jobNumber, deliverableId, stepNumber) {
+  try {
+    // 💡 翻譯蒟蒻在這裡！把 1A-P1 的尾巴砍掉，變回 1A
+    jobNumber = String(jobNumber).split('-P')[0]; 
+    
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    const idxPM = headers.findIndex(h => h === 'pm' || h.includes('pmname')); 
+
+    for (let i = 1; i < data.length; i++) {
+      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
+      if (pStatus === 'Recycle Bin' || pStatus === 'Deleted') continue; 
+
+      if (String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
+        
+        if (idxAudit >= 0) {
+          let logs = [];
+          let cellStrLog = String(data[i][idxAudit] || '').trim();
+          if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
+          
+          const activeUser = Session.getActiveUser().getEmail().split('@')[0];
+          const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+          
+          logs.unshift({ timestamp: nowStr, user: activeUser, action: 'Nudge', details: `📢 針對 Step ${stepNumber} 發出了緊急催辦提醒！` });
+          sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+
+          let sentTo = "未發送"; 
+
+          for (let c = 0; c < data[i].length; c++) {
+            let cellStrDeliv = String(data[i][c] || '');
+            if (cellStrDeliv.includes('deliverables') && cellStrDeliv.includes(deliverableId)) {
+              try {
+                let wfData = JSON.parse(cellStrDeliv);
+                let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+                
+                if (targetD && targetD.workflow) {
+                  let targetS = targetD.workflow.find(s => s.step === parseFloat(stepNumber));
+                  if (targetS) {
+                    
+                    let realAssignee = targetS.assignee;
+                    if (!realAssignee && String(targetS.dept).toUpperCase() === 'PM' && idxPM >= 0) {
+                      realAssignee = String(data[i][idxPM] || '').trim();
+                    }
+
+                    if (realAssignee && typeof sendSystemEmail === 'function') {
+                      sentTo = sendSystemEmail(
+                        realAssignee, 
+                        `[緊急催辦] 專案 ${jobNumber} 任務提醒`, 
+                        `🚨 緊急催辦通知`, 
+                        `專案負責人剛剛針對 <b>[${jobNumber}]</b> 的 <b>[${targetS.name}]</b> 關卡發出了緊急催辦，請立即跟進！`
+                      );
+                    } else {
+                      sentTo = "無負責人";
+                    }
+                  } 
+                } 
+              } catch(e) {}
+              break; 
+            }
+          }
+          return { success: true, message: '催辦已寫入！(信件發送至: ' + sentTo + ')' };
+        }
+      }
+    }
+    throw new Error('找不到對應專案');
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ==========================================
+// 💡 [新增] 混合式動態通知引擎 (Notification Center)
+// ==========================================
+function api_getUserNotifications(userEmail) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) return { success: true, data: [] };
+
+    const activeEmail = userEmail || Session.getActiveUser().getEmail();
+    const userName = activeEmail.split('@')[0].toLowerCase();
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxClient = headers.findIndex(h => h.includes('client'));
+    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
+    const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+
+    let notifications = [];
+    const now = new Date();
+    const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
+    const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)); // 只抓最近 7 天的日誌
+
+    for (let i = 1; i < data.length; i++) {
+      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
+      if (pStatus === 'Recycle Bin' || pStatus === 'Deleted') continue;
+
+      const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
+      const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim().toLowerCase() : '';
+
+      let wfData = {};
+      let logs = [];
+      for (let c = 0; c < data[i].length; c++) {
+        let cellStr = String(data[i][c] || '');
+        if (cellStr.includes('deliverables')) { try { wfData = JSON.parse(cellStr); } catch(e){} }
+        if (c === idxAudit && cellStr.startsWith('[')) { try { logs = JSON.parse(cellStr); } catch(e){} }
+      }
+
+      // 檢查該使用者是否與此專案有關聯 (PM 或 關卡執行者)
+      let isInvolved = (pmName === userName);
+      let assignedSteps = [];
+      
+      if (wfData.deliverables) {
+        wfData.deliverables.forEach(d => {
+          if (d.workflow) {
+            d.workflow.forEach(s => {
+              if (s.assignee && s.assignee.toLowerCase() === userName) {
+                isInvolved = true;
+                if (s.status === 'In Progress') assignedSteps.push({ stepName: s.name, deadline: s.keyDate || s.deadline });
+              }
+            });
+          }
+        });
+      }
+
+      if (!isInvolved) continue; // 如果與我無關，跳過這個專案
+
+      // === A. 狀態型通知 (Live Status) ===
+      assignedSteps.forEach(s => {
+        let deadline = s.deadline || todayStr;
+        let daysLeft = Math.ceil((new Date(deadline) - new Date(todayStr)) / 86400000);
+        
+        if (daysLeft < 0) {
+          notifications.push({ type: 'OVERDUE', color: 'danger', icon: 'fa-exclamation-triangle', time: new Date().toISOString(),
+            title: `[${jobNumber}] 任務已逾期！`, message: `你的任務 ${s.stepName} 已經逾期，請盡速處理。` });
+        } else if (daysLeft <= 1) {
+          notifications.push({ type: 'DUE_SOON', color: 'warning', icon: 'fa-hourglass-half', time: new Date().toISOString(),
+            title: `[${jobNumber}] 任務即將到期`, message: `你的任務 ${s.stepName} 需於今天/明天內完成。` });
+        }
+      });
+
+      // === B. 事件型通知 (Event Logs) ===
+      logs.forEach(log => {
+        let logDate = new Date(log.timestamp.replace(' ', 'T') + ':00');
+        if (isNaN(logDate) || logDate < sevenDaysAgo) return; // 只抓最近一週
+
+        const action = String(log.action || '').toLowerCase();
+        const details = String(log.details || '').toLowerCase();
+        const logUser = String(log.user || '').toLowerCase();
+
+        // 不要通知自己做過的事 (除非是重要的狀態改變)
+        if (logUser === userName && !action.includes('nudge')) return;
+
+        let notif = null;
+
+        if (action.includes('dispatch task')) {
+          if (details.includes(`指派給 [${userName}]`)) {
+            notif = { type: 'ASSIGNED', color: 'primary', icon: 'fa-inbox', title: `[${jobNumber}] 新任務派發`, message: `${log.user} 指派了新任務給你。` };
+          } else if (details.includes(`由 [${userName}] 更換為`)) {
+            notif = { type: 'REASSIGNED', color: 'secondary', icon: 'fa-random', title: `[${jobNumber}] 任務轉交`, message: `你原本負責的任務已更換由其他同事接手。` };
+          }
+        } 
+        else if (action.includes('insert step')) {
+          notif = { type: 'SCOPE_CHANGE', color: 'info', icon: 'fa-plus-circle', title: `[${jobNumber}] 流程變更`, message: `${log.user} 在專案中插入了新的關卡步驟。` };
+        }
+        else if (action.includes('revision') || action.includes('rollback')) {
+          notif = { type: 'REJECTED', color: 'danger', icon: 'fa-undo', title: `[${jobNumber}] 專案退回修改`, message: `${log.user} 提出修改要求或退回了關卡：${log.details}` };
+        }
+        else if (action.includes('nudge')) {
+          notif = { type: 'NUDGE', color: 'danger', icon: 'fa-bullhorn', title: `[${jobNumber}] 📢 催辦提醒！`, message: `${log.user} 對你負責的關卡發出了催辦，請盡速查看！` };
+        }
+        else if (action.includes('submit step') && pmName === userName) {
+          // PM 專屬：下屬完成關卡
+          notif = { type: 'STEP_DONE', color: 'success', icon: 'fa-check-circle', title: `[${jobNumber}] 關卡完成`, message: `${log.user} 已完成一項關卡，專案繼續推進。` };
+        }
+        else if (action.includes('pause project')) {
+          notif = { type: 'PAUSED', color: 'warning', icon: 'fa-pause-circle', title: `[${jobNumber}] 專案暫停`, message: `專案已被 ${log.user} 暫停。` };
+        }
+
+        if (notif) {
+          notif.time = logDate.toISOString();
+          notif.rawTime = log.timestamp;
+          notifications.push(notif);
+        }
+      });
+    }
+
+    // 依照時間由新到舊排序
+    notifications.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    
+    // 最多只回傳最新的 30 則通知
+    return { success: true, data: notifications.slice(0, 30) };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function testSendEmailNow() {
+  // 🔽 把這裡換成你正在檢查的真實信箱！
+  var myRealEmail = "raylo@hk01.com"; 
+
+  sendSystemEmail(
+    myRealEmail, 
+    "🧪 系統發信功能測試", 
+    "測試成功！", 
+    "如果你看到這封信，代表發信引擎已經成功獲得授權並運作正常！"
+  );
+}
+
+function sendSystemEmail(toUser, subject, title, message) {
+  console.log(`[發信模組] 接收到目標參數: [${toUser}]`);
+  if (!toUser || toUser === '未指派') return '無負責人';
+  
+  let emailAddress = toUser;
+  
+  if (!emailAddress.includes('@')) {
+    try {
+      const userSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+      if (userSheet) {
+        const data = userSheet.getDataRange().getValues();
+        const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+        const idxEmail = headers.findIndex(h => h === 'email' || h.includes('email'));
+        const idxName = headers.findIndex(h => h === '姓名' || h === 'name');
+        
+        if (idxEmail >= 0 && idxName >= 0) {
+          for (let i = 1; i < data.length; i++) {
+            if (String(data[i][idxName]).trim() === String(toUser).trim()) {
+              emailAddress = String(data[i][idxEmail]).trim();
+              console.log(`[發信模組] 查表成功！將 [${toUser}] 轉換為 [${emailAddress}]`);
+              break;
+            }
+          }
+        }
+      }
+    } catch(e) {
+      console.log(`[發信模組] 查表發生錯誤: ${e.message}`);
+    }
+    
+    if (!emailAddress.includes('@')) {
+      emailAddress = emailAddress.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() + '@hk01.com';
+      console.log(`[發信模組] 查表失敗，強制轉為預設後綴: [${emailAddress}]`);
+    }
+  }
+
+  let sysUrl = ScriptApp.getService().getUrl(); 
+  let htmlBody = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+      <div style="background-color: #005088; color: white; padding: 15px 20px; font-size: 18px; font-weight: bold;">HK01 PMO 系統通知</div>
+      <div style="padding: 20px; color: #333; line-height: 1.6;">
+        <h3 style="color: #005088; margin-top: 0;">${title}</h3>
+        <p>${message}</p>
+        <a href="${sysUrl}" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #0dcaf0; color: #000; text-decoration: none; border-radius: 5px; font-weight: bold;">登入系統處理</a>
+      </div>
+    </div>
+  `;
+  try {
+    GmailApp.sendEmail(emailAddress, subject, "", { name: 'HK01 PMO 系統', htmlBody: htmlBody });
+    console.log(`[發信模組] 信件已成功呼叫 GmailApp 寄出至: [${emailAddress}]`);
+    return emailAddress; 
+  } catch(e) { 
+    console.error(`[發信模組] 呼叫 GmailApp 失敗: ${e.message}`);
+    return "錯誤: " + e.message; 
+  }
+}
+
+// 💡 升級版後端廣播器：同時觸發專案視窗重載 + 全域看板卡片即時跳出
+function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
+  try {
+    const cleanJobNum = String(jobNumber || 'GLOBAL').split('-P')[0];
+    const firebaseUrl = "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app/";
+    
+    const nowStamp = new Date().getTime();
+    const payload = JSON.stringify({
+      timestamp: nowStamp,
+      updatedBy: userEmail || 'System',
+      updatedByName: userName || 'System'
+    });
+
+    // 1. 廣播給專案詳情視窗
+    if (cleanJobNum !== 'GLOBAL') {
+      UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanJobNum + ".json", {
+        method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
+      });
+    }
+
+    // 2. 若為全域事件（如新增專案、派案），廣播給全系統所有人的看板
+    if (isGlobalEvent) {
+      UrlFetchApp.fetch(firebaseUrl + "global_events.json", {
+        method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
+      });
+    }
+  } catch(e) {
+    console.error("Firebase 廣播失敗:", e.message);
+  }
+}
+
+// ==========================================
+// 💡 後端時間格式化輔助函數 (解決 formatDurationText undefined 報錯)
+// ==========================================
+function formatDurationText(ms) {
+  if (!ms || ms <= 0) return '0 分鐘';
+  var totalMins = Math.floor(ms / (1000 * 60));
+  var mins = totalMins % 60;
+  var totalHours = Math.floor(totalMins / 60);
+  var hours = totalHours % 24;
+  var days = Math.floor(totalHours / 24);
+
+  var result = '';
+  if (days > 0) result += days + ' 天 ';
+  if (hours > 0) result += hours + ' 小時 ';
+  result += mins + ' 分鐘';
+  return result.trim();
 }

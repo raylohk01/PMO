@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   
   <style>
+    
     body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     .navbar { background-color: #005088; }
     .navbar-brand, .nav-link, .navbar-text { color: #ffffff !important; }
@@ -24,7 +25,25 @@
   </style>
 </head>
 <body>
-  <!-- 💡 全域頁面內 Toast / Alert 提示容器 (固定於右上方，不遮擋操作) -->
+
+  <!-- 🚀 專屬動態通知牆 (Offcanvas 側邊面板) -->
+  <div class="offcanvas offcanvas-end shadow-lg" tabindex="-1" id="notificationOffcanvas" aria-labelledby="notificationOffcanvasLabel">
+    <div class="offcanvas-header bg-dark text-white py-3">
+      <h5 class="offcanvas-title fs-6" id="notificationOffcanvasLabel">
+        <i class="fas fa-bell me-2 text-warning"></i> 個人動態與專案報告
+      </h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body bg-light p-0">
+      <div id="notificationList" class="list-group list-group-flush">
+        <div class="text-center text-muted py-5">
+          <i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💡 全域頁面內 Toast / Alert 提示容器 -->
   <div id="globalAlertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 99999; max-width: 400px; pointer-events: none;"></div>
 
   <!-- 1. 導覽列組件 -->
@@ -50,53 +69,9 @@
     <!-- 6. 全局管理統計分析組件 -->
     <?!= include('AnalyticsUI'); ?>
 
-    <!-- 7. 系統設定組件 -->
+    <!-- 7. 系統設定組件 (已清除重複硬編碼) -->
     <div id="adminSection" class="section-container">
       <?!= include('AdminUI'); ?>
-
-      <div id="deptConfigBlock" style="display: none;" class="mb-5">
-        <h3 class="text-secondary mb-3"><i class="fas fa-palette"></i> 部門與標籤顏色設定</h3>
-        <div class="card shadow-sm border-info">
-          <div class="card-body">
-            <div class="row align-items-center mb-3">
-              <div class="col-md-4">
-                <input type="text" id="newDeptName" class="form-control" placeholder="輸入新部門名稱...">
-              </div>
-              <div class="col-md-2">
-                <input type="color" id="newDeptColor" class="form-control color-picker" value="#0dcaf0" title="選擇代表顏色">
-              </div>
-              <div class="col-md-3">
-                <button class="btn btn-outline-info" onclick="saveDepartment()"><i class="fas fa-plus"></i> 新增 / 更新</button>
-              </div>
-            </div>
-            <hr>
-            <div id="deptBadgesArea">
-              <span class="text-muted"><i class="fas fa-spinner fa-spin"></i> 載入部門資料中...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="text-secondary"><i class="fas fa-users-cog"></i> 系統權限/成員管理</h3>
-        <div>
-          <button id="addUserBtn" class="btn btn-primary" onclick="openUserModal()"><i class="fas fa-plus"></i> 新增/編輯同事</button>
-        </div>
-      </div>
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <div class="table-responsive">
-            <table class="table table-hover align-middle">
-              <thead class="table-dark">
-                <tr><th>員工編號 (PK)</th><th>Email</th><th>姓名</th><th>部門 (Team)</th><th>系統角色 (Role)</th><th>狀態</th><th>操作</th></tr>
-              </thead>
-              <tbody id="userTableBody">
-                <tr><td colspan="7" class="text-center">載入中...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
     </div>
 
   </div>
@@ -107,7 +82,7 @@
   <?!= include('Scripts'); ?>
 
   <script>
-    // 💡 全域掛載 showAlert 函數，確保各子頁面與 Console 皆可順暢呼叫
+    // 💡 全域掛載 showAlert 函數
     window.showAlert = function(message, type, duration) {
       type = type || 'success';
       duration = duration || 3500;
