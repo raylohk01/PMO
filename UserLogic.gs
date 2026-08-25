@@ -389,6 +389,9 @@ function api_createProject(payload) {
 
     sheet.appendRow(rowData);
 
+    // 💡【新增全域廣播】開案成功，立刻通知所有同仁的看板重讀、跳出新卡片！
+    notifyFirebaseUpdate(payload.jobNumber, Session.getActiveUser().getEmail(), masterPmName, true);
+
     return { success: true, message: '專案建立成功！' };
   } catch(e) {
     return { success: false, message: e.message };
@@ -918,6 +921,11 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
     }
 
     sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
+
+    // 💡【新增廣播】通知開啟此專案視窗的同事自動重載
+    notifyFirebaseUpdate(jobNumber, userEmail, userName);
+
+  
     return { success: true, message: '更新成功！' };
   } catch(e) {
     return { success: false, message: e.message };
@@ -1468,7 +1476,7 @@ function api_insertWorkflowStep(jobNumber, deliverableId, insertAfterStep, newSt
 }
 
 // ==========================================
-// 💡 部門營運數據 API (完美支援「待啟動」全欄位防爆版)
+// 💡 部門營運數據 API (去重優化版：1 項目 1 卡片 + 精準統計關卡數)
 // ==========================================
 function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
   try {
@@ -1492,14 +1500,17 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
     let activeTasks = [];
     let pipelineTasks = [];
     let clientReviewTasks = [];
-    let completedTasks = [];
+    
+    // 💡 暫存檔：用於對 Completed 項目進行去重
+    let completedMap = {};
+    let totalCompletedStepsCount = 0; // 統計 5 天內完成的關卡總次數
 
     const now = new Date();
     const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
 
     for (let i = 1; i < data.length; i++) {
       const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
-      if (pStatus === 'Completed' || pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
+      if (pStatus === 'Recycle Bin' || pStatus === 'Cancelled') continue;
 
       let wfData = {};
       for (let c = 0; c < data[i].length; c++) {
@@ -1523,51 +1534,64 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
 
           if (!d.workflow || d.workflow.length === 0) return;
 
+          // ----------------------------------------------------
+          // 💡 1. 採計產能與已完成關卡（進行去重，1 項目僅留 1 卡片）
+          // ----------------------------------------------------
           d.workflow.forEach(s => {
             const sDept = String(s.dept || '').trim().toLowerCase();
             const assignee = String(s.assignee || '').trim();
-            if (sDept === targetDept.toLowerCase() && assignee) {
-              if (!capacityMap[assignee]) {
-                capacityMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
+
+            if (sDept === targetDept.toLowerCase()) {
+              if (assignee) {
+                if (!capacityMap[assignee]) {
+                  capacityMap[assignee] = { name: assignee, inProgress: 0, completed: 0, revisions: 0 };
+                }
+                if (s.status === 'In Progress') capacityMap[assignee].inProgress++;
+                if (s.status === 'Completed') capacityMap[assignee].completed++;
               }
-              if (s.status === 'In Progress') capacityMap[assignee].inProgress++;
-              if (s.status === 'Completed') capacityMap[assignee].completed++;
+
+              if (s.status === 'Completed') {
+                let compDateStr = todayStr;
+                if (s.completedAt) compDateStr = String(s.completedAt).split(' ')[0];
+                else if (s.completedAtIso) compDateStr = String(s.completedAtIso).split('T')[0];
+
+                let compDate = new Date(compDateStr);
+                let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
+
+                if (isNaN(diffDays) || diffDays <= 5) {
+                  totalCompletedStepsCount++; // 關卡總次數 +1
+
+                  const delivKey = jobNumber + '_' + (d.id || dIdx);
+                  const compTask = {
+                    jobNumber: jobNumber, 
+                    client: client,
+                    taskName: d.name || '未命名任務',
+                    stepNumber: s.step,
+                    stepName: s.name || ('Step ' + s.step),
+                    assignee: assignee || pmName,
+                    deliverableId: d.id,
+                    deadline: compDateStr,
+                    category: 'COMPLETED'
+                  };
+
+                  // 💡 去重覆蓋：同個項目若有多個關卡完成，只保留最新完成的那一個關卡資訊
+                  completedMap[delivKey] = compTask;
+                }
+              }
             }
           });
 
+          // ----------------------------------------------------
+          // 💡 2. 處理進行中 (In Progress) 與預備管線 (Pipeline)
+          // ----------------------------------------------------
           let activeStep = d.workflow.find(s => s.status === 'In Progress');
           const allCompleted = d.status === 'Completed' || d.workflow.every(s => s.status === 'Completed');
-          const deptCompletedSteps = d.workflow.filter(s => String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase() && s.status === 'Completed');
 
           if (!activeStep && !allCompleted && d.workflow.length > 0) {
             activeStep = d.workflow.find(s => s.step === d.currentStep) || d.workflow[0];
           }
 
-          if (allCompleted) {
-            if (deptCompletedSteps.length > 0) {
-              const lastStep = deptCompletedSteps[deptCompletedSteps.length - 1];
-              let compDateStr = lastStep.completedAt ? lastStep.completedAt.split(' ')[0] : todayStr;
-              let compDate = new Date(compDateStr);
-              let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
-
-              if (diffDays <= 5) {
-                const compTask = {
-                  jobNumber: jobNumber, 
-                  client: client,
-                  taskName: d.name || '未命名任務',
-                  stepNumber: lastStep.step,
-                  stepName: '已完成',
-                  assignee: lastStep.assignee || pmName,
-                  deliverableId: d.id,
-                  deadline: compDateStr,
-                  category: 'COMPLETED'
-                };
-                completedTasks.push(compTask);
-                calendarTasks.push(compTask);
-                calendarMap[compDateStr] = (calendarMap[compDateStr] || 0) + 1;
-              }
-            }
-          } else if (activeStep) {
+          if (activeStep && !allCompleted) {
             const activeDept = String(activeStep.dept || '').trim().toLowerCase();
             const assignee = String(activeStep.assignee || '').trim();
             const deadline = activeStep.deadline || activeStep.keyDate || todayStr;
@@ -1611,7 +1635,6 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
               if (taskCategory === 'CLIENT_REVIEW') clientReviewTasks.push(taskObj);
               else if (taskCategory === 'OVERDUE' || taskCategory === 'UNASSIGNED') riskTasks.push(taskObj);
               else if (taskCategory === 'PIPELINE') {
-                // 💡 [防爆修正] 補齊所有前端渲染所需的結構欄位！
                 pipelineTasks.push({
                   jobNumber: jobNumber, 
                   client: client,
@@ -1630,7 +1653,7 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
               else activeTasks.push(taskObj);
 
             } else {
-              const futureStep = d.workflow.find(s => s.step > activeStep.step && String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase());
+              const futureStep = d.workflow.find(s => s.step > activeStep.step && String(s.dept || '').trim().toLowerCase() === targetDept.toLowerCase() && s.status !== 'Completed');
               if (futureStep) {
                 pipelineTasks.push({
                   jobNumber: jobNumber, 
@@ -1646,34 +1669,21 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
                   pmName: pmName,
                   deliverableId: d.id
                 });
-              } else if (deptCompletedSteps.length > 0) {
-                const lastStep = deptCompletedSteps[deptCompletedSteps.length - 1];
-                let compDateStr = lastStep.completedAt ? lastStep.completedAt.split(' ')[0] : todayStr;
-                let compDate = new Date(compDateStr);
-                let diffDays = Math.floor((now - compDate) / (1000 * 60 * 60 * 24));
-
-                if (diffDays <= 5) {
-                  const compTask = {
-                    jobNumber: jobNumber, 
-                    client: client,
-                    taskName: d.name || '未命名任務',
-                    stepNumber: lastStep.step,
-                    stepName: currentRealStepName, 
-                    assignee: lastStep.assignee || pmName,
-                    deliverableId: d.id,
-                    deadline: compDateStr,
-                    category: 'COMPLETED'
-                  };
-                  completedTasks.push(compTask);
-                  calendarTasks.push(compTask);
-                  calendarMap[compDateStr] = (calendarMap[compDateStr] || 0) + 1;
-                }
               }
             }
           }
         });
       }
     }
+
+    // 將去重後的物件轉為陣列
+    const completedTasks = Object.keys(completedMap).map(k => completedMap[k]);
+    
+    // 把去重後的已完成卡片併入日曆呈現
+    completedTasks.forEach(ct => {
+      calendarTasks.push(ct);
+      calendarMap[ct.deadline] = (calendarMap[ct.deadline] || 0) + 1;
+    });
 
     const capacityList = Object.keys(capacityMap).map(k => capacityMap[k]);
 
@@ -1687,7 +1697,8 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
         activeTasks: activeTasks,
         pipelineTasks: pipelineTasks,
         clientReviewTasks: clientReviewTasks,
-        completedTasks: completedTasks
+        completedTasks: completedTasks,
+        totalCompletedStepsCount: totalCompletedStepsCount // 💡 回傳真實關卡完成次數
       }
     };
   } catch (e) {
@@ -1725,22 +1736,28 @@ function api_updateStepDeadline(deliverableId, stepNumber, newDeadline) {
 }
 
 // ==========================================
-// 💡 推進工作流 - 派發任務 (包含寄送 Email 與 PM 同步)
+// 💡 推進工作流 - 派發任務 (修正 activeUser 作用域與 Firebase 廣播)
 // ==========================================
 function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee) {
   try {
+    // 💡 在函數最頂層宣告使用者資訊，確保全函數皆可存取
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h || '').trim().toLowerCase());
     
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
     const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
     const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
-    const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm'); // 💡 抓取全域 PM 欄位
+    const idxPM = headers.findIndex(h => h === 'pm' || h.includes('pmname')); 
 
     for (let i = 1; i < data.length; i++) {
       const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
-      if (pStatus === 'Recycle Bin' || pStatus === 'Deleted') continue; // 💡 防呆：徹底無視垃圾桶裡的同名專案！
+      if (pStatus === 'Recycle Bin' || pStatus === 'Deleted') continue; 
 
       if (String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
         for (let c = 0; c < data[i].length; c++) {
@@ -1758,7 +1775,6 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                 const nowIso = new Date().toISOString();
                 const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
 
-                // 💡 [新增] 核心邏輯：如果更改的是 Step 1 (PM 關卡)，則強制同步更新右側的「全域負責 PM」
                 if (targetS.step === 1 && String(targetS.dept).toUpperCase() === 'PM' && idxPM >= 0) {
                   sheet.getRange(i + 1, idxPM + 1).setValue(assignee);
                 }
@@ -1779,7 +1795,6 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                   let cellStrLog = String(data[i][idxAudit] || '').trim();
                   if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
 
-                  const activeUser = Session.getActiveUser().getEmail().split('@')[0];
                   let actionText = oldAssignee === '未指派'
                                    ? `將 Step ${targetS.step} [${targetS.name}] 指派給 [${assignee}]`
                                    : `將 Step ${targetS.step} 的負責人由 [${oldAssignee}] 更換為 [${assignee}]`;
@@ -1796,6 +1811,12 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                     );
                   }
                 }
+
+                // 💡【全域廣播】安全呼叫，變數 100% 存在
+                if (typeof notifyFirebaseUpdate === 'function') {
+                  notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+                }
+
                 return { success: true, message: '派案成功！' };
               }
             }
@@ -2859,5 +2880,36 @@ function sendSystemEmail(toUser, subject, title, message) {
   } catch(e) { 
     console.error(`[發信模組] 呼叫 GmailApp 失敗: ${e.message}`);
     return "錯誤: " + e.message; 
+  }
+}
+
+// 💡 升級版後端廣播器：同時觸發專案視窗重載 + 全域看板卡片即時跳出
+function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
+  try {
+    const cleanJobNum = String(jobNumber || 'GLOBAL').split('-P')[0];
+    const firebaseUrl = "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app/";
+    
+    const nowStamp = new Date().getTime();
+    const payload = JSON.stringify({
+      timestamp: nowStamp,
+      updatedBy: userEmail || 'System',
+      updatedByName: userName || 'System'
+    });
+
+    // 1. 廣播給專案詳情視窗
+    if (cleanJobNum !== 'GLOBAL') {
+      UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanJobNum + ".json", {
+        method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
+      });
+    }
+
+    // 2. 若為全域事件（如新增專案、派案），廣播給全系統所有人的看板
+    if (isGlobalEvent) {
+      UrlFetchApp.fetch(firebaseUrl + "global_events.json", {
+        method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
+      });
+    }
+  } catch(e) {
+    console.error("Firebase 廣播失敗:", e.message);
   }
 }

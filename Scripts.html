@@ -156,6 +156,13 @@ function switchSection(sectionId) {
   }
 
   function simulateUser(email, name, dept, role) {
+    var currentRole = currentUser ? currentUser.role : 'Member';
+    
+    // 🛡️ 二次物理防禦：攔截越級模擬行為
+    if (['Admin', 'Management'].includes(role) && !['Admin', 'Management'].includes(currentRole)) {
+      return showAlert('⚠️ 權限不足：您無法模擬 Management 或 Admin 階層的帳號！', 'danger');
+    }
+
     if (!confirm('確定要模擬 ' + (name || email) + ' (' + role + ') 嗎？')) return;
     document.getElementById('simulateBanner').style.display = 'block';
     document.getElementById('simTargetName').innerText = name || email;
@@ -311,7 +318,7 @@ function switchSection(sectionId) {
     });
   }
 
-  function loadAdminView() {
+ function loadAdminView() {
     var currentRole = currentUser ? currentUser.role : 'Member';
     var canEdit = ['Admin', 'Management'].includes(currentRole);
     
@@ -341,13 +348,25 @@ function switchSection(sectionId) {
         var statusBadge = isFrozen ? '<span class="badge bg-danger">Frozen</span>' : '<span class="badge bg-success">Active</span>';
         var rowClass = isFrozen ? 'row-frozen' : '';
 
+        // 💡 越級模擬防禦：Management/Admin 可模擬所有人；Team Head 絕不能模擬 Management/Admin
+        var canSimulateTarget = false;
+        if (currentUser && u.email !== currentUser.email) {
+          if (['Admin', 'Management'].includes(currentRole)) {
+            canSimulateTarget = true;
+          } else if (currentRole === 'Team Head') {
+            if (!['Admin', 'Management'].includes(u.role)) {
+              canSimulateTarget = true;
+            }
+          }
+        }
+
         var actionHtml = '';
         if (canEdit) {
           actionHtml += '<button class="btn btn-sm btn-outline-primary" onclick="editUser(\'' + empIdVal + '\', \'' + u.email + '\', \'' + u.name + '\', \'' + u.department + '\', \'' + u.role + '\', \'' + statusVal + '\')"><i class="fas fa-edit"></i></button>';
         }
         if (currentUser && u.email === currentUser.email) {
           actionHtml += '<button class="btn btn-sm btn-secondary ms-1" disabled><i class="fas fa-user-check"></i> 本人</button>';
-        } else {
+        } else if (canSimulateTarget) {
           actionHtml += '<button class="btn btn-sm btn-outline-warning ms-1" onclick="simulateUser(\'' + u.email + '\', \'' + u.name + '\', \'' + u.department + '\', \'' + u.role + '\')"><i class="fas fa-user-secret"></i> 模擬</button>';
         }
 
@@ -862,14 +881,13 @@ function saveUser() {
     }
   }
 
- // ==========================================
-// 1. 專案開案 (修復自動刷新看板功能)
-// ==========================================
-function submitNewProject() {
-  // 💡 第 0 毫秒：立刻抓住按鈕並進行物理鎖定
+function submitNewProject(e) {
+  // 💡 防呆：防止 HTML Form 預設提交行為引發網頁硬刷新
+  if (e && e.preventDefault) e.preventDefault();
+
   var btn = document.querySelector('#newProjectModal .modal-footer button.btn-primary');
   if (btn) {
-    if (btn.disabled) return; // 若已在上鎖狀態，直接攔截不執行
+    if (btn.disabled) return;
     btn.disabled = true;
     btn.style.pointerEvents = 'none';
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 建立中...';
@@ -882,7 +900,6 @@ function submitNewProject() {
   var pm = pmSelect ? pmSelect.value : '';
   var deadline = document.getElementById('np_deadline').value;
 
-  // 防禦驗證：若未填寫，必須先解鎖按鈕再跳提示
   if (!jobNum || !client || !sales || !pm || !deadline) {
     unlockBtn(btn, '確認建立專案');
     return showAlert('⚠️ 請填寫完整專案基本資訊！', 'warning');
@@ -921,7 +938,7 @@ function submitNewProject() {
 
   google.script.run
     .withSuccessHandler(function(res) {
-      unlockBtn(btn, '確認建立專案'); // 收到回應解鎖
+      unlockBtn(btn, '確認建立專案');
       if (res && res.success) {
         showAlert('🎉 專案 [' + jobNum + '] 開案成功！', 'success');
         
@@ -933,7 +950,7 @@ function submitNewProject() {
         var form = document.getElementById('newProjectForm');
         if (form) form.reset();
         
-        // 💡 局部渲染：只重新讀取並刷新「即將到來 (Upcoming)」區塊！
+        // 💡 體驗優化：操作者本人進行無痕局部刷新，僅讀取「即將到來」區塊，全頁完全不閃爍！
         if (typeof loadIndividualView === 'function' && currentUser) {
           loadIndividualView(currentUser.email, 'upcomingTasksArea');
         }
@@ -943,11 +960,20 @@ function submitNewProject() {
       }
     })
     .withFailureHandler(function(err) {
-      unlockBtn(btn, '確認建立專案'); // 異常解鎖
+      unlockBtn(btn, '確認建立專案');
       showAlert('❌ 後端執行失敗: ' + (err ? err.message : '網絡連線異常'), 'danger');
     })
     .api_createProject(payload);
 }
+
+function unlockBtn(btn, originalText) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.innerHTML = originalText;
+}
+
+    
 
 // 輔助解鎖函數
 function unlockBtn(btn, originalText) {
@@ -1174,54 +1200,110 @@ setInterval(function() {
   }
 }, 120000);
 
-// ==========================================
-// 💡 混合式動態通知引擎 (Notification Center)
-// ==========================================
-function fetchNotifications() {
-  var listEl = document.getElementById('notificationList');
-  var badgeEl = document.getElementById('notifBadge');
-  
-  var email = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : '';
-  if (!email) return;
-
-  // 每次打開先顯示 loading
-  if (listEl && !listEl.innerHTML.includes('list-group-item')) {
-    listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...</div>';
-  }
-
-  google.script.run.withSuccessHandler(function(res) {
-    if (res && res.success) {
-      var notifs = res.data || [];
-      if (notifs.length > 0) {
-        if (badgeEl) {
-          badgeEl.innerText = notifs.length > 99 ? '99+' : notifs.length;
-          badgeEl.style.display = 'block'; // 顯示紅點
-        }
-        var html = '';
-        notifs.forEach(function(n) {
-          var timeStr = n.rawTime || new Date(n.time).toLocaleString();
-          var bgClass = n.type === 'OVERDUE' || n.type === 'NUDGE' ? 'bg-danger bg-opacity-10' : 'bg-white';
-          
-          html += '<div class="list-group-item py-3 border-bottom ' + bgClass + '">' +
-                    '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
-                      '<h6 class="mb-0 fw-bold text-' + n.color + '"><i class="fas ' + n.icon + ' me-2"></i>' + n.title + '</h6>' +
-                      '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
-                    '</div>' +
-                    '<p class="mb-0 small text-secondary mt-1">' + n.message + '</p>' +
-                  '</div>';
-        });
-        if (listEl) listEl.innerHTML = html;
-      } else {
-        if (badgeEl) badgeEl.style.display = 'none';
-        if (listEl) listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle fa-3x text-success mb-3 opacity-25"></i><br>目前沒有任何新動態</div>';
-      }
-    }
-  }).api_getUserNotifications(email);
-}
-
 // 💡 綁定全域刷新事件：當背景定時器啟動，或手動重整時，順便幫小鈴鐺抓最新數字！
 window.addEventListener('refreshAllViews', function() {
   fetchNotifications();
 });
 
+</script>
+
+<!-- ========================================== -->
+<!-- 💡 Firebase Realtime Database 即時廣播模組 -->
+<!-- ========================================== -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+  // 💡 1. 補回通知牆主函數 (防止 fetchNotifications undefined 報錯)
+  window.fetchNotifications = function() {
+    var listEl = document.getElementById('notificationList');
+    var badgeEl = document.getElementById('notifBadge');
+    
+    var email = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : '';
+    if (!email) return;
+
+    if (listEl && !listEl.innerHTML.includes('list-group-item')) {
+      listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...</div>';
+    }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        var notifs = res.data || [];
+        if (notifs.length > 0) {
+          if (badgeEl) {
+            badgeEl.innerText = notifs.length > 99 ? '99+' : notifs.length;
+            badgeEl.style.display = 'block';
+          }
+          var html = '';
+          notifs.forEach(function(n) {
+            var timeStr = n.rawTime || new Date(n.time).toLocaleString();
+            var bgClass = n.type === 'OVERDUE' || n.type === 'NUDGE' ? 'bg-danger bg-opacity-10' : 'bg-white';
+            
+            html += '<div class="list-group-item py-3 border-bottom ' + bgClass + '">' +
+                      '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
+                        '<h6 class="mb-0 fw-bold text-' + n.color + '"><i class="fas ' + n.icon + ' me-2"></i>' + n.title + '</h6>' +
+                        '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
+                      '</div>' +
+                      '<p class="mb-0 small text-secondary mt-1">' + n.message + '</p>' +
+                    '</div>';
+          });
+          if (listEl) listEl.innerHTML = html;
+        } else {
+          if (badgeEl) badgeEl.style.display = 'none';
+          if (listEl) listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle fa-3x text-success mb-3 opacity-25"></i><br>目前沒有任何新動態</div>';
+        }
+      }
+    }).api_getUserNotifications(email);
+  };
+
+  // 💡 2. 安全監聽器 (加上 typeof 判定防呆)
+  window.addEventListener('refreshAllViews', function() {
+    if (typeof fetchNotifications === 'function') fetchNotifications();
+  });
+
+  // 💡 3. Firebase 即時廣播與監聽模組
+  (function() {
+    const firebaseConfig = {
+      apiKey: "AIzaSyCJuwKQ_5IEJMBvjPrrrYn3uqEFKbxN884",
+      authDomain: "hk01-pmo-realtime.firebaseapp.com",
+      databaseURL: "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "hk01-pmo-realtime",
+      storageBucket: "hk01-pmo-realtime.firebasestorage.app",
+      messagingSenderId: "834276379908",
+      appId: "1:834276379908:web:29ccc91ca166fc25fe1451"
+    };
+
+    if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    const realDB = (typeof firebase !== 'undefined' && firebase.apps.length) ? firebase.database() : null;
+
+    if (realDB) {
+      realDB.ref('global_events').on('value', function(snapshot) {
+        const data = snapshot.val();
+        if (!data) return;
+        if (typeof currentUser !== 'undefined' && currentUser && data.updatedBy !== currentUser.email) {
+          window.dispatchEvent(new Event('refreshAllViews'));
+        }
+      });
+    }
+
+    window.listenProjectRealtime = function(jobNumber) {
+      if (!jobNumber || !realDB) return;
+      if (window.activeRealtimeRef) window.activeRealtimeRef.off();
+
+      window.activeRealtimeRef = realDB.ref('projects/' + jobNumber);
+      window.activeRealtimeRef.on('value', function(snapshot) {
+        const data = snapshot.val();
+        if (!data) return;
+        if (typeof currentUser !== 'undefined' && currentUser && data.updatedBy !== currentUser.email) {
+          if (typeof openWorkflow === 'function') openWorkflow(jobNumber);
+          if (typeof showAlert === 'function') {
+            showAlert('⚡ 同事 ' + (data.updatedByName || data.updatedBy) + ' 剛剛更新了此專案，已為您自動載入最新畫面！', 'info');
+          }
+        }
+      });
+    };
+  })();
 </script>

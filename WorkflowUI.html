@@ -379,6 +379,9 @@
   });
 
   window.openWorkflow = function(jobNumber) {
+    // 💡 加上這行：開啟視窗時立即聽取 Firebase 廣播
+    if (typeof listenProjectRealtime === 'function') listenProjectRealtime(jobNumber);
+    
     try {
       var modalEl = document.getElementById('workflowModal');
       if (!modalEl) return showAlert('❌ 錯誤：系統找不到 workflowModal HTML 標籤！', 'danger');
