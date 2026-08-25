@@ -513,17 +513,18 @@ function switchSection(sectionId) {
   }
 
 // ==========================================
-// 💡 [更新版] 渲染範本編輯卡片 (支援並行群組 + 最終關卡防呆與鎖定)
+// 💡 [範本編輯器修復版] 支援上移/下移、邊界鎖定與並行群組自動鄰近排序
 // ==========================================
+
 function renderTemplateStepCards() {
   var container = document.getElementById('tmpl_stepsContainer');
   if(!container) return;
-  if(currentTemplateSteps.length === 0) {
+  if(!currentTemplateSteps || currentTemplateSteps.length === 0) {
     container.innerHTML = '<div class="text-center text-muted py-4">目前尚無關卡步驟，請點擊上方【新增關卡步驟】</div>';
     return;
   }
 
-  // 💡 權限判定：檢查使用者是否為 Management 或 Admin
+  var totalSteps = currentTemplateSteps.length;
   var currentRole = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.role : 'Member';
   var canEditFinal = ['Admin', 'Management'].includes(currentRole);
 
@@ -533,7 +534,7 @@ function renderTemplateStepCards() {
     var deptOptions = '';
     
     var defaultDepts = ['PM', 'Client', 'Editorial', 'Creative', 'Design', 'AdOps', 'Sales', 'Management'];
-    var deptsToUse = cachedDeptList.length > 0 ? cachedDeptList : defaultDepts;
+    var deptsToUse = (typeof cachedDeptList !== 'undefined' && cachedDeptList.length > 0) ? cachedDeptList : defaultDepts;
     if (!deptsToUse.includes('Client')) deptsToUse.push('Client');
 
     deptsToUse.forEach(function(dept) {
@@ -541,18 +542,35 @@ function renderTemplateStepCards() {
       deptOptions += '<option value="' + dept + '" ' + selected + '>' + dept + '</option>';
     });
 
-    // 💡 Phase D 防呆邏輯：判斷是否為「最終關卡」或「專案完成關卡」
-    var isLastStep = (idx === currentTemplateSteps.length - 1);
-    var isProjectEnd = (step.name || '').includes('完成') || (step.name || '').includes('上線');
-    var isFinalGatekeeper = isLastStep || isProjectEnd;
+    // 💡 防呆 1：嚴格只有「最後一個」關卡才是最終把關！
+    var isFirstStep = (idx === 0);
+    var isLastStep = (idx === totalSteps - 1);
 
-    // UI 變色與鎖定設定
-    var badgeClass = isFinalGatekeeper ? 'bg-dark text-warning border border-warning' : 'bg-primary';
-    var stepIcon = isFinalGatekeeper ? '<i class="fas fa-flag-checkered me-1"></i>' : '';
-    var cardBorder = isFinalGatekeeper ? 'border-dark border-2 shadow' : 'border shadow-sm';
-    var readOnlyAttr = (isFinalGatekeeper && !canEditFinal) ? 'readonly title="僅 Management 可修改最終結案關卡"' : '';
-    var disabledAttr = (isFinalGatekeeper && !canEditFinal) ? 'disabled title="僅 Management 可修改最終結案關卡"' : '';
-    var bgClass = isFinalGatekeeper ? 'bg-light' : 'bg-white';
+    // 防呆 2：Step 1 及 最終 Step 不可移除
+    var isLockedStep = isFirstStep || isLastStep;
+
+    var badgeClass = isLastStep ? 'bg-dark text-warning border border-warning' : 'bg-primary';
+    var stepIcon = isLastStep ? '<i class="fas fa-flag-checkered me-1"></i>' : '';
+    var cardBorder = isLastStep ? 'border-dark border-2 shadow' : 'border shadow-sm';
+    var readOnlyAttr = (isLastStep && !canEditFinal) ? 'readonly title="僅 Management 可修改最終結案關卡"' : '';
+    var disabledAttr = (isLastStep && !canEditFinal) ? 'disabled title="僅 Management 可修改最終結案關卡"' : '';
+    var bgClass = isLastStep ? 'bg-light' : 'bg-white';
+
+    // 💡 上移 / 下移 / 移除 按鈕控制
+    var canMoveUp = (idx > 1 && idx < totalSteps - 1); // 不可移至 Step 1 之上
+    var canMoveDown = (idx >= 1 && idx < totalSteps - 2); // 不可移至最終 Step 之下
+
+    var moveUpBtn = canMoveUp 
+      ? '<button class="btn btn-xs btn-outline-secondary me-1 py-0 px-2" onclick="moveTemplateStep(' + idx + ', -1)" title="上移關卡"><i class="fas fa-arrow-up"></i> 上移</button>' 
+      : '<button class="btn btn-xs btn-outline-secondary me-1 py-0 px-2 opacity-25" disabled><i class="fas fa-arrow-up"></i> 上移</button>';
+
+    var moveDownBtn = canMoveDown 
+      ? '<button class="btn btn-xs btn-outline-secondary me-1 py-0 px-2" onclick="moveTemplateStep(' + idx + ', 1)" title="下移關卡"><i class="fas fa-arrow-down"></i> 下移</button>' 
+      : '<button class="btn btn-xs btn-outline-secondary me-1 py-0 px-2 opacity-25" disabled><i class="fas fa-arrow-down"></i> 下移</button>';
+
+    var removeBtn = isLockedStep
+      ? '<span class="badge bg-secondary text-light py-1 px-2"><i class="fas fa-lock me-1"></i>固定關卡 (不可移除)</span>'
+      : '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="removeTemplateStep(' + idx + ')" ' + disabledAttr + '><i class="fas fa-times-circle me-1"></i>移除此關</button>';
 
     var fieldsHtml = '';
     (step.fields || []).forEach(function(field, fIdx) {
@@ -570,13 +588,16 @@ function renderTemplateStepCards() {
     '<div class="card mb-3 ' + cardBorder + '">' +
       '<div class="card-body p-3 ' + bgClass + '">' +
         '<div class="d-flex justify-content-between align-items-center mb-2">' +
-          '<span class="badge ' + badgeClass + ' fs-6">' + stepIcon + 'Step ' + stepNum + (isFinalGatekeeper ? ' (最終把關)' : '') + '</span>' +
-          '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="removeTemplateStep(' + idx + ')" ' + disabledAttr + '><i class="fas fa-times-circle"></i> 移除此關</button>' +
+          '<div>' +
+            '<span class="badge ' + badgeClass + ' fs-6 me-2">' + stepIcon + 'Step ' + stepNum + (isLastStep ? ' (最終把關)' : '') + '</span>' +
+            (!isLockedStep ? (moveUpBtn + moveDownBtn) : '') +
+          '</div>' +
+          '<div>' + removeBtn + '</div>' +
         '</div>' +
         '<div class="row g-2 mb-2">' +
           '<div class="col-md-5">' +
             '<label class="form-label small text-muted mb-1">關卡名稱</label>' +
-            '<input type="text" class="form-control form-control-sm fw-bold ' + (isFinalGatekeeper ? 'text-primary' : '') + '" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱" ' + readOnlyAttr + '>' +
+            '<input type="text" class="form-control form-control-sm fw-bold ' + (isLastStep ? 'text-primary' : '') + '" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱" ' + readOnlyAttr + '>' +
           '</div>' +
           '<div class="col-md-4">' +
             '<label class="form-label small text-muted mb-1">負責部門</label>' +
@@ -586,7 +607,7 @@ function renderTemplateStepCards() {
           '</div>' +
           '<div class="col-md-3">' +
             '<label class="form-label small text-muted mb-1"><i class="fas fa-project-diagram text-info"></i> 並行群組</label>' +
-            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 Group_A (相同則並行)" ' + readOnlyAttr + '>' +
+            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 A (相同則並行)" ' + readOnlyAttr + '>' +
           '</div>' +
         '</div>' +
         '<div class="bg-white p-2 rounded border">' +
@@ -603,26 +624,34 @@ function renderTemplateStepCards() {
   container.innerHTML = html;
 }
 
-  function addTemplateStep() {
-    var insertIdx = currentTemplateSteps.length;
-    for (var i = 0; i < currentTemplateSteps.length; i++) {
-      var nameLower = (currentTemplateSteps[i].name || '').toLowerCase();
-      if (nameLower.includes('client') || nameLower.includes('上線') || nameLower.includes('完成')) {
-        insertIdx = i;
-        break;
-      }
-    }
+// 💡 關卡上移 / 下移
+function moveTemplateStep(index, direction) {
+  var newIndex = index + direction;
+  if (newIndex <= 0 || newIndex >= currentTemplateSteps.length - 1) return; // 邊界保護：不可超超越 Step 1 或 最終 Step
 
-    currentTemplateSteps.splice(insertIdx, 0, {
-      step: 0,
-      name: '新關卡步驟',
-      dept: 'Editorial',
-      fields: ['URL']
-    });
+  var temp = currentTemplateSteps[index];
+  currentTemplateSteps[index] = currentTemplateSteps[newIndex];
+  currentTemplateSteps[newIndex] = temp;
 
-    currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
-    renderTemplateStepCards();
-  }
+  // 重新編號
+  currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
+  renderTemplateStepCards();
+}
+
+  // 💡 新增關卡：固定插入在倒數第二位置 (即最終關卡之前)
+function addTemplateStep() {
+  var insertIdx = currentTemplateSteps.length > 0 ? currentTemplateSteps.length - 1 : 0;
+
+  currentTemplateSteps.splice(insertIdx, 0, {
+    step: 0,
+    name: '新關卡步驟',
+    dept: 'Editorial',
+    fields: ['URL']
+  });
+
+  currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
+  renderTemplateStepCards();
+}
 
   function removeTemplateStep(idx) {
     currentTemplateSteps.splice(idx, 1);
@@ -645,20 +674,47 @@ function renderTemplateStepCards() {
     renderTemplateStepCards();
   }
 
-  function saveTemplateFromModal() {
-    var newName = document.getElementById('tmpl_name').value.trim();
-    if(!newName) return showAlert('⚠️ 請輸入範本名稱！', 'warning');
-    if(currentTemplateSteps.length === 0) return showAlert('⚠️ 範本至少需要包含一個關卡步驟！', 'warning');
+  // 💡 儲存範本前：自動校正與排序並行群組，消除「隔著中間關卡」的並行斷層
+function saveTemplateFromModal() {
+  var newName = document.getElementById('tmpl_name').value.trim();
+  if(!newName) return showAlert('⚠️ 請輸入範本名稱！', 'warning');
+  if(currentTemplateSteps.length === 0) return showAlert('⚠️ 範本至少需要包含一個關卡步驟！', 'warning');
 
-    google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success) {
-        showAlert('🎉 ' + res.message, 'success');
-        if(templateEditModalInstance) templateEditModalInstance.hide();
-        loadTemplateAdminView();
-      } else { showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
-    // 💡 把 currentEditingTemplateName 也傳給後端
-    }).api_saveTemplate(newName, currentTemplateSteps, currentEditingTemplateName); 
-  }
+  // 💡 自動歸接校正：將具備相同 parallelGroup 的關卡自動調整至鄰近位置
+  var firstStep = currentTemplateSteps[0];
+  var lastStep = currentTemplateSteps[currentTemplateSteps.length - 1];
+  var middleSteps = currentTemplateSteps.slice(1, currentTemplateSteps.length - 1);
+
+  // 整理 middleSteps：相同 group 聚在一起
+  var groupedMiddle = [];
+  var visitedGroups = {};
+
+  middleSteps.forEach(function(s) {
+    var grp = s.parallelGroup;
+    if (grp) {
+      if (!visitedGroups[grp]) {
+        visitedGroups[grp] = true;
+        // 把所有該 group 的關卡一次性集中抓過來
+        middleSteps.forEach(function(subS) {
+          if (subS.parallelGroup === grp) groupedMiddle.push(subS);
+        });
+      }
+    } else {
+      groupedMiddle.push(s);
+    }
+  });
+
+  currentTemplateSteps = [firstStep].concat(groupedMiddle).concat([lastStep]);
+  currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
+
+  google.script.run.withSuccessHandler(function(res) {
+    if(res && res.success) {
+      showAlert('🎉 ' + res.message, 'success');
+      if(templateEditModalInstance) templateEditModalInstance.hide();
+      loadTemplateAdminView();
+    } else { showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
+  }).api_saveTemplate(newName, currentTemplateSteps, typeof currentEditingTemplateName !== 'undefined' ? currentEditingTemplateName : null);
+}
 
   function deleteTemplate(name) {
     if(!confirm('確定要刪除範本 [' + name + '] 嗎？')) return;
@@ -999,58 +1055,79 @@ function unlockBtn(btn, originalText) {
   btn.innerHTML = originalText;
 }
 
-  // ==========================================
-  // 💡 [更新版] 渲染已完成專案歷史 (支援提交日、死線與精準狀態)
-  // ==========================================
-  function searchHistory() {
-    var tbody = document.getElementById('historyTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin"></i> 搜尋歷史紀錄中...</td></tr>';
+ // ==========================================
+// 💡 搜尋並渲染已完成專案歷史列表 (雙重防護格式化死線)
+// ==========================================
+function searchHistory() {
+  var tbody = document.getElementById('historyTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><i class="fas fa-spinner fa-spin me-1"></i> 搜尋歷史紀錄中...</td></tr>';
 
-    var keyword = document.getElementById('hist_searchKeyword') ? document.getElementById('hist_searchKeyword').value.trim() : '';
-    var startDate = document.getElementById('hist_startDate') ? document.getElementById('hist_startDate').value : '';
-    var endDate = document.getElementById('hist_endDate') ? document.getElementById('hist_endDate').value : '';
+  var keyword = document.getElementById('hist_searchKeyword') ? document.getElementById('hist_searchKeyword').value.trim() : '';
+  var startDate = document.getElementById('hist_startDate') ? document.getElementById('hist_startDate').value : '';
+  var endDate = document.getElementById('hist_endDate') ? document.getElementById('hist_endDate').value : '';
 
-    google.script.run.withSuccessHandler(function(res) {
-      if(!res || !res.success) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
-        return;
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-danger text-center">搜尋失敗: ' + (res ? res.message : '未知錯誤') + '</td></tr>';
+      return;
+    }
+
+    var list = res.data;
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
+      return;
+    }
+
+    // 前端防護格式化工具
+    function cleanDateStr(val) {
+      if (!val) return '未設定';
+      var str = String(val).trim();
+      if (str.includes('GMT') || str.includes('Standard Time') || str.includes('T')) {
+        var d = new Date(str);
+        if (!isNaN(d.getTime())) {
+          var y = d.getFullYear();
+          var m = String(d.getMonth() + 1).padStart(2, '0');
+          var day = String(d.getDate()).padStart(2, '0');
+          return y + '-' + m + '-' + day;
+        }
       }
+      return str.split('T')[0].split(' ')[0];
+    }
 
-      var list = res.data;
-      if(list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">查無符合條件的已完成專案紀錄。</td></tr>';
-        return;
-      }
+    var html = '';
+    list.forEach(function(item) {
+      var urlHtml = item.launchUrl ? formatClickableText(item.launchUrl) : '<span class="text-muted">未填寫網址</span>';
+      var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
+      var cleanDeadline = cleanDateStr(item.deadline);
+      
+      var delayBadge = item.isDelayed 
+        ? '<div class="badge bg-danger mt-1"><i class="fas fa-exclamation-triangle me-1"></i>' + item.delayText + '</div>' 
+        : '<div class="badge bg-success mt-1"><i class="fas fa-check-circle me-1"></i>' + item.delayText + '</div>';
 
-      var html = '';
-      list.forEach(function(item) {
-        var urlHtml = item.launchUrl ? formatClickableText(item.launchUrl) : '<span class="text-muted">未填寫網址</span>';
-        var safeJobNum = String(item.jobNumber).replace(/'/g, "\\'");
-        
-        var delayBadge = item.isDelayed 
-          ? '<div class="badge bg-danger mt-1"><i class="fas fa-exclamation-triangle"></i> ' + item.delayText + '</div>' 
-          : '<div class="badge bg-success mt-1"><i class="fas fa-check-circle"></i> ' + item.delayText + '</div>';
+      var revBadge = (item.revisionCount && item.revisionCount > 0)
+        ? '<span class="badge bg-danger bg-opacity-10 text-danger border border-danger"><i class="fas fa-undo me-1"></i>' + item.revisionCount + ' 次修改</span>'
+        : '<span class="badge bg-success bg-opacity-10 text-success border border-success"><i class="fas fa-check me-1"></i>0 次 (一稿過)</span>';
 
-        html += '<tr>' +
-          '<td><strong>' + item.jobNumber + '</strong></td>' +
-          '<td>' + item.client + '</td>' +
-          '<td>' + item.deliverableName + '</td>' +
-          '<td>' + item.pmName + '</td>' +
-          // 💡 這裡換成了專案總耗時
-          '<td><span class="badge bg-light text-dark border"><i class="fas fa-stopwatch text-primary me-1"></i>' + item.totalDurationText + '</span></td>' +
-          '<td><span class="badge bg-light text-danger border"><i class="fas fa-bullseye me-1"></i>' + item.deadline + '</span></td>' +
-          '<td><div class="fw-bold text-secondary" style="font-size:0.9em;">' + item.completedAt + '</div>' + delayBadge + '</td>' +
-          '<td>' + urlHtml + '</td>' +
-          '<td class="text-end pe-3">' +
-            '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視</button>' +
-          '</td>' +
-        '</tr>';
-      });
+      html += '<tr>' +
+        '<td><strong>' + item.jobNumber + '</strong></td>' +
+        '<td>' + item.client + '</td>' +
+        '<td>' + item.deliverableName + '</td>' +
+        '<td>' + item.pmName + '</td>' +
+        '<td><span class="badge bg-light text-dark border"><i class="fas fa-stopwatch text-primary me-1"></i>' + item.totalDurationText + '</span></td>' +
+        '<td><span class="badge bg-light text-danger border"><i class="fas fa-bullseye me-1"></i>' + cleanDeadline + '</span></td>' +
+        '<td><div class="fw-bold text-secondary" style="font-size:0.9em;">' + item.completedAt + '</div>' + delayBadge + '</td>' +
+        '<td>' + revBadge + '</td>' +
+        '<td>' + urlHtml + '</td>' +
+        '<td class="text-end pe-3">' +
+          '<button class="btn btn-sm btn-outline-primary" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視</button>' +
+        '</td>' +
+      '</tr>';
+    });
 
-      tbody.innerHTML = html;
-    }).api_getCompletedProjects(keyword, startDate, endDate);
-  }
+    tbody.innerHTML = html;
+  }).api_getCompletedProjects(keyword, startDate, endDate);
+}
 
   /**
  * 鎖定按鈕並顯示 Loading 狀態，防止重複點擊
@@ -1207,61 +1284,11 @@ window.addEventListener('refreshAllViews', function() {
 
 </script>
 
-<!-- ========================================== -->
-<!-- 💡 Firebase Realtime Database 即時廣播模組 -->
-<!-- ========================================== -->
+<!-- 💡 貼在 Scripts.html 最底部，覆蓋原有的 Firebase 腳本區塊 -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
 <script>
-  // 💡 1. 補回通知牆主函數 (防止 fetchNotifications undefined 報錯)
-  window.fetchNotifications = function() {
-    var listEl = document.getElementById('notificationList');
-    var badgeEl = document.getElementById('notifBadge');
-    
-    var email = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.email : '';
-    if (!email) return;
-
-    if (listEl && !listEl.innerHTML.includes('list-group-item')) {
-      listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>載入最新動態中...</div>';
-    }
-
-    google.script.run.withSuccessHandler(function(res) {
-      if (res && res.success) {
-        var notifs = res.data || [];
-        if (notifs.length > 0) {
-          if (badgeEl) {
-            badgeEl.innerText = notifs.length > 99 ? '99+' : notifs.length;
-            badgeEl.style.display = 'block';
-          }
-          var html = '';
-          notifs.forEach(function(n) {
-            var timeStr = n.rawTime || new Date(n.time).toLocaleString();
-            var bgClass = n.type === 'OVERDUE' || n.type === 'NUDGE' ? 'bg-danger bg-opacity-10' : 'bg-white';
-            
-            html += '<div class="list-group-item py-3 border-bottom ' + bgClass + '">' +
-                      '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
-                        '<h6 class="mb-0 fw-bold text-' + n.color + '"><i class="fas ' + n.icon + ' me-2"></i>' + n.title + '</h6>' +
-                        '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
-                      '</div>' +
-                      '<p class="mb-0 small text-secondary mt-1">' + n.message + '</p>' +
-                    '</div>';
-          });
-          if (listEl) listEl.innerHTML = html;
-        } else {
-          if (badgeEl) badgeEl.style.display = 'none';
-          if (listEl) listEl.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-circle fa-3x text-success mb-3 opacity-25"></i><br>目前沒有任何新動態</div>';
-        }
-      }
-    }).api_getUserNotifications(email);
-  };
-
-  // 💡 2. 安全監聽器 (加上 typeof 判定防呆)
-  window.addEventListener('refreshAllViews', function() {
-    if (typeof fetchNotifications === 'function') fetchNotifications();
-  });
-
-  // 💡 3. Firebase 即時廣播與監聽模組
   (function() {
     const firebaseConfig = {
       apiKey: "AIzaSyCJuwKQ_5IEJMBvjPrrrYn3uqEFKbxN884",
@@ -1279,8 +1306,15 @@ window.addEventListener('refreshAllViews', function() {
 
     const realDB = (typeof firebase !== 'undefined' && firebase.apps.length) ? firebase.database() : null;
 
+    // 1. 全域看板即時刷新監聽器 (加入初次快照鎖)
     if (realDB) {
+      let isGlobalInitial = true;
       realDB.ref('global_events').on('value', function(snapshot) {
+        // 🛡️ 防護：忽略初次綁定時吐出的舊快照，防止模擬身分時誤發全頁重整
+        if (isGlobalInitial) {
+          isGlobalInitial = false;
+          return;
+        }
         const data = snapshot.val();
         if (!data) return;
         if (typeof currentUser !== 'undefined' && currentUser && data.updatedBy !== currentUser.email) {
@@ -1289,16 +1323,40 @@ window.addEventListener('refreshAllViews', function() {
       });
     }
 
+    // 2. 專案詳情即時監聽器 (防遞迴與舊快照自動過濾)
     window.listenProjectRealtime = function(jobNumber) {
       if (!jobNumber || !realDB) return;
       if (window.activeRealtimeRef) window.activeRealtimeRef.off();
 
+      let isProjectInitial = true; // 🛡️ 防護 1：鎖定首次綁定時的即時觸發
+
       window.activeRealtimeRef = realDB.ref('projects/' + jobNumber);
       window.activeRealtimeRef.on('value', function(snapshot) {
+        // 首次掛載監聽器時不執行後續更新，打破連鎖遞迴
+        if (isProjectInitial) {
+          isProjectInitial = false;
+          return;
+        }
+
         const data = snapshot.val();
         if (!data) return;
+
+        // 僅在有他人發出「真實新變更」時回應
         if (typeof currentUser !== 'undefined' && currentUser && data.updatedBy !== currentUser.email) {
-          if (typeof openWorkflow === 'function') openWorkflow(jobNumber);
+          // 🛡️ 防護 2：若 Modal 已經開著，靜默更新卡片內容，絕不重跑 openWorkflow 避免連鎖反應
+          if (typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.jobNumber === jobNumber) {
+            google.script.run.withSuccessHandler(function(res) {
+              if (res && res.success) {
+                currentProjectData = res.data;
+                if (typeof renderDeliverableTabs === 'function') {
+                  renderDeliverableTabs(res.data.workflowData.deliverables || []);
+                }
+              }
+            }).api_getProjectWorkflow(jobNumber);
+          } else if (typeof openWorkflow === 'function') {
+            openWorkflow(jobNumber);
+          }
+
           if (typeof showAlert === 'function') {
             showAlert('⚡ 同事 ' + (data.updatedByName || data.updatedBy) + ' 剛剛更新了此專案，已為您自動載入最新畫面！', 'info');
           }

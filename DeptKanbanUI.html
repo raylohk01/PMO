@@ -1,5 +1,5 @@
 <!-- ========================================== -->
-<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (月檢視網格重構版) -->
+<!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (雙完成指標升級版) -->
 <!-- ========================================== -->
 
 <div id="deptHeadSection" class="section-container" style="display: none;">
@@ -49,8 +49,8 @@
     </div>
   </div>
 
-  <!-- 💡 2. 頂部 7 欄 KPI 統計卡片 -->
-  <div class="row g-2 mb-3 row-cols-2 row-cols-md-4 row-cols-lg-7">
+  <!-- 💡 2. 頂部 8 欄 KPI 統計卡片 -->
+  <div class="row g-2 mb-3 row-cols-2 row-cols-md-4 row-cols-lg-8">
     <div class="col">
       <div class="card shadow-sm border-0 border-start border-4 border-danger cursor-pointer h-100" id="card_kpi_OVERDUE" onclick="filterOpTasksByKpi('OVERDUE')" style="transition: 0.2s;">
         <div class="card-body p-2 d-flex justify-content-between align-items-center">
@@ -123,14 +123,28 @@
       </div>
     </div>
 
+    <!-- 💡 修改名為：完成專案 (5天) -->
     <div class="col">
       <div class="card shadow-sm border-0 border-start border-4 border-success cursor-pointer h-100" id="card_kpi_COMPLETED" onclick="filterOpTasksByKpi('COMPLETED')" style="transition: 0.2s;">
         <div class="card-body p-2 d-flex justify-content-between align-items-center">
           <div>
-            <small class="text-muted fw-bold">✅ 已完成(5天)</small>
+            <small class="text-muted fw-bold">🎉 完成專案(5天)</small>
             <h4 class="fw-bold text-success mb-0" id="op_kpi_completed">0</h4>
           </div>
           <i class="fas fa-check-circle fa-2x text-success opacity-25"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- 💡 新增欄位：已完成關卡 (5天) -->
+    <div class="col">
+      <div class="card shadow-sm border-0 border-start border-4 border-teal cursor-pointer h-100" id="card_kpi_COMPLETED_STEPS" style="transition: 0.2s; border-color: #20c997 !important;">
+        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+          <div>
+            <small class="text-muted fw-bold">✅ 完成關卡(5天)</small>
+            <h4 class="fw-bold mb-0" id="op_kpi_completedSteps" style="color: #20c997;">0</h4>
+          </div>
+          <i class="fas fa-tasks fa-2x opacity-25" style="color: #20c997;"></i>
         </div>
       </div>
     </div>
@@ -256,7 +270,7 @@
     <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-success h-100">
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-          <span class="fw-bold text-dark small"><i class="fas fa-check-circle text-success me-1"></i> 已完成(5天)</span>
+          <span class="fw-bold text-dark small"><i class="fas fa-check-circle text-success me-1"></i> 完成專案(5天)</span>
           <span class="badge bg-success" id="op_countCompleted">0 件</span>
         </div>
         <div class="card-body bg-light p-2" style="max-height: 550px; overflow-y: auto;" id="op_completedContainer">
@@ -500,7 +514,6 @@
     area.innerHTML = html;
   }
 
-  // 💡 [重構升級] 月檢視 5 列 x 7 欄彈性多列渲染，徹底解決擠壓問題！
   function renderCapacityCalendar(calMap, tasksList) {
     var grid = document.getElementById('op_calendarGrid');
     if (!grid) return;
@@ -547,7 +560,6 @@
 
     var html = '';
     
-    // 表頭：週一至週日
     if (currentCalendarMode !== 'DAY') {
       html += '<div class="d-flex text-center fw-bold text-muted mb-1" style="font-size:0.9em;">' +
         '<div style="flex:0 0 14.2857%; width:14.2857%;">週一</div>' +
@@ -563,7 +575,6 @@
     var minCardHeight = (currentCalendarMode === 'MONTH') ? '110px' : (currentCalendarMode === 'DAY' ? '280px' : '220px');
     var colWidthStyle = (currentCalendarMode === 'DAY') ? 'flex:0 0 100%; width:100%;' : 'flex:0 0 14.2857%; width:14.2857%;';
 
-    // 使用 flex-wrap 容器，每 7 天自動換列！
     html += '<div class="d-flex flex-wrap text-center" style="font-size:0.9em;">';
 
     daysToRender.forEach(function(dObj) {
@@ -576,7 +587,6 @@
       var dayTasks = (tasksList || []).filter(function(t){ return t.deadline === dateStr; });
       var taskCount = dayTasks.length;
 
-      // 當月與跨月外觀處理
       var bgClass = isToday ? 'bg-warning bg-opacity-20 border-warning' : (isCurrentMonth ? 'bg-white border-light' : 'bg-light bg-opacity-50 border-light opacity-75');
       var badgeClass = 'bg-success';
 
@@ -674,13 +684,17 @@
     var clientReviewList = baseClientReview;
     var completedList = baseCompleted;
 
+    // 💡 賦值頂部 KPI 統計指標
     if (document.getElementById('op_kpi_overdue')) document.getElementById('op_kpi_overdue').innerText = overdueList.length;
     if (document.getElementById('op_kpi_unassigned')) document.getElementById('op_kpi_unassigned').innerText = unassignedList.length;
     if (document.getElementById('op_kpi_dueSoon')) document.getElementById('op_kpi_dueSoon').innerText = dueSoonList.length;
     if (document.getElementById('op_kpi_active')) document.getElementById('op_kpi_active').innerText = activeList.length;
     if (document.getElementById('op_kpi_pipeline')) document.getElementById('op_kpi_pipeline').innerText = pipelineList.length;
     if (document.getElementById('op_kpi_clientReview')) document.getElementById('op_kpi_clientReview').innerText = clientReviewList.length;
+    
+    // 💡 完成專案(5天) 與 完成關卡(5天) 雙指標賦值
     if (document.getElementById('op_kpi_completed')) document.getElementById('op_kpi_completed').innerText = completedList.length;
+    if (document.getElementById('op_kpi_completedSteps')) document.getElementById('op_kpi_completedSteps').innerText = rawOpData.totalCompletedStepsCount || 0;
 
     if (selectedOpKpiFilter) {
        if (selectedOpKpiFilter === 'OVERDUE') { unassignedList = []; dueSoonList = []; activeList = []; pipelineList = []; clientReviewList = []; completedList = []; }
