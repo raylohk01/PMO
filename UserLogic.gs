@@ -2856,7 +2856,9 @@ function sendSystemEmail(toUser, subject, title, message) {
   }
 }
 
-// 💡 升級版後端廣播器：同時觸發專案視窗重載 + 全域看板卡片即時跳出
+// ==========================================
+// 💡 全量 Firebase 廣播與快取推送引擎 (秒讀基礎)
+// ==========================================
 function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
   try {
     const cleanJobNum = String(jobNumber || 'GLOBAL').split('-P')[0];
@@ -2869,14 +2871,26 @@ function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
       updatedByName: userName || 'System'
     });
 
-    // 1. 廣播給專案詳情視窗
     if (cleanJobNum !== 'GLOBAL') {
+      // 1. 廣播時間戳記
       UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanJobNum + ".json", {
         method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
       });
+
+      // 2. 🚀 將專案完整內容寫入 Firebase 快取 (存於 project_cache/ 下)
+      try {
+        let freshProject = api_getProjectWorkflow(cleanJobNum);
+        if (freshProject && freshProject.success) {
+          UrlFetchApp.fetch(firebaseUrl + "project_cache/" + cleanJobNum + ".json", {
+            method: "put",
+            contentType: "application/json",
+            payload: JSON.stringify(freshProject.data),
+            muteHttpExceptions: true
+          });
+        }
+      } catch(e) {}
     }
 
-    // 2. 若為全域事件（如新增專案、派案），廣播給全系統所有人的看板
     if (isGlobalEvent) {
       UrlFetchApp.fetch(firebaseUrl + "global_events.json", {
         method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
