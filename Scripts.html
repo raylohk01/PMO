@@ -891,45 +891,89 @@ function saveUser() {
     }).api_getPMTeamWorkload();
   }
 
-  function addDeliverableRow() {
-    var container = document.getElementById('np_deliverablesArea');
-    var rowId = 'deliv_row_' + new Date().getTime();
-    
-    var optionsHtml = '<option value="" disabled selected>請選擇工作流範本...</option>';
+  // ==========================================
+// 💡 [升級版] 新增子項目 UI (支援稍後補充 TBD)
+// ==========================================
+function addDeliverableRow() {
+  var container = document.getElementById('np_deliverablesArea');
+  if (!container) return;
+
+  var rowId = 'deliv_row_' + new Date().getTime();
+  
+  var mainStartDate = document.getElementById('np_tentativeDate') ? document.getElementById('np_tentativeDate').value : '';
+  var mainDeadline = document.getElementById('np_deadline') ? document.getElementById('np_deadline').value : '';
+
+  var optionsHtml = '<option value="" disabled selected>請選擇工作流範本...</option>';
+  if (typeof availableTemplates !== 'undefined' && availableTemplates.length > 0) {
     availableTemplates.forEach(function(t) {
       optionsHtml += '<option value="' + t.name + '" data-json=\'' + t.json + '\'>' + t.name + '</option>';
     });
+  }
 
-    var defaultName = '篇章 / 任務 ' + (deliverableCounter++);
+  var defaultName = '篇章 / 任務 ' + (typeof deliverableCounter !== 'undefined' ? deliverableCounter++ : 1);
 
-    var html = 
-    '<div class="card mb-2 border-light shadow-sm deliv-item-row" id="' + rowId + '">' +
-      '<div class="card-body p-2 bg-white">' +
-        '<div class="row g-2 align-items-center">' +
-          '<div class="col-md-5">' +
-            '<label class="form-label small text-muted mb-1">套用範本</label>' +
-            '<select class="form-select form-select-sm deliv-template" required onchange="updateTemplatePreview(\'' + rowId + '\')">' +
-              optionsHtml +
-            '</select>' +
-          '</div>' +
-          '<div class="col-md-6">' +
-            '<label class="form-label small text-muted mb-1">自訂任務名稱</label>' +
-            '<input type="text" class="form-control form-control-sm deliv-name" value="' + defaultName + '" required placeholder="請輸入任務名稱">' +
-          '</div>' +
-          '<div class="col-md-1 text-end">' +
-            '<button type="button" class="btn btn-sm btn-outline-danger" onclick="document.getElementById(\'' + rowId + '\').remove()">' +
-              '<i class="fas fa-trash"></i>' +
-            '</button>' +
+  var html = 
+  '<div class="card mb-2 border-primary border-opacity-25 shadow-sm deliv-item-row" id="' + rowId + '">' +
+    '<div class="card-body p-2 bg-white">' +
+      '<div class="row g-2 align-items-center mb-1">' +
+        '<div class="col-md-5">' +
+          '<label class="form-label small text-muted mb-1">套用範本</label>' +
+          '<select class="form-select form-select-sm deliv-template" required onchange="updateTemplatePreview(\'' + rowId + '\')">' +
+            optionsHtml +
+          '</select>' +
+        '</div>' +
+        '<div class="col-md-6">' +
+          '<label class="form-label small text-muted mb-1">自訂任務名稱</label>' +
+          '<input type="text" class="form-control form-control-sm deliv-name" value="' + defaultName + '" required placeholder="請輸入任務名稱">' +
+        '</div>' +
+        '<div class="col-md-1 text-end">' +
+          '<button type="button" class="btn btn-sm btn-outline-danger mt-3" onclick="document.getElementById(\'' + rowId + '\').remove()">' +
+            '<i class="fas fa-trash"></i>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+      
+      // 💡 [新增] 獨立日期與 TBD 區塊
+      '<div class="row g-2 align-items-center bg-light p-2 rounded border-top border-light mt-2">' +
+        '<div class="col-md-4">' +
+          '<label class="form-label small text-muted mb-0"><i class="fas fa-play text-success me-1"></i>開始日</label>' +
+          '<input type="date" class="form-control form-control-sm deliv-start-date" value="' + mainStartDate + '">' +
+        '</div>' +
+        '<div class="col-md-4">' +
+          '<label class="form-label small text-muted mb-0"><i class="fas fa-flag-checkered text-danger me-1"></i>任務死線</label>' +
+          '<input type="date" class="form-control form-control-sm deliv-deadline" value="' + mainDeadline + '">' +
+        '</div>' +
+        '<div class="col-md-4 d-flex align-items-center mt-4">' +
+          '<div class="form-check form-switch mb-0">' +
+            '<input class="form-check-input deliv-tbd" type="checkbox" id="tbd_' + rowId + '" onchange="toggleDeliverableTBD(\'' + rowId + '\', this.checked)">' +
+            '<label class="form-check-label small fw-bold text-secondary" for="tbd_' + rowId + '">稍後補充 (TBD)</label>' +
           '</div>' +
         '</div>' +
-        '<div class="mt-2 text-muted small border-top pt-1" id="preview_' + rowId + '" style="font-size:0.8em; display:none;"></div>'
-        
-         +
       '</div>' +
-    '</div>';
-    
-    container.insertAdjacentHTML('beforeend', html);
+
+      '<div class="mt-2 text-muted small border-top pt-1" id="preview_' + rowId + '" style="font-size:0.8em; display:none;"></div>' +
+    '</div>' +
+  '</div>';
+  
+  container.insertAdjacentHTML('beforeend', html);
+}
+
+// 💡 [新增] 控制 TBD 勾選的畫面變化
+window.toggleDeliverableTBD = function(rowId, isChecked) {
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  var startDateInput = row.querySelector('.deliv-start-date');
+  var deadlineInput = row.querySelector('.deliv-deadline');
+  if (isChecked) {
+    if (startDateInput) { startDateInput.disabled = true; startDateInput.value = ''; }
+    if (deadlineInput) { deadlineInput.disabled = true; deadlineInput.value = ''; }
+  } else {
+    var mainStartDate = document.getElementById('np_tentativeDate') ? document.getElementById('np_tentativeDate').value : '';
+    var mainDeadline = document.getElementById('np_deadline') ? document.getElementById('np_deadline').value : '';
+    if (startDateInput) { startDateInput.disabled = false; startDateInput.value = mainStartDate; }
+    if (deadlineInput) { deadlineInput.disabled = false; deadlineInput.value = mainDeadline; }
   }
+};
 
   function updateTemplatePreview(rowId) {
     var row = document.getElementById(rowId);
@@ -956,7 +1000,6 @@ function saveUser() {
     }
   }
 
-// 💡 2. 修改 submitNewProject：開案成功後呼叫本地 refreshAllViews
 function submitNewProject(e) {
   if (e && e.preventDefault) e.preventDefault();
 
@@ -973,20 +1016,32 @@ function submitNewProject(e) {
   var sales = document.getElementById('np_sales').value.trim();
   var pmSelect = document.getElementById('np_pmSelect');
   var pm = pmSelect ? pmSelect.value : '';
-  var deadline = document.getElementById('np_deadline').value;
+  
+  var mainTentativeDate = document.getElementById('np_tentativeDate') ? document.getElementById('np_tentativeDate').value : '';
+  var mainDeadline = document.getElementById('np_deadline').value;
 
-  if (!jobNum || !client || !sales || !pm || !deadline) {
+  if (!jobNum || !client || !sales || !pm || !mainDeadline) {
     unlockBtn(btn, '確認建立專案');
     return showAlert('⚠️ 請填寫完整專案基本資訊！', 'warning');
   }
 
   var deliverables = [];
   var delRows = document.querySelectorAll('.deliv-item-row');
+  
   delRows.forEach(function(row) {
     var selectEl = row.querySelector('.deliv-template');
     var template = selectEl ? selectEl.value : '';
     var name = row.querySelector('.deliv-name') ? row.querySelector('.deliv-name').value.trim() : '';
     
+    var startDateInput = row.querySelector('.deliv-start-date');
+    var deadlineInput = row.querySelector('.deliv-deadline');
+    var tbdBox = row.querySelector('.deliv-tbd');
+
+    // 💡 判斷是否勾選稍後補充
+    var isTBD = tbdBox ? tbdBox.checked : false;
+    var dStartDate = isTBD ? '稍後補充' : (startDateInput ? startDateInput.value : '');
+    var dDeadline = isTBD ? '稍後補充' : (deadlineInput ? deadlineInput.value : '');
+
     var templateJson = '';
     if (selectEl && selectEl.selectedIndex >= 0) {
       templateJson = selectEl.options[selectEl.selectedIndex].getAttribute('data-json') || '';
@@ -996,7 +1051,10 @@ function submitNewProject(e) {
       deliverables.push({ 
         templateName: template, 
         name: name,
-        templateJson: templateJson 
+        templateJson: templateJson,
+        tentativeStartDate: dStartDate,
+        deadline: dDeadline,
+        isTBD: isTBD
       });
     }
   });
@@ -1006,8 +1064,8 @@ function submitNewProject(e) {
     client: client,
     sales: sales,
     pm: pm,
-    deadline: deadline,
-    tentativeDate: document.getElementById('np_tentativeDate') ? document.getElementById('np_tentativeDate').value : '',
+    deadline: mainDeadline,
+    tentativeDate: mainTentativeDate,
     deliverables: deliverables
   };
 
@@ -1016,7 +1074,6 @@ function submitNewProject(e) {
       unlockBtn(btn, '確認建立專案');
       if (res && res.success) {
         showAlert('🎉 專案 [' + jobNum + '] 開案成功！', 'success');
-        
         var modalEl = document.getElementById('newProjectModal');
         if (modalEl) {
           var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
@@ -1024,10 +1081,7 @@ function submitNewProject(e) {
         }
         var form = document.getElementById('newProjectForm');
         if (form) form.reset();
-
-        // 🚀 開案者本人立即觸發全局廣播 (走靜默更新，卡片無縫登場！)
         window.dispatchEvent(new Event('refreshAllViews'));
-
       } else {
         showAlert('❌ 開案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
@@ -1038,6 +1092,32 @@ function submitNewProject(e) {
     })
     .api_createProject(payload);
 }
+
+// ==========================================
+// 💡 [智能同步版] 修改死線 (詢問是否批量覆蓋 TBD 關卡)
+// ==========================================
+function openStepDeadlineModal(deliverableId, stepNumber, currentDeadline) {
+  var cleanCurDeadline = (currentDeadline === '稍後補充') ? '' : formatDateOnly(currentDeadline);
+  var newDate = prompt("請選擇新的關卡死線 (YYYY-MM-DD)：", cleanCurDeadline);
+  
+  if (newDate) {
+    var cascade = false;
+    // 💡 智能提示：如果是 TBD 狀態，詢問是否要批量同步
+    if (currentDeadline === '稍後補充' || currentDeadline.includes('稍後')) {
+      cascade = confirm('💡 系統偵測到此關卡原為「稍後補充 (TBD)」。\n\n是否要將此任務底下【所有】尚未設定日期的關卡，一次性同步更新為 ' + newDate + '？\n\n(按 [確定] = 批量同步，按 [取消] = 僅更新這單一個關卡)');
+    }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showAlert("🎉 死線更新成功！", "success");
+        openWorkflow(currentProjectData.jobNumber);
+      } else {
+        showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
+      }
+    }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim(), cascade);
+  }
+}
+
 
 function unlockBtn(btn, originalText) {
   if (!btn) return;
@@ -1370,11 +1450,10 @@ window.addEventListener('refreshAllViews', function() {
       if (!jobNumber || !realDB) return;
       if (window.activeRealtimeRef) window.activeRealtimeRef.off();
 
-      let isProjectInitial = true; // 🛡️ 防護 1：鎖定首次綁定時的即時觸發
+      let isProjectInitial = true; 
 
       window.activeRealtimeRef = realDB.ref('projects/' + jobNumber);
       window.activeRealtimeRef.on('value', function(snapshot) {
-        // 首次掛載監聽器時不執行後續更新，打破連鎖遞迴
         if (isProjectInitial) {
           isProjectInitial = false;
           return;
@@ -1383,9 +1462,16 @@ window.addEventListener('refreshAllViews', function() {
         const data = snapshot.val();
         if (!data) return;
 
-        // 僅在有他人發出「真實新變更」時回應
-        if (typeof currentUser !== 'undefined' && currentUser && data.updatedBy !== currentUser.email) {
-          // 🛡️ 防護 2：若 Modal 已經開著，靜默更新卡片內容，絕不重跑 openWorkflow 避免連鎖反應
+        // 💡 終極防護 1：如果自己正在操作 (3秒無敵狀態)，無視所有廣播，防止舊快取覆蓋新畫面！
+        if (window.isUpdatingProject) return;
+
+        // 💡 終極防護 2：大小寫不敏感比對，確保自己發的廣播絕對不會被誤認為是別人發的
+        let isSomeoneElse = false;
+        if (typeof currentUser !== 'undefined' && currentUser && currentUser.email) {
+          isSomeoneElse = (String(data.updatedBy).toLowerCase() !== String(currentUser.email).toLowerCase());
+        }
+
+        if (isSomeoneElse) {
           if (typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.jobNumber === jobNumber) {
             google.script.run.withSuccessHandler(function(res) {
               if (res && res.success) {

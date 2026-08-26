@@ -265,7 +265,7 @@ function api_deleteTemplate(name) {
 }
 
 // ==========================================
-// 💡 [純淨修復版] 建立新專案 (確保 100% 進入 Pending Start 待啟動狀態)
+// 💡 [純淨版] 建立新專案 (處理 TBD)
 // ==========================================
 function api_createProject(payload) {
   try {
@@ -285,7 +285,6 @@ function api_createProject(payload) {
     if (!Array.isArray(delivList) || delivList.length === 0) {
       var templateName = payload.productType || payload.templateName || '標準 Advertorial';
       var workflowSteps = [];
-
       if (templateSheet) {
         for (var i = 1; i < templatesData.length; i++) {
           if (String(templatesData[i][0]).trim() === templateName) {
@@ -294,19 +293,23 @@ function api_createProject(payload) {
           }
         }
       }
-
-      delivList = [{
-        name: payload.deliverableName || '篇章 / 任務 1',
-        templateName: templateName,
-        templateJson: workflowSteps.length > 0 ? JSON.stringify(workflowSteps) : ''
-      }];
+      delivList = [{ name: payload.deliverableName || '任務 1', templateName: templateName, templateJson: workflowSteps.length > 0 ? JSON.stringify(workflowSteps) : '' }];
     }
 
     const launchDeadlineStr = payload.deadline || payload.launchDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
+    const mainStartDateStr = payload.tentativeDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
 
     let deliverables = delivList.map((d, idx) => {
       let steps = [];
       let tplName = d.templateName || d.type || payload.productType || '標準 Advertorial';
+
+      // 💡 處理 TBD 狀態
+      let delivDeadline = d.deadline || launchDeadlineStr;
+      let delivStartDate = d.tentativeStartDate || mainStartDateStr;
+      let isTBD = !!d.isTBD;
+      
+      if (d.deadline === '稍後補充' || isTBD) delivDeadline = '稍後補充';
+      if (d.tentativeStartDate === '稍後補充' || isTBD) delivStartDate = '稍後補充';
 
       if (d.templateJson) {
         try { steps = JSON.parse(d.templateJson); } catch (e) {}
@@ -339,12 +342,12 @@ function api_createProject(payload) {
           name: s.name || ('步驟 ' + (sIdx + 1)),
           dept: dName,
           assignee: defaultAssignee,
-          status: 'Pending Start', // 💡 確保關卡是待啟動
+          status: 'Pending Start',
           isStarted: false,
           fields: s.fields || ['URL'],
           parallelGroup: s.parallelGroup || s.group || '',
-          keyDate: launchDeadlineStr,
-          deadline: launchDeadlineStr,
+          keyDate: delivDeadline,    // 寫入子項目獨立死線
+          deadline: delivDeadline,   // 寫入子項目獨立死線
           accumulatedDays: 0
         };
       });
@@ -353,8 +356,10 @@ function api_createProject(payload) {
         id: 'deliv_' + (idx + 1) + '_' + new Date().getTime(),
         name: d.name || ('篇章/任務 ' + (idx + 1)),
         type: tplName,
-        status: 'Pending Start',  // 💡 確保子項目也是待啟動
+        status: 'Pending Start',
         currentStep: 1,
+        tentativeStartDate: delivStartDate,
+        mainDeadline: delivDeadline,
         workflow: formattedSteps
       };
     });
@@ -383,7 +388,7 @@ function api_createProject(payload) {
     if (idxPM >= 0) rowData[idxPM] = masterPmName;
     if (idxSubmission >= 0) rowData[idxSubmission] = payload.tentativeDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
     if (idxLaunch >= 0) rowData[idxLaunch] = payload.deadline || payload.launchDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
-    if (idxStatus >= 0) rowData[idxStatus] = 'Pending Start'; // 💡 確保總專案也是待啟動
+    if (idxStatus >= 0) rowData[idxStatus] = 'Pending Start'; 
     if (idxProduct >= 0) rowData[idxProduct] = JSON.stringify(workflowData);
     if (idxLog >= 0) rowData[idxLog] = JSON.stringify(auditLog);
 
@@ -395,6 +400,89 @@ function api_createProject(payload) {
 
     return { success: true, message: '專案建立成功！' };
   } catch(e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ==========================================
+// 💡 [智能同步版] 修改單一關卡死線 (支援批量同步 TBD 關卡)
+// ==========================================
+function api_updateStepDeadline(deliverableId, stepNumber, newDeadline, cascade) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+
+    const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+
+    for (let i = 1; i < data.length; i++) {
+      for (let c = 0; c < data[i].length; c++) {
+        let cellStr = String(data[i][c] || '');
+        if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
+          let wfData = JSON.parse(cellStr);
+          let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
+
+          if (targetD && targetD.workflow) {
+            let logDetails = '';
+
+            // 💡 智能批量同步：如果是 TBD 且前端按下確定，就把所有「未完成」且為「稍後補充」的關卡全部更新
+            if (cascade) {
+              targetD.workflow.forEach(s => {
+                if (s.status !== 'Completed' && (s.keyDate === '稍後補充' || s.deadline === '稍後補充')) {
+                  s.keyDate = newDeadline;
+                  s.deadline = newDeadline;
+                }
+              });
+              targetD.mainDeadline = newDeadline;
+              logDetails = `將子項目 [${targetD.name}] 內所有「稍後補充 (TBD)」的關卡死線，批量同步為 [${newDeadline}]`;
+            } else {
+              // 僅更新單一關卡
+              let targetS = targetD.workflow.find(s => s.step === parseFloat(stepNumber));
+              if (targetS) {
+                let oldDeadline = targetS.keyDate || targetS.deadline || '未設定';
+                targetS.keyDate = newDeadline;
+                targetS.deadline = newDeadline;
+                logDetails = `將 Step ${targetS.step} [${targetS.name}] 的關卡死線由 [${oldDeadline}] 調整為 [${newDeadline}]`;
+              }
+            }
+
+            sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
+
+            // 寫入 Audit Log
+            if (idxAudit >= 0) {
+              let logs = [];
+              let cellStrLog = String(data[i][idxAudit] || '').trim();
+              if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
+
+              logs.unshift({
+                timestamp: nowStr,
+                user: activeUser,
+                action: 'Update Step Deadline',
+                details: logDetails
+              });
+              sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
+            }
+
+            let jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '') : '';
+            if (typeof notifyFirebaseUpdate === 'function') {
+              notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+            }
+
+            return { success: true, message: '關卡死線更新成功！' };
+          }
+        }
+      }
+    }
+    throw new Error('找不到對應關卡');
+  } catch (e) {
     return { success: false, message: e.message };
   }
 }
@@ -530,9 +618,9 @@ function api_getDashboardData(simEmail) {
 
             let isPaused = d.status === 'Paused' || pStatus.includes('pause');
             
-            // 💡 UX 優化：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
+            // 💡 關鍵修復：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
-            let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && primaryActiveStep.status === 'Pending'));
+            let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
 
             if (isPaused) {
               result.paused.push(item);
@@ -1008,9 +1096,12 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           deliverable.status = 'In Progress';
           deliverable.startedAt = nowIso;
           if (deliverable.workflow && deliverable.workflow.length > 0) {
-            deliverable.workflow[0].status = 'In Progress';
-            deliverable.workflow[0].startedAt = nowIso;
-            deliverable.workflow[0].isStarted = true;
+            let firstS = deliverable.workflow[0];
+            // 💡 關鍵修復：若第一關無負責人，狀態改為 Pending
+            firstS.status = firstS.assignee ? 'In Progress' : 'Pending';
+            firstS.startedAt = firstS.assignee ? nowIso : null;
+            firstS.pendingAssignmentAt = firstS.assignee ? null : nowIso;
+            firstS.isStarted = true;
           }
         } else if (action === 'SUBMIT') {
           let currentStepObj = deliverable.workflow.find(s => s.step === stepNum);
@@ -1035,6 +1126,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
                 nextStepObj.startedAt = nowIso;
                 nextStepObj.pendingAssignmentAt = null;
               } else {
+                // 💡 關鍵修復：若下一關沒有負責人，狀態改為 Pending
+                nextStepObj.status = 'Pending'; 
                 nextStepObj.pendingAssignmentAt = nowIso;
               }
             } else {
@@ -1074,7 +1167,6 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
         }
 
-        // 💡 關鍵修復：直接將更新好的 wfData 回傳
         return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData };
       }
     }
@@ -1892,76 +1984,11 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
   }
 }
 
+
+
 // ==========================================
-// 💡 修改單一關卡死線 (自動寫入 Log 日誌)
+// 💡 補齊 API：修改專案總死線 (Launch Date) + 智能同步 JSON 子項目
 // ==========================================
-function api_updateStepDeadline(deliverableId, stepNumber, newDeadline) {
-  try {
-    const userEmail = Session.getActiveUser().getEmail();
-    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
-
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
-    if (!sheet) throw new Error('找不到 Projects 工作表');
-
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
-
-    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('audit'));
-    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
-
-    const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
-
-    for (let i = 1; i < data.length; i++) {
-      for (let c = 0; c < data[i].length; c++) {
-        let cellStr = String(data[i][c] || '');
-        if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
-          let wfData = JSON.parse(cellStr);
-          let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
-
-          if (targetD && targetD.workflow) {
-            let targetS = targetD.workflow.find(s => s.step === parseFloat(stepNumber));
-            if (targetS) {
-              let oldDeadline = targetS.keyDate || targetS.deadline || '未設定';
-              targetS.keyDate = newDeadline;
-              targetS.deadline = newDeadline;
-
-              sheet.getRange(i + 1, c + 1).setValue(JSON.stringify(wfData));
-
-              // 💡 寫入 Audit Log
-              if (idxAudit >= 0) {
-                let logs = [];
-                let cellStrLog = String(data[i][idxAudit] || '').trim();
-                if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
-
-                logs.unshift({
-                  timestamp: nowStr,
-                  user: activeUser,
-                  action: 'Update Step Deadline',
-                  details: `將 Step ${targetS.step} [${targetS.name}] 的關卡死線由 [${oldDeadline}] 調整為 [${newDeadline}]`
-                });
-                sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
-              }
-
-              let jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '') : '';
-              if (typeof notifyFirebaseUpdate === 'function') {
-                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
-              }
-
-              return { success: true, message: '關卡死線更新成功！' };
-            }
-          }
-        }
-      }
-    }
-    throw new Error('找不到對應關卡');
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
-
-
-
-// 💡 補齊 API：修改專案總死線 (Launch Date)
 function api_updateProjectDeadline(jobNumber, newDeadline) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
@@ -1973,6 +2000,7 @@ function api_updateProjectDeadline(jobNumber, newDeadline) {
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
     const idxLaunch = headers.findIndex(h => h.includes('launch') || h.includes('deadline') || h.includes('死線'));
     const idxLog = headers.findIndex(h => h.includes('textjobtype') || h.includes('log') || h.includes('audit'));
+    const idxProd = headers.findIndex(h => h === 'productname' || h.includes('product') || h.includes('workflow'));
 
     if (idxJobNum === -1 || idxLaunch === -1) {
       throw new Error('欄位定位失敗：找不到 JobNumber 或 Launch Date 欄位');
@@ -1988,8 +2016,41 @@ function api_updateProjectDeadline(jobNumber, newDeadline) {
 
     if (rowIndex === -1) throw new Error('找不到編號為 [' + jobNumber + '] 的專案');
 
+    // 1. 更新試算表主欄位
     sheet.getRange(rowIndex, idxLaunch + 1).setValue(newDeadline);
 
+    // 2. 💡 關鍵修復：同步更新 JSON 內的子項目死線
+    if (idxProd >= 0) {
+      let cellStr = String(data[rowIndex - 1][idxProd] || '');
+      if (cellStr.startsWith('{')) {
+        try {
+          let wfData = JSON.parse(cellStr);
+          if (wfData && wfData.deliverables) {
+            wfData.deliverables.forEach(d => {
+              // 如果子項目的死線本來是「稍後補充」，就跟著主死線一起更新！
+              if (d.mainDeadline === '稍後補充' || !d.mainDeadline) {
+                d.mainDeadline = newDeadline;
+                if (d.workflow) {
+                  d.workflow.forEach(s => {
+                    // 同步更新底下尚未完成的 TBD 關卡
+                    if (s.status !== 'Completed' && (s.keyDate === '稍後補充' || s.deadline === '稍後補充')) {
+                      s.keyDate = newDeadline;
+                      s.deadline = newDeadline;
+                    }
+                  });
+                }
+              }
+            });
+            // 存回 JSON
+            sheet.getRange(rowIndex, idxProd + 1).setValue(JSON.stringify(wfData));
+          }
+        } catch(e) { 
+          console.error('JSON 同步解析失敗:', e); 
+        }
+      }
+    }
+
+    // 3. 寫入活動日誌 (Log)
     if (idxLog >= 0) {
       let logStr = String(data[rowIndex - 1][idxLog] || '').trim();
       let logArray = [];
@@ -2005,10 +2066,16 @@ function api_updateProjectDeadline(jobNumber, newDeadline) {
         timestamp: nowStr,
         user: userName,
         action: 'Update Deadline',
-        details: `將專案總死線修改為：${newDeadline}`
+        details: `將專案總死線修改為：${newDeadline} (已同步更新 TBD 子項目)`
       });
 
       sheet.getRange(rowIndex, idxLog + 1).setValue(JSON.stringify(logArray));
+    }
+
+    // 4. 發送更新廣播
+    if (typeof notifyFirebaseUpdate === 'function') {
+      const uEmail = Session.getActiveUser().getEmail();
+      notifyFirebaseUpdate(jobNumber, uEmail, uEmail.split('@')[0], true);
     }
 
     return { success: true, message: '專案總死線修改成功！' };
