@@ -546,8 +546,16 @@
     tabsContainer.innerHTML = tabsHtml;
 
     var currentD = deliverables.find(function(d) { return d.id === activeDeliverableId; });
+    
     if (currentD && document.getElementById('wf_taskTemplateName')) {
       document.getElementById('wf_taskTemplateName').innerText = currentD.name + ' (' + (currentD.type || '自訂流程') + ')';
+    }
+
+    // 💡 關鍵修復：右側的「專案概況」死線，優先顯示該子項目的獨立死線
+    if (currentD && document.getElementById('wf_mainDeadline')) {
+      var dDeadline = currentD.mainDeadline || currentProjectData.mainDeadline;
+      var displayDeadline = (dDeadline === '稍後補充' || String(dDeadline).toUpperCase().includes('TBD')) ? '稍後補充' : formatDateOnly(dDeadline);
+      document.getElementById('wf_mainDeadline').innerText = displayDeadline;
     }
 
     renderDeliverableContent(currentD);
@@ -638,7 +646,9 @@
     }
 
     var totalTimeBadge = '<span class="badge bg-light text-dark border ms-2"><i class="fas fa-stopwatch text-primary me-1"></i>專案總耗時：' + formatDurationText(totalProjectMs) + '</span>';
-    var totalDeadline = formatDateOnly(currentProjectData.mainDeadline);
+    // 💡 關鍵修復 2：左側主畫面頂部的「總死線」，優先顯示該子項目的獨立死線
+    var rawDelivDeadline = deliverable.mainDeadline || currentProjectData.mainDeadline;
+    var totalDeadline = formatDateOnly(rawDelivDeadline);
 
     var editDeadlineBtn = (canManageWorkflow && !isProjectCompleted) ? 
       ' <button class="btn btn-xs btn-outline-secondary py-0 px-1 ms-1" style="font-size:0.75em;" onclick="promptUpdateDeadlineModal()" title="修改死線"><i class="fas fa-pen"></i></button>' : '';
@@ -1282,7 +1292,7 @@
   }
 
 // ==========================================
-// 💡 [終極防閃爍版] 提交推進與啟動關卡 (0秒無感切換 + 阻斷快取回音)
+// 💡 [終極防閃爍版] 提交推進與啟動關卡 (加上 3 秒無敵防護鎖)
 // ==========================================
 window.isUpdatingProject = false; // 💡 全域廣播遮罩鎖
 
@@ -1317,9 +1327,10 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
         targetD.status = 'In Progress';
         targetD.startedAt = new Date().toISOString();
         if (targetD.workflow && targetD.workflow.length > 0) {
-          targetD.workflow[0].status = 'In Progress';
-          targetD.workflow[0].startedAt = targetD.startedAt;
-          targetD.workflow[0].isStarted = true;
+          var firstS = targetD.workflow[0];
+          // 💡 若第一關無負責人，改為 Pending
+          firstS.status = firstS.assignee ? 'In Progress' : 'Pending'; 
+          firstS.isStarted = true;
         }
       } else if (actionType === 'SUBMIT' && stepNumber) {
         var curS = targetD.workflow.find(function(s){ return s.step === parseFloat(stepNumber); });
@@ -1329,7 +1340,8 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
           var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
           if (nextS) {
             targetD.currentStep = nextS.step;
-            nextS.status = 'In Progress';
+            // 💡 關鍵修復：若下一關沒有負責人，設為 Pending (等待派案)
+            nextS.status = nextS.assignee ? 'In Progress' : 'Pending';
           } else {
             targetD.status = 'Completed';
           }
@@ -1351,7 +1363,7 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
       }
       if (typeof loadIndividualView === 'function') loadIndividualView(currentUser.email, null, true);
       
-      // 💡 解除廣播遮罩 (延遲 3 秒，確保 Google Sheets 已經將最新資料完全寫入)
+      // 💡 3秒後解除無敵狀態，此時 Google Sheets 已經穩定寫入最新資料
       setTimeout(function() { window.isUpdatingProject = false; }, 3000);
     } else {
       window.isUpdatingProject = false;
