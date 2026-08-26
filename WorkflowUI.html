@@ -1328,7 +1328,7 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
         targetD.startedAt = new Date().toISOString();
         if (targetD.workflow && targetD.workflow.length > 0) {
           var firstS = targetD.workflow[0];
-          // 💡 若第一關無負責人，改為 Pending
+          // 💡 關鍵修復：若第一關無負責人，改為 Pending (確保留在綠色區塊)
           firstS.status = firstS.assignee ? 'In Progress' : 'Pending'; 
           firstS.isStarted = true;
         }

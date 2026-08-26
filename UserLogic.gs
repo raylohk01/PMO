@@ -618,9 +618,9 @@ function api_getDashboardData(simEmail) {
 
             let isPaused = d.status === 'Paused' || pStatus.includes('pause');
             
-            // 💡 UX 優化：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
+            // 💡 關鍵修復：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
-            let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && primaryActiveStep.status === 'Pending'));
+            let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
 
             if (isPaused) {
               result.paused.push(item);
@@ -1097,6 +1097,7 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           deliverable.startedAt = nowIso;
           if (deliverable.workflow && deliverable.workflow.length > 0) {
             let firstS = deliverable.workflow[0];
+            // 💡 關鍵修復：若第一關無負責人，狀態改為 Pending
             firstS.status = firstS.assignee ? 'In Progress' : 'Pending';
             firstS.startedAt = firstS.assignee ? nowIso : null;
             firstS.pendingAssignmentAt = firstS.assignee ? null : nowIso;
@@ -1125,7 +1126,7 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
                 nextStepObj.startedAt = nowIso;
                 nextStepObj.pendingAssignmentAt = null;
               } else {
-                // 💡 關鍵修復：將狀態改為 Pending (等待中)，而不是舊的 Pending Start
+                // 💡 關鍵修復：若下一關沒有負責人，狀態改為 Pending
                 nextStepObj.status = 'Pending'; 
                 nextStepObj.pendingAssignmentAt = nowIso;
               }
@@ -1166,7 +1167,6 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
         }
 
-        // 💡 關鍵修復：直接將更新好的 wfData 回傳
         return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData };
       }
     }
