@@ -398,6 +398,10 @@
     if (dynCrEl && typeof bootstrap !== 'undefined') dynamicClientRevisionModalInstance = new bootstrap.Modal(dynCrEl);
   });
 
+  // ==========================================
+  // 💡 [0.05 秒極速秒開版] 開啟專案工作流視窗
+  // 優先從 Firebase 快取渲染畫面，背景靜默同步 Google Sheet 最新資料
+  // ==========================================
   window.openWorkflow = function(jobNumber) {
     if (typeof listenProjectRealtime === 'function') listenProjectRealtime(jobNumber);
     
@@ -407,29 +411,49 @@
       
       if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
         workflowModalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-      } else {
-        return showAlert('❌ 錯誤：Bootstrap JS 庫尚未載入完成！', 'danger');
       }
 
       document.getElementById('wf_jobNumber').innerText = jobNumber;
       if (document.getElementById('wf_infoJobNumber')) document.getElementById('wf_infoJobNumber').innerText = jobNumber;
-      document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>正在讀取資料...</div>';
-      document.getElementById('wf_deliverableTabs').innerHTML = '';
       
       workflowModalInstance.show();
 
+      var cleanJobNum = String(jobNumber).split('-P')[0];
+
+      // 🚀 步驟 1：先從 Firebase 快取秒讀（< 50ms 瞬間呈現畫面，撕掉 Loading 轉圈）
+      if (typeof firebase !== 'undefined' && firebase.apps.length) {
+        firebase.database().ref('project_cache/' + cleanJobNum).once('value').then(function(snapshot) {
+          var fbData = snapshot.val();
+          if (fbData && fbData.workflowData) {
+            currentProjectData = fbData;
+            document.getElementById('wf_clientName').innerText = fbData.client || '未設定';
+            document.getElementById('wf_pmName').innerText = fbData.pmName || '未設定';
+            if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = fbData.salesPerson || fbData.sales || '未設定';
+            if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(fbData.mainDeadline);
+            
+            var isSuperManager = currentUser && (['Admin', 'Management'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
+            var dropdownEl = document.getElementById('projectManageDropdown');
+            if (dropdownEl) dropdownEl.style.display = isSuperManager ? 'inline-block' : 'none';
+
+            var btnChangePM = document.getElementById('btn_changePM');
+            if (btnChangePM) btnChangePM.style.display = isSuperManager ? 'inline-block' : 'none';
+
+            renderAuditLog(fbData.auditLog || []);
+            renderDeliverableTabs(fbData.workflowData.deliverables || []);
+          }
+        }).catch(function(e) { 
+          console.warn("Firebase 秒讀讀取跳過或暫無快取:", e); 
+        });
+      }
+
+      // 🚀 步驟 2：背景默默讀取 Google Sheet 最新真實數據進行數據校準
       google.script.run.withSuccessHandler(function(res) {
         if(res && res.success) {
           currentProjectData = res.data;
           document.getElementById('wf_clientName').innerText = res.data.client || '未設定';
           document.getElementById('wf_pmName').innerText = res.data.pmName || '未設定';
-
-          if (document.getElementById('wf_salesName')) {
-            document.getElementById('wf_salesName').innerText = res.data.salesPerson || res.data.sales || '未設定';
-          }
-          if (document.getElementById('wf_mainDeadline')) {
-            document.getElementById('wf_mainDeadline').innerText = formatDateOnly(res.data.mainDeadline);
-          }
+          if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = res.data.salesPerson || res.data.sales || '未設定';
+          if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(res.data.mainDeadline);
 
           var isSuperManager = currentUser && (['Admin', 'Management'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
           var dropdownEl = document.getElementById('projectManageDropdown');
@@ -441,7 +465,10 @@
           renderAuditLog(res.data.auditLog);
           renderDeliverableTabs(res.data.workflowData.deliverables || []);
         } else {
-          document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
+          // 若無快取且背景讀取失敗才顯示提示
+          if (!currentProjectData) {
+            document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
+          }
         }
       }).api_getProjectWorkflow(jobNumber);
 
@@ -449,7 +476,7 @@
       showAlert('❌ 開啟視窗時發生錯誤: ' + err.message, 'danger');
     }
   };
-
+  
   function renderAuditLog(logs) {
     var logArea = document.getElementById('wf_auditLogArea');
     if(!logs || logs.length === 0) {
@@ -1254,6 +1281,7 @@
     }).api_appendStepData(currentProjectData.jobNumber, deliverableId, stepNumber, title, content);
   }
 
+  // 💡 [樂觀更新版] 提交推進關卡（0秒無感切換，移除全屏 Loading）
   function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     var jobNumber = currentProjectData.jobNumber;
     var payload = { action: actionType, stepNumber: stepNumber };
@@ -1269,13 +1297,31 @@
         });
       }
       payload.inputs = inputs;
+
+      // 🚀 樂觀更新：前端不顯示齒輪全屏 Loading，直接把當前關卡標記為完成並跳下一關！
+      if (currentProjectData && currentProjectData.workflowData) {
+        var targetD = (currentProjectData.workflowData.deliverables || []).find(function(d){ return d.id === deliverableId; });
+        if (targetD && targetD.workflow) {
+          var curS = targetD.workflow.find(function(s){ return s.step === parseFloat(stepNumber); });
+          if (curS) {
+            curS.status = 'Completed';
+            curS.submittedData = inputs;
+            var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
+            if (nextS) {
+              targetD.currentStep = nextS.step;
+              nextS.status = 'In Progress';
+            } else {
+              targetD.status = 'Completed';
+            }
+            renderDeliverableContent(targetD); // 0 秒即時渲染！
+          }
+        }
+      }
     }
 
-    document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="text-center text-primary py-5"><i class="fas fa-cog fa-spin fa-3x mb-3"></i><br><h5>系統正在處理您的操作...</h5></div>';
-
+    // 🚀 背景異步寫入 Google Sheet，寫完後靜默刷新
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
-        openWorkflow(jobNumber);
         if(typeof loadIndividualView === 'function') loadIndividualView(currentUser.email);
       } else {
         showAlert('❌ 操作失敗：' + (res ? res.message : '未知錯誤'), 'danger');
