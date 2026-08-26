@@ -37,7 +37,13 @@ function switchSection(sectionId) {
     try {
       if (sectionId === 'adminSection' && typeof loadAdminView === 'function') loadAdminView();
       if (sectionId === 'clientReviewSection' && typeof loadClientReviewView === 'function') loadClientReviewView();
-      if (sectionId === 'historySection' && typeof searchHistory === 'function') searchHistory();
+      
+      // 💡 當點擊開啟「專案歷史」頁面時，同時載入「已完成歷史」與「回收箱」資料
+      if (sectionId === 'historySection') {
+        if (typeof searchHistory === 'function') searchHistory();
+        if (typeof loadRecycleBinView === 'function') loadRecycleBinView();
+      }
+      
       if (sectionId === 'analyticsSection' && typeof loadAnalyticsView === 'function') loadAnalyticsView();
       
       if (sectionId === 'deptHeadSection') {
@@ -181,35 +187,45 @@ function switchSection(sectionId) {
   }
 
   // ==========================================
-  // 💡 [升級版] 載入個人看板 (支援局部區塊更新，避免畫面全閃)
-  // ==========================================
-  function loadIndividualView(simEmail, targetSection) {
-    // 💡 1. 判斷是否有指定區塊，若有，則只在該區塊顯示 Loading
+// 💡 [醫療診斷版] 載入個人看板 (附帶詳細 Console 追蹤與容錯)
+// ==========================================
+function loadIndividualView(simEmail, targetSection, isSilent) {
+  if (!isSilent) {
     if (!targetSection) {
       document.getElementById('urgentTasksArea').innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 讀取任務中...</div>';
       document.getElementById('onTrackTasksArea').innerHTML = '';
       document.getElementById('upcomingTasksArea').innerHTML = '';
       document.getElementById('pausedTasksArea').innerHTML = '';
-      document.getElementById('pmAlertArea').innerHTML = '';
+      if (document.getElementById('pmAlertArea')) document.getElementById('pmAlertArea').innerHTML = '';
     } else {
       var targetEl = document.getElementById(targetSection);
       if (targetEl) targetEl.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 局部更新中...</div>';
     }
+  }
 
-    google.script.run.withSuccessHandler(function(res) {
-      if(!res || !res.success) return showAlert('❌ 載入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+  console.log("🚀 [診斷] 準備呼叫 api_getDashboardData, simEmail:", simEmail);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      console.log("✅ [診斷] 成功收到後端回傳資料:", res);
+      
+      if (!res) {
+        return showAlert('❌ 載入失敗: 後端回傳了空值 (可能是資料序列化崩潰)', 'danger');
+      }
+      if (!res.success) {
+        console.error("❌ 後端邏輯報錯:", res.message, res.stack);
+        return showAlert('❌ 載入失敗: ' + res.message, 'danger');
+      }
+
       var data = res.data;
 
       // 更新數字 Badge
-      document.getElementById('countOverdue').innerText = data.overdue.length;
-      document.getElementById('countDueSoon').innerText = data.dueSoon.length;
-      document.getElementById('countOnTrack').innerText = data.onTrack.length;
-      document.getElementById('countUpcoming').innerText = data.upcoming.length;
-      if(document.getElementById('countPaused')) {
-        document.getElementById('countPaused').innerText = (data.paused || []).length;
-      }
+      if (document.getElementById('countOverdue')) document.getElementById('countOverdue').innerText = data.overdue.length;
+      if (document.getElementById('countDueSoon')) document.getElementById('countDueSoon').innerText = data.dueSoon.length;
+      if (document.getElementById('countOnTrack')) document.getElementById('countOnTrack').innerText = data.onTrack.length;
+      if (document.getElementById('countUpcoming')) document.getElementById('countUpcoming').innerText = data.upcoming.length;
+      if (document.getElementById('countPaused')) document.getElementById('countPaused').innerText = (data.paused || []).length;
 
-      // 若未指定局部，或指定了緊急區塊，才更新 PM 警報區
       if(!targetSection && data.actionRequired && data.actionRequired.length > 0) {
         var alertHtml = '';
         data.actionRequired.forEach(function(alert) {
@@ -218,7 +234,7 @@ function switchSection(sectionId) {
             '<button class="btn btn-sm btn-danger fw-bold" onclick="window.openWorkflow(\'' + alert.jobNumber + '\')">進入處理</button>' +
           '</div>';
         });
-        document.getElementById('pmAlertArea').innerHTML = alertHtml;
+        if (document.getElementById('pmAlertArea')) document.getElementById('pmAlertArea').innerHTML = alertHtml;
       }
 
       var renderCards = function(tasks, containerId, borderClass) {
@@ -238,7 +254,6 @@ function switchSection(sectionId) {
             : '<span class="badge bg-warning text-dark ms-1"><i class="fas fa-exclamation-triangle"></i> 待分配</span>';
 
           var pauseBadge = t.status === 'Paused' ? '<span class="badge bg-warning text-dark ms-1">已暫停</span>' : '';
-
           var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
 
           html += 
@@ -271,10 +286,8 @@ function switchSection(sectionId) {
         container.innerHTML = html;
       };
 
-      // 💡 2. 只有「未指定局部」或「指定該區塊」時，才進行渲染覆蓋
       if (!targetSection || targetSection === 'urgentTasksArea') {
-        var urgentTasks = [].concat(data.overdue, data.dueSoon);
-        renderCards(urgentTasks, 'urgentTasksArea', 'border-danger');
+        renderCards([].concat(data.overdue, data.dueSoon), 'urgentTasksArea', 'border-danger');
       }
       if (!targetSection || targetSection === 'onTrackTasksArea') {
         renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
@@ -285,9 +298,13 @@ function switchSection(sectionId) {
       if (!targetSection || targetSection === 'pausedTasksArea') {
         renderCards(data.paused, 'pausedTasksArea', 'border-warning');
       }
-    }).api_getDashboardData(simEmail);
-  }
-
+    })
+    .withFailureHandler(function(err) {
+      console.error("❌ [診斷] Google Apps Script 執行崩潰:", err);
+      showAlert('❌ 系統網路崩潰: ' + err.message, 'danger');
+    })
+    .api_getDashboardData(simEmail);
+}
   
 
   function renderWorkloadChart(workloadMap) {
@@ -433,33 +450,35 @@ function switchSection(sectionId) {
     }).api_getTemplates();
   }
 
-  function loadRecycleBinView() {
-    google.script.run.withSuccessHandler(function(res) {
-      if(!res || !res.success) return;
-      var tbody = document.getElementById('recycleBinTableBody');
-      if(!tbody) return;
+  // ==========================================
+// 💡 載入專案回收箱列表 (已移除「永久刪除」按鈕)
+// ==========================================
+function loadRecycleBinView() {
+  google.script.run.withSuccessHandler(function(res) {
+    if(!res || !res.success) return;
+    var tbody = document.getElementById('recycleBinTableBody');
+    if(!tbody) return;
 
-      if(res.data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">回收箱目前沒有專案。</td></tr>';
-        return;
-      }
+    if(res.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">回收箱目前沒有專案。</td></tr>';
+      return;
+    }
 
-      var html = '';
-      res.data.forEach(function(p) {
-        var safeJobNum = String(p.jobNumber).replace(/'/g, "\\'");
-        html += '<tr>' +
-          '<td><strong>' + p.jobNumber + '</strong></td>' +
-          '<td>' + p.client + '</td>' +
-          '<td>' + p.pmName + '</td>' +
-          '<td class="text-end pe-3">' +
-            '<button class="btn btn-sm btn-outline-success me-1" onclick="restoreProject(\'' + safeJobNum + '\')"><i class="fas fa-undo"></i> 還原專案</button>' +
-            '<button class="btn btn-sm btn-outline-danger" onclick="permanentDeleteProject(\'' + safeJobNum + '\')"><i class="fas fa-times-circle"></i> 永久刪除</button>' +
-          '</td>' +
-        '</tr>';
-      });
-      tbody.innerHTML = html;
-    }).api_getRecycleBinProjects();
-  }
+    var html = '';
+    res.data.forEach(function(p) {
+      var safeJobNum = String(p.jobNumber).replace(/'/g, "\\'");
+      html += '<tr>' +
+        '<td><strong>' + p.jobNumber + '</strong></td>' +
+        '<td>' + p.client + '</td>' +
+        '<td>' + p.pmName + '</td>' +
+        '<td class="text-end pe-3">' +
+          '<button class="btn btn-sm btn-outline-success" onclick="restoreProject(\'' + safeJobNum + '\')"><i class="fas fa-undo me-1"></i> 還原專案</button>' +
+        '</td>' +
+      '</tr>';
+    });
+    tbody.innerHTML = html;
+  }).api_getRecycleBinProjects();
+}
 
   // 💡 在變數宣告區新增一個變數來記住舊名字 (可以加在 currentTemplateSteps 附近)
   var currentEditingTemplateName = null;
@@ -937,8 +956,8 @@ function saveUser() {
     }
   }
 
+// 💡 2. 修改 submitNewProject：開案成功後呼叫本地 refreshAllViews
 function submitNewProject(e) {
-  // 💡 防呆：防止 HTML Form 預設提交行為引發網頁硬刷新
   if (e && e.preventDefault) e.preventDefault();
 
   var btn = document.querySelector('#newProjectModal .modal-footer button.btn-primary');
@@ -1005,12 +1024,10 @@ function submitNewProject(e) {
         }
         var form = document.getElementById('newProjectForm');
         if (form) form.reset();
-        
-        // 💡 體驗優化：操作者本人進行無痕局部刷新，僅讀取「即將到來」區塊，全頁完全不閃爍！
-        if (typeof loadIndividualView === 'function' && currentUser) {
-          loadIndividualView(currentUser.email, 'upcomingTasksArea');
-        }
-        
+
+        // 🚀 開案者本人立即觸發全局廣播 (走靜默更新，卡片無縫登場！)
+        window.dispatchEvent(new Event('refreshAllViews'));
+
       } else {
         showAlert('❌ 開案失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
@@ -1230,16 +1247,15 @@ function unlockUserBtn(btn, originalHtml) {
 
 
   
-
 // ==========================================
-// 💡 全域事件廣播機制 (僅刷新使用者「當前眼前的分頁」)
+// 💡 全域事件廣播機制 (補齊 SCT 商業項目總覽即時同步)
 // ==========================================
 window.addEventListener('refreshAllViews', function() {
   // 1. 若停留在「我的任務」
   try { 
     var dashSec = document.getElementById('individualSection') || document.getElementById('dashboardSection') || document.getElementById('myTasksSection');
     if (dashSec && dashSec.style.display !== 'none' && typeof loadIndividualView === 'function' && typeof currentUser !== 'undefined' && currentUser) { 
-      loadIndividualView(currentUser.email); 
+      loadIndividualView(currentUser.email, null, true); 
     } 
   } catch(e){}
   
@@ -1258,11 +1274,20 @@ window.addEventListener('refreshAllViews', function() {
       loadClientReviewView(); 
     } 
   } catch(e){}
+
+  // 🚀 4. 若停留在「SCT 商業項目總覽 / 全局管理」
+  try {
+    var anaSec = document.getElementById('analyticsSection');
+    if (anaSec && anaSec.style.display !== 'none' && typeof fetchAnalyticsData === 'function' && typeof currentAnalyticsTimeRange !== 'undefined') {
+      fetchAnalyticsData(currentAnalyticsTimeRange);
+    }
+  } catch(e){}
 });
 
 // ==========================================
 // 💡 全系統「唯一」智慧背景定時器 (每 30 秒，具備嚴格防打斷檢測)
 // ==========================================
+/*
 setInterval(function() {
   // 1. 檢測是否開啟了任何 Modal 彈窗 (包含遮罩)
   var isModalOpen = (document.querySelector('.modal.show') !== null) || (document.querySelector('.modal-backdrop') !== null);
@@ -1276,10 +1301,27 @@ setInterval(function() {
     window.dispatchEvent(new Event('refreshAllViews'));
   }
 }, 120000);
+*/
 
-// 💡 綁定全域刷新事件：當背景定時器啟動，或手動重整時，順便幫小鈴鐺抓最新數字！
+// ==========================================
+// 💡 1. 補齊 fetchNotifications 防呆函數
+// ==========================================
+function fetchNotifications() {
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  var email = (typeof currentUser !== 'undefined' && currentUser && currentUser.email) ? currentUser.email : '';
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success && typeof renderNotifications === 'function') {
+      renderNotifications(res.data);
+    }
+  }).api_getUserNotifications(email);
+}
+
+// 💡 2. 安全綁定全域刷新事件：避免函數未定義時報錯
 window.addEventListener('refreshAllViews', function() {
-  fetchNotifications();
+  if (typeof fetchNotifications === 'function') {
+    fetchNotifications();
+  }
 });
 
 </script>

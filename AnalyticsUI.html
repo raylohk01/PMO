@@ -13,10 +13,10 @@
       </div>
 
       <div class="d-flex align-items-center gap-3">
-        <div class="form-check form-switch mb-0">
-          <input class="form-check-input" type="checkbox" id="autoRefreshSwitch" checked onchange="toggleAutoRefresh(this.checked)">
-          <label class="form-check-input-label text-light fw-bold" for="autoRefreshSwitch">每小時自動刷新</label>
-        </div>
+        <div class="form-check form-switch mb-0 d-none">
+    <input class="form-check-input" type="checkbox" id="autoRefreshSwitch" onchange="toggleAutoRefresh(this.checked)">
+    <label class="form-check-input-label text-light fw-bold" for="autoRefreshSwitch">每小時自動刷新</label>
+  </div>
         <span class="text-white-50 border-start border-secondary ps-3" id="analyticsLastUpdated">上次更新: --:--:--</span>
         <button class="btn btn-warning fw-bold py-1 px-3" onclick="fetchAnalyticsData(currentAnalyticsTimeRange)"><i class="fas fa-sync-alt"></i> 刷新</button>
       </div>
@@ -357,11 +357,9 @@
   }
 
   function setupAutoRefresh() {
-    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-    autoRefreshTimer = setInterval(function() {
-      fetchAnalyticsData(currentAnalyticsTimeRange);
-    }, 3600000);
-  }
+  // 💡 已完全交給 Firebase 即時廣播更新，停用 1 小時自動定時器
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+}
 
   function changeAnalyticsTimeRange(range) {
     currentAnalyticsTimeRange = range;
