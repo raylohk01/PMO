@@ -265,7 +265,7 @@ function api_deleteTemplate(name) {
 }
 
 // ==========================================
-// 💡 [Phase B 更新版] 建立新專案 (預設 Pending Start，等待手動啟動)
+// 💡 [純淨修復版] 建立新專案 (確保 100% 進入 Pending Start 待啟動狀態)
 // ==========================================
 function api_createProject(payload) {
   try {
@@ -339,13 +339,13 @@ function api_createProject(payload) {
           name: s.name || ('步驟 ' + (sIdx + 1)),
           dept: dName,
           assignee: defaultAssignee,
-          status: 'Pending Start', // 💡 回歸待啟動
-          isStarted: false,        // 💡 尚未啟動
+          status: 'Pending Start', // 💡 確保關卡是待啟動
+          isStarted: false,
           fields: s.fields || ['URL'],
           parallelGroup: s.parallelGroup || s.group || '',
           keyDate: launchDeadlineStr,
           deadline: launchDeadlineStr,
-          accumulatedDays: 0      // ⏱️ 初始化累計耗時
+          accumulatedDays: 0
         };
       });
 
@@ -353,7 +353,7 @@ function api_createProject(payload) {
         id: 'deliv_' + (idx + 1) + '_' + new Date().getTime(),
         name: d.name || ('篇章/任務 ' + (idx + 1)),
         type: tplName,
-        status: 'Pending Start',  // 💡 任務預設待啟動
+        status: 'Pending Start',  // 💡 確保子項目也是待啟動
         currentStep: 1,
         workflow: formattedSteps
       };
@@ -383,14 +383,15 @@ function api_createProject(payload) {
     if (idxPM >= 0) rowData[idxPM] = masterPmName;
     if (idxSubmission >= 0) rowData[idxSubmission] = payload.tentativeDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
     if (idxLaunch >= 0) rowData[idxLaunch] = payload.deadline || payload.launchDate || Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
-    if (idxStatus >= 0) rowData[idxStatus] = 'Pending Start'; // 💡 預設 Pending Start
+    if (idxStatus >= 0) rowData[idxStatus] = 'Pending Start'; // 💡 確保總專案也是待啟動
     if (idxProduct >= 0) rowData[idxProduct] = JSON.stringify(workflowData);
     if (idxLog >= 0) rowData[idxLog] = JSON.stringify(auditLog);
 
     sheet.appendRow(rowData);
 
-    // 💡【新增全域廣播】開案成功，立刻通知所有同仁的看板重讀、跳出新卡片！
-    notifyFirebaseUpdate(payload.jobNumber, Session.getActiveUser().getEmail(), masterPmName, true);
+    if (typeof notifyFirebaseUpdate === 'function') {
+      notifyFirebaseUpdate(payload.jobNumber, Session.getActiveUser().getEmail(), masterPmName, true);
+    }
 
     return { success: true, message: '專案建立成功！' };
   } catch(e) {
@@ -399,7 +400,7 @@ function api_createProject(payload) {
 }
 
 // ==========================================
-// 💡 [更新版] 我的任務看板數據 (單一任務隱藏 -P1 版)
+// 💡 [UX 優化版] 我的任務看板數據 (保證啟動後留在「進行中」區域)
 // ==========================================
 function api_getDashboardData(simEmail) {
   try {
@@ -430,126 +431,139 @@ function api_getDashboardData(simEmail) {
     let result = { overdue: [], dueSoon: [], onTrack: [], upcoming: [], paused: [], actionRequired: [] };
 
     for(let i = 1; i < data.length; i++) {
-      const rawJobNum = idxJobNum >= 0 ? data[i][idxJobNum] : data[i][0];
-      const rowJobNum = String(rawJobNum || '').trim();
-      if (!rowJobNum || rowJobNum.toLowerCase() === 'jobnumber') continue;
+      try {
+        const rawJobNum = idxJobNum >= 0 ? data[i][idxJobNum] : data[i][0];
+        const rowJobNum = String(rawJobNum || '').trim();
+        if (!rowJobNum || rowJobNum.toLowerCase() === 'jobnumber') continue;
 
-      const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim().toLowerCase() : '';
-      if (pStatus.includes('recycle') || pStatus.includes('delete') || pStatus.includes('cancel')) continue;
+        const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim().toLowerCase() : '';
+        if (pStatus.includes('recycle') || pStatus.includes('delete') || pStatus.includes('cancel')) continue;
 
-      const pmName = idxPM >= 0 && data[i][idxPM] ? String(data[i][idxPM]).trim() : '未指定';
-      const salesName = idxSales >= 0 && data[i][idxSales] ? String(data[i][idxSales]).trim() : '未指定';
-      const clientVal = idxClient >= 0 && data[i][idxClient] ? String(data[i][idxClient]).trim() : '未指定客戶';
+        const pmName = idxPM >= 0 && data[i][idxPM] ? String(data[i][idxPM]).trim() : '未指定';
+        const salesName = idxSales >= 0 && data[i][idxSales] ? String(data[i][idxSales]).trim() : '未指定';
+        const clientVal = idxClient >= 0 && data[i][idxClient] ? String(data[i][idxClient]).trim() : '未指定客戶';
 
-      let wfData = {};
-      for (let c = 0; c < data[i].length; c++) {
-        let cellStr = String(data[i][c] || '');
-        if (cellStr.includes('deliverables')) {
-          try { wfData = JSON.parse(cellStr); break; } catch(e){}
+        let wfData = {};
+        for (let c = 0; c < data[i].length; c++) {
+          let cellStr = String(data[i][c] || '');
+          if (cellStr.includes('deliverables')) {
+            try { wfData = JSON.parse(cellStr); break; } catch(e){}
+          }
         }
-      }
 
-      if (wfData && wfData.deliverables) {
-        const deliverableCount = wfData.deliverables.length; // 💡 取得子項目總數
+        if (wfData && wfData.deliverables) {
+          const deliverableCount = wfData.deliverables.length;
 
-        wfData.deliverables.forEach((d, dIdx) => {
-          if (d.status === 'Completed' || d.status === 'Deleted' || d.status === 'Recycle Bin') return;
+          wfData.deliverables.forEach((d, dIdx) => {
+            if (d.status === 'Completed' || d.status === 'Deleted' || d.status === 'Recycle Bin') return;
 
-          // 💡 核心邏輯：如果任務大於 1 個才加 -P1、-P2，如果只有 1 個則保持原名
-          const displayJobNum = (deliverableCount > 1 && rowJobNum) ? `${rowJobNum}-P${dIdx + 1}` : rowJobNum;
+            const displayJobNum = (deliverableCount > 1 && rowJobNum) ? `${rowJobNum}-P${dIdx + 1}` : rowJobNum;
 
-          let activeSteps = d.workflow ? d.workflow.filter(s => s.status === 'In Progress') : [];
-          if (activeSteps.length === 0 && d.workflow) {
-            let fallback = d.workflow.find(s => s.step === d.currentStep);
-            if (fallback) activeSteps.push(fallback);
-          }
-          const primaryActiveStep = activeSteps.length > 0 ? activeSteps[0] : null;
+            let activeSteps = d.workflow ? d.workflow.filter(s => s.status === 'In Progress') : [];
+            if (activeSteps.length === 0 && d.workflow) {
+              let fallback = d.workflow.find(s => s.step === d.currentStep);
+              if (fallback) activeSteps.push(fallback);
+            }
+            const primaryActiveStep = activeSteps.length > 0 ? activeSteps[0] : null;
 
-          let isMyTask = false;
-          let isUpcomingForUser = false;
+            let isMyTask = false;
+            let isUpcomingForUser = false;
 
-          const isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(userRole);
-          const isProjectPM = pmName && pmName.toLowerCase() === userName.toLowerCase();
+            const isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(userRole);
+            const isProjectPM = pmName && pmName.toLowerCase() === userName.toLowerCase();
 
-          if (isSuperManager || isProjectPM) {
-            isMyTask = true;
-          } else {
-            let activeMatch = false;
-            let futureMatch = false;
-
-            if (userRole === 'Team Head') {
-              activeMatch = activeSteps.some(s => s.dept === userDept);
-              futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
+            if (isSuperManager || isProjectPM) {
+              isMyTask = true;
             } else {
-              activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
-              futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+              let activeMatch = false;
+              let futureMatch = false;
+
+              if (userRole === 'Team Head') {
+                activeMatch = activeSteps.some(s => s.dept === userDept);
+                futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
+              } else {
+                activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+                futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+              }
+
+              if (activeMatch) {
+                isMyTask = true;
+              } else if (futureMatch) {
+                isMyTask = true;
+                isUpcomingForUser = true; 
+              }
             }
 
-            if (activeMatch) {
-              isMyTask = true;
-            } else if (futureMatch) {
-              isMyTask = true;
-              isUpcomingForUser = true; 
+            if (!isMyTask) return; 
+
+            const displayStep = primaryActiveStep;
+            const currentStepName = displayStep ? (displayStep.dept + ' ' + displayStep.name) : '未開始';
+            const currentAssignee = displayStep ? displayStep.assignee : '';
+
+            let effectiveDeadlineStr = '';
+            if (displayStep && (displayStep.keyDate || displayStep.deadline)) {
+              effectiveDeadlineStr = displayStep.keyDate || displayStep.deadline;
+            } else if (d.mainDeadline) {
+              effectiveDeadlineStr = d.mainDeadline;
+            } else if (idxDeadline >= 0 && data[i][idxDeadline]) {
+              let parsed = new Date(data[i][idxDeadline]);
+              if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
+                effectiveDeadlineStr = Utilities.formatDate(parsed, "GMT+8", "yyyy-MM-dd");
+              }
             }
-          }
+            if (!effectiveDeadlineStr) effectiveDeadlineStr = Utilities.formatDate(today, "GMT+8", "yyyy-MM-dd");
 
-          if (!isMyTask) return; 
-
-          const displayStep = primaryActiveStep;
-          const currentStepName = displayStep ? (displayStep.dept + ' ' + displayStep.name) : '未開始';
-          const currentAssignee = displayStep ? displayStep.assignee : '';
-
-          let effectiveDeadlineStr = '';
-          if (displayStep && (displayStep.keyDate || displayStep.deadline)) {
-            effectiveDeadlineStr = displayStep.keyDate || displayStep.deadline;
-          } else if (d.mainDeadline) {
-            effectiveDeadlineStr = d.mainDeadline;
-          } else if (idxDeadline >= 0 && data[i][idxDeadline]) {
-            let parsed = new Date(data[i][idxDeadline]);
-            if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
-              effectiveDeadlineStr = Utilities.formatDate(parsed, "GMT+8", "yyyy-MM-dd");
+            let deadlineDate = new Date(effectiveDeadlineStr);
+            let daysLeft = 999;
+            if (!isNaN(deadlineDate.getTime())) {
+              daysLeft = Math.ceil((deadlineDate - today) / (1000 * 60 * 60 * 24));
             }
-          }
-          if (!effectiveDeadlineStr) effectiveDeadlineStr = Utilities.formatDate(today, "GMT+8", "yyyy-MM-dd");
 
-          let deadlineDate = new Date(effectiveDeadlineStr);
-          const daysLeft = Math.ceil((deadlineDate - today) / (1000 * 60 * 60 * 24));
+            const item = {
+              jobNumber: displayJobNum, 
+              client: clientVal, taskName: d.name || '未命名任務',
+              type: d.type || 'Standard', status: d.status || 'Pending Start',
+              deadline: effectiveDeadlineStr, daysLeft: daysLeft,
+              currentStepName: currentStepName, assignee: currentAssignee,
+              pmName: pmName, salesName: salesName
+            };
 
-          const item = {
-            jobNumber: displayJobNum, 
-            client: clientVal, taskName: d.name || '未命名任務',
-            type: d.type || 'Standard', status: d.status || 'Pending Start',
-            deadline: effectiveDeadlineStr, daysLeft: daysLeft,
-            currentStepName: currentStepName, assignee: currentAssignee,
-            pmName: pmName, salesName: salesName
-          };
+            let isPaused = d.status === 'Paused' || pStatus.includes('pause');
+            
+            // 💡 UX 優化：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
+            let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
+            let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && primaryActiveStep.status === 'Pending'));
 
-          let isPaused = d.status === 'Paused' || pStatus.includes('pause');
-          let isActive = primaryActiveStep && primaryActiveStep.status === 'In Progress';
-
-          if (isPaused) {
-            result.paused.push(item);
-          } else if (isUpcomingForUser) {
-            result.upcoming.push(item); 
-          } else if (isActive) {
-            if (daysLeft < 0) result.overdue.push(item);
-            else if (daysLeft <= 3) result.dueSoon.push(item);
-            else result.onTrack.push(item);
-          } else {
-            result.upcoming.push(item);
-          }
-        });
-      }
+            if (isPaused) {
+              result.paused.push(item);
+            } else if (isUpcomingForUser) {
+              result.upcoming.push(item); 
+            } else if (isActive) {
+              if (daysLeft < 0) result.overdue.push(item);
+              else if (daysLeft <= 3) result.dueSoon.push(item);
+              else result.onTrack.push(item);
+            } else {
+              result.upcoming.push(item);
+            }
+          });
+        }
+      } catch (rowErr) {}
     }
     
-    const sortByDeadline = (a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+    const sortByDeadline = (a, b) => {
+      let dA = new Date(a.deadline).getTime();
+      let dB = new Date(b.deadline).getTime();
+      if (isNaN(dA)) dA = 9999999999999;
+      if (isNaN(dB)) dB = 9999999999999;
+      return dA - dB;
+    };
     result.overdue.sort(sortByDeadline);
     result.dueSoon.sort(sortByDeadline);
     result.onTrack.sort(sortByDeadline);
     result.upcoming.sort(sortByDeadline);
     result.paused.sort(sortByDeadline);
 
-    return { success: true, data: result };
+    return JSON.parse(JSON.stringify({ success: true, data: result }));
   } catch(e) {
     return { success: false, message: e.message };
   }
@@ -938,11 +952,11 @@ function api_getCompletedProjects(keyword, startDate, endDate) {
     
 
 // ==========================================
-// 💡 更新工作流狀態 API (最後一關完成時，強制更新 Column E 的 Status 為 Completed)
+// 💡 更新工作流狀態 API (修正版：完美身分同步，斷絕讀取時間差)
 // ==========================================
 function api_updateWorkflowState(jobNumber, deliverableId, payload) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const userEmail = payload.userEmail || Session.getActiveUser().getEmail();
     const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
@@ -1024,7 +1038,6 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
                 nextStepObj.pendingAssignmentAt = nowIso;
               }
             } else {
-              // 💡 無下一步，代表此子項目完工結案
               deliverable.status = 'Completed';
               deliverable.completedAt = nowStr;
               deliverable.completedAtIso = nowIso;
@@ -1034,13 +1047,12 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
 
         sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
 
-        // 💡 核心：當最後一關完成或所有子項目均完工時，強制將 Column E 的 Status 更新為 'Completed'
         let allDeliverablesCompleted = (wfData.deliverables || [])
           .filter(d => d.status !== 'Deleted' && d.status !== 'Recycle Bin')
           .every(d => d.status === 'Completed');
 
         if (allDeliverablesCompleted && idxStatus >= 0) {
-          sheet.getRange(i + 1, idxStatus + 1).setValue('Completed'); // 強制寫入 Completed
+          sheet.getRange(i + 1, idxStatus + 1).setValue('Completed'); 
         } else if (idxStatus >= 0 && String(data[i][idxStatus]).trim() === 'Pending Start') {
           sheet.getRange(i + 1, idxStatus + 1).setValue('In Progress');
         }
@@ -1062,7 +1074,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
         }
 
-        return { success: true, message: '工作流狀態更新成功！' };
+        // 💡 關鍵修復：直接將更新好的 wfData 回傳
+        return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData };
       }
     }
     throw new Error('找不到專案 ' + jobNumber);

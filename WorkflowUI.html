@@ -1281,54 +1281,80 @@
     }).api_appendStepData(currentProjectData.jobNumber, deliverableId, stepNumber, title, content);
   }
 
-  // 💡 [樂觀更新版] 提交推進關卡（0秒無感切換，移除全屏 Loading）
-  function submitWorkflowAction(deliverableId, actionType, stepNumber) {
-    var jobNumber = currentProjectData.jobNumber;
-    var payload = { action: actionType, stepNumber: stepNumber };
+// ==========================================
+// 💡 [終極防閃爍版] 提交推進與啟動關卡 (0秒無感切換 + 阻斷自我廣播)
+// ==========================================
+function submitWorkflowAction(deliverableId, actionType, stepNumber) {
+  var jobNumber = currentProjectData.jobNumber;
+  var payload = { 
+    action: actionType, 
+    stepNumber: stepNumber,
+    userEmail: currentUser ? currentUser.email : '' 
+  };
 
-    if (actionType === 'SUBMIT' && stepNumber) {
-      var inputs = {};
-      var btn = document.getElementById('btn_submit_' + stepNumber);
-      if (btn) {
-        var inputElements = btn.parentElement.querySelectorAll('input');
-        inputElements.forEach(function(el, idx) {
-          var label = el.previousElementSibling ? el.previousElementSibling.innerText : ('input_' + idx);
-          inputs[label] = el.value || '未填寫';
-        });
-      }
-      payload.inputs = inputs;
+  if (actionType === 'SUBMIT' && stepNumber) {
+    var inputs = {};
+    var btn = document.getElementById('btn_submit_' + stepNumber);
+    if (btn) {
+      var inputElements = btn.parentElement.querySelectorAll('input');
+      inputElements.forEach(function(el, idx) {
+        var label = el.previousElementSibling ? el.previousElementSibling.innerText : ('input_' + idx);
+        inputs[label] = el.value || '未填寫';
+      });
+    }
+    payload.inputs = inputs;
+  }
 
-      // 🚀 樂觀更新：前端不顯示齒輪全屏 Loading，直接把當前關卡標記為完成並跳下一關！
-      if (currentProjectData && currentProjectData.workflowData) {
-        var targetD = (currentProjectData.workflowData.deliverables || []).find(function(d){ return d.id === deliverableId; });
-        if (targetD && targetD.workflow) {
-          var curS = targetD.workflow.find(function(s){ return s.step === parseFloat(stepNumber); });
-          if (curS) {
-            curS.status = 'Completed';
-            curS.submittedData = inputs;
-            var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
-            if (nextS) {
-              targetD.currentStep = nextS.step;
-              nextS.status = 'In Progress';
-            } else {
-              targetD.status = 'Completed';
-            }
-            renderDeliverableContent(targetD); // 0 秒即時渲染！
+  // 🚀 樂觀更新 (Optimistic UI)：點擊瞬間，前端立刻自我切換狀態，0 秒延遲，絕不閃爍！
+  if (currentProjectData && currentProjectData.workflowData) {
+    var targetD = (currentProjectData.workflowData.deliverables || []).find(function(d){ return d.id === deliverableId; });
+    if (targetD) {
+      if (actionType === 'START') {
+        targetD.status = 'In Progress';
+        targetD.startedAt = new Date().toISOString();
+        if (targetD.workflow && targetD.workflow.length > 0) {
+          targetD.workflow[0].status = 'In Progress';
+          targetD.workflow[0].startedAt = targetD.startedAt;
+          targetD.workflow[0].isStarted = true;
+        }
+      } else if (actionType === 'SUBMIT' && stepNumber) {
+        var curS = targetD.workflow.find(function(s){ return s.step === parseFloat(stepNumber); });
+        if (curS) {
+          curS.status = 'Completed';
+          curS.submittedData = payload.inputs;
+          var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
+          if (nextS) {
+            targetD.currentStep = nextS.step;
+            nextS.status = 'In Progress';
+          } else {
+            targetD.status = 'Completed';
           }
         }
       }
+      // ✨ 瞬間原地渲染，直接看到下一關！
+      renderDeliverableContent(targetD);
     }
-
-    // 🚀 背景異步寫入 Google Sheet，寫完後靜默刷新
-    google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success) {
-        if(typeof loadIndividualView === 'function') loadIndividualView(currentUser.email);
-      } else {
-        showAlert('❌ 操作失敗：' + (res ? res.message : '未知錯誤'), 'danger');
-        openWorkflow(jobNumber);
-      }
-    }).api_updateWorkflowState(jobNumber, deliverableId, payload);
   }
+
+  // 鎖定按鈕防止手殘連點
+  var allBtns = document.querySelectorAll('#wf_dynamicContentArea button');
+  allBtns.forEach(function(b) { b.disabled = true; });
+
+  // 背景將資料傳給後端寫入
+  google.script.run.withSuccessHandler(function(res) {
+    if(res && res.success) {
+      // 接收後端剛寫好的熱騰騰資料直接覆蓋，斷絕快取時間差
+      if (res.updatedWorkflowData) {
+        currentProjectData.workflowData = res.updatedWorkflowData;
+        renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+      }
+      if (typeof loadIndividualView === 'function') loadIndividualView(currentUser.email, null, true);
+    } else {
+      showAlert('❌ 操作失敗：' + (res ? res.message : '未知錯誤'), 'danger');
+      if (typeof openWorkflow === 'function') openWorkflow(jobNumber);
+    }
+  }).api_updateWorkflowState(jobNumber, deliverableId, payload);
+}
 
   function manageProjectStatus(action) {
     var confirmMsg = action === 'DELETE' ? '確定要將此專案移至回收箱嗎？' : (action === 'PAUSE' ? '確定要暫停此專案嗎？' : '確定要恢復此專案嗎？');

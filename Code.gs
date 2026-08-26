@@ -54,36 +54,7 @@ function verifyAuth(allowedRoles = []) {
   return user;
 }
 
-// ==========================================
-// 3. API Endpoints
-// ==========================================
 
-function api_getCurrentUser() {
-  try {
-    const user = verifyAuth();
-    return { success: true, data: user };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
-
-// ==========================================
-// 支援帳號模擬的 API 接口
-// ==========================================
-
-function api_getDashboardData(simulateEmail) {
-  try {
-    const user = verifyAuth();
-    // 💡 核心：如果有傳入 simulateEmail 就用它，否則用真實登入者的 email
-    const targetEmail = simulateEmail || user.email; 
-    
-    // 依賴您原本寫好的 ViewLogic，直接把目標信箱丟進去！
-    const data = getIndividualView(targetEmail);
-    return { success: true, data: data.data };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
 
 /*
 function api_getClientReviewList(simulateEmail) {
@@ -601,76 +572,5 @@ function api_manageProjectStatus(payloadInput, optionalAction) {
   }
 }
 
-function api_saveUser(input) {
-  try {
-    verifyAuth(['Admin', 'Management']);
 
-    // 💡 捕捉傳進來的原始資料型態與內容
-    const rawInputType = Array.isArray(input) ? 'Array (陣列)' : typeof input;
-    const rawInputJson = JSON.stringify(input);
-
-    let empId = '', email = '', name = '', department = '', role = '', status = 'Active';
-
-    if (Array.isArray(input)) {
-      empId = String(input[0] || '').trim();
-      email = String(input[1] || '').trim();
-      name = String(input[2] || '').trim();
-      department = String(input[3] || '').trim();
-      role = String(input[4] || '').trim();
-      status = String(input[5] || 'Active').trim();
-    } else if (input && typeof input === 'object') {
-      empId = String(input.empId || input.empID || '').trim();
-      email = String(input.email || '').trim();
-      name = String(input.name || '').trim();
-      department = String(input.department || input.dept || '').trim();
-      role = String(input.role || '').trim();
-      status = String(input.status || 'Active').trim();
-    }
-
-    const isActive = (status === 'Active');
-
-    // 精準 A ~ G 欄位陣列
-    const rowData = [
-      email,        // A 欄
-      name,         // B 欄
-      department,   // C 欄
-      role,         // D 欄
-      isActive,     // E 欄
-      empId,        // F 欄
-      status        // G 欄
-    ];
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Users');
-    const data = sheet.getDataRange().getValues();
-    let targetRowIndex = -1;
-
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][5]).trim() === empId) {
-        targetRowIndex = i + 1;
-        break;
-      }
-    }
-
-    if (targetRowIndex > 0) {
-      sheet.getRange(targetRowIndex, 1, 1, 7).setValues([rowData]);
-    } else {
-      sheet.appendRow(rowData);
-    }
-
-    // 💡 將完整的 Debug 報告回傳給前端視窗顯示
-    return {
-      success: true,
-      debug_report: {
-        received_type: rawInputType,
-        received_data: rawInputJson,
-        parsed_empId: empId,
-        parsed_email: email,
-        written_rowData: rowData
-      }
-    };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
 

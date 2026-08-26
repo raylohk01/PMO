@@ -186,110 +186,125 @@ function switchSection(sectionId) {
     }).api_getCurrentUser();
   }
 
-  // 💡 1. 修改 loadIndividualView：加入第三個參數 isSilent (靜默無感更新)
+  // ==========================================
+// 💡 [醫療診斷版] 載入個人看板 (附帶詳細 Console 追蹤與容錯)
+// ==========================================
 function loadIndividualView(simEmail, targetSection, isSilent) {
-  // 只有在非靜默模式 (!isSilent) 時才繪製 Loading 轉圈
   if (!isSilent) {
     if (!targetSection) {
       document.getElementById('urgentTasksArea').innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 讀取任務中...</div>';
       document.getElementById('onTrackTasksArea').innerHTML = '';
       document.getElementById('upcomingTasksArea').innerHTML = '';
       document.getElementById('pausedTasksArea').innerHTML = '';
-      document.getElementById('pmAlertArea').innerHTML = '';
+      if (document.getElementById('pmAlertArea')) document.getElementById('pmAlertArea').innerHTML = '';
     } else {
       var targetEl = document.getElementById(targetSection);
       if (targetEl) targetEl.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 局部更新中...</div>';
     }
   }
 
-  google.script.run.withSuccessHandler(function(res) {
-    if(!res || !res.success) return showAlert('❌ 載入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-    var data = res.data;
+  console.log("🚀 [診斷] 準備呼叫 api_getDashboardData, simEmail:", simEmail);
 
-    document.getElementById('countOverdue').innerText = data.overdue.length;
-    document.getElementById('countDueSoon').innerText = data.dueSoon.length;
-    document.getElementById('countOnTrack').innerText = data.onTrack.length;
-    document.getElementById('countUpcoming').innerText = data.upcoming.length;
-    if(document.getElementById('countPaused')) {
-      document.getElementById('countPaused').innerText = (data.paused || []).length;
-    }
-
-    if(!targetSection && data.actionRequired && data.actionRequired.length > 0) {
-      var alertHtml = '';
-      data.actionRequired.forEach(function(alert) {
-        alertHtml += '<div class="alert alert-danger shadow-sm d-flex justify-content-between align-items-center">' +
-          '<span><strong>🚨 ' + alert.jobNumber + ' (' + alert.client + ')</strong>: ' + alert.message + '</span>' +
-          '<button class="btn btn-sm btn-danger fw-bold" onclick="window.openWorkflow(\'' + alert.jobNumber + '\')">進入處理</button>' +
-        '</div>';
-      });
-      document.getElementById('pmAlertArea').innerHTML = alertHtml;
-    }
-
-    var renderCards = function(tasks, containerId, borderClass) {
-      var container = document.getElementById(containerId);
-      if(!container) return;
-      if(!tasks || tasks.length === 0) {
-        container.innerHTML = '<div class="col-12 text-muted mb-2">此區塊目前沒有任務。</div>';
-        return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      console.log("✅ [診斷] 成功收到後端回傳資料:", res);
+      
+      if (!res) {
+        return showAlert('❌ 載入失敗: 後端回傳了空值 (可能是資料序列化崩潰)', 'danger');
       }
-      var html = '';
-      tasks.forEach(function(t) {
-        var badgeClass = t.status === 'Paused' ? 'bg-warning text-dark' : (t.status === 'Pending Start' ? 'bg-secondary' : 'bg-primary');
-        var dateColor = t.daysLeft < 0 ? 'text-danger fw-bold' : (t.daysLeft <= 3 ? 'text-warning fw-bold' : 'text-success');
-        
-        var assigneeInfo = t.assignee 
-          ? '<span class="text-dark fw-bold">[' + t.assignee + ']</span>' 
-          : '<span class="badge bg-warning text-dark ms-1"><i class="fas fa-exclamation-triangle"></i> 待分配</span>';
+      if (!res.success) {
+        console.error("❌ 後端邏輯報錯:", res.message, res.stack);
+        return showAlert('❌ 載入失敗: ' + res.message, 'danger');
+      }
 
-        var pauseBadge = t.status === 'Paused' ? '<span class="badge bg-warning text-dark ms-1">已暫停</span>' : '';
-        var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+      var data = res.data;
 
-        html += 
-        '<div class="col-md-4 mb-3">' +
-          '<div class="card h-100 shadow-sm border-start border-4 ' + borderClass + ' task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
-            '<div class="card-body pb-2">' +
-              '<div class="d-flex justify-content-between align-items-center mb-1">' +
-                '<div><span class="badge ' + badgeClass + '">' + t.type + '</span>' + pauseBadge + '</div>' +
-                '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
-              '</div>' +
-              '<h6 class="card-title fw-bold text-dark mb-1">' + t.client + '</h6>' +
-              '<p class="card-text mb-2 text-truncate" title="' + t.taskName + '">' + t.taskName + '</p>' +
-              
-              '<div class="p-2 mb-2 rounded bg-light" style="font-size: 0.82em;">' +
-                '<div><i class="fas fa-caret-right text-info"></i> 階段：<strong class="text-info">' + t.currentStepName + '</strong> ' + assigneeInfo + '</div>' +
-                '<div class="mt-1 text-muted d-flex justify-content-between">' +
-                  '<span><i class="fas fa-user-tie"></i> PM: ' + (t.pmName || '未指定') + '</span>' +
-                  '<span><i class="fas fa-shopping-cart"></i> Sales: ' + (t.salesName || '未指定') + '</span>' +
+      // 更新數字 Badge
+      if (document.getElementById('countOverdue')) document.getElementById('countOverdue').innerText = data.overdue.length;
+      if (document.getElementById('countDueSoon')) document.getElementById('countDueSoon').innerText = data.dueSoon.length;
+      if (document.getElementById('countOnTrack')) document.getElementById('countOnTrack').innerText = data.onTrack.length;
+      if (document.getElementById('countUpcoming')) document.getElementById('countUpcoming').innerText = data.upcoming.length;
+      if (document.getElementById('countPaused')) document.getElementById('countPaused').innerText = (data.paused || []).length;
+
+      if(!targetSection && data.actionRequired && data.actionRequired.length > 0) {
+        var alertHtml = '';
+        data.actionRequired.forEach(function(alert) {
+          alertHtml += '<div class="alert alert-danger shadow-sm d-flex justify-content-between align-items-center">' +
+            '<span><strong>🚨 ' + alert.jobNumber + ' (' + alert.client + ')</strong>: ' + alert.message + '</span>' +
+            '<button class="btn btn-sm btn-danger fw-bold" onclick="window.openWorkflow(\'' + alert.jobNumber + '\')">進入處理</button>' +
+          '</div>';
+        });
+        if (document.getElementById('pmAlertArea')) document.getElementById('pmAlertArea').innerHTML = alertHtml;
+      }
+
+      var renderCards = function(tasks, containerId, borderClass) {
+        var container = document.getElementById(containerId);
+        if(!container) return;
+        if(!tasks || tasks.length === 0) {
+          container.innerHTML = '<div class="col-12 text-muted mb-2">此區塊目前沒有任務。</div>';
+          return;
+        }
+        var html = '';
+        tasks.forEach(function(t) {
+          var badgeClass = t.status === 'Paused' ? 'bg-warning text-dark' : (t.status === 'Pending Start' ? 'bg-secondary' : 'bg-primary');
+          var dateColor = t.daysLeft < 0 ? 'text-danger fw-bold' : (t.daysLeft <= 3 ? 'text-warning fw-bold' : 'text-success');
+          
+          var assigneeInfo = t.assignee 
+            ? '<span class="text-dark fw-bold">[' + t.assignee + ']</span>' 
+            : '<span class="badge bg-warning text-dark ms-1"><i class="fas fa-exclamation-triangle"></i> 待分配</span>';
+
+          var pauseBadge = t.status === 'Paused' ? '<span class="badge bg-warning text-dark ms-1">已暫停</span>' : '';
+          var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
+
+          html += 
+          '<div class="col-md-4 mb-3">' +
+            '<div class="card h-100 shadow-sm border-start border-4 ' + borderClass + ' task-card-clickable" onclick="window.openWorkflow(\'' + safeJobNum + '\')">' +
+              '<div class="card-body pb-2">' +
+                '<div class="d-flex justify-content-between align-items-center mb-1">' +
+                  '<div><span class="badge ' + badgeClass + '">' + t.type + '</span>' + pauseBadge + '</div>' +
+                  '<small class="text-muted fw-bold">' + t.jobNumber + '</small>' +
+                '</div>' +
+                '<h6 class="card-title fw-bold text-dark mb-1">' + t.client + '</h6>' +
+                '<p class="card-text mb-2 text-truncate" title="' + t.taskName + '">' + t.taskName + '</p>' +
+                
+                '<div class="p-2 mb-2 rounded bg-light" style="font-size: 0.82em;">' +
+                  '<div><i class="fas fa-caret-right text-info"></i> 階段：<strong class="text-info">' + t.currentStepName + '</strong> ' + assigneeInfo + '</div>' +
+                  '<div class="mt-1 text-muted d-flex justify-content-between">' +
+                    '<span><i class="fas fa-user-tie"></i> PM: ' + (t.pmName || '未指定') + '</span>' +
+                    '<span><i class="fas fa-shopping-cart"></i> Sales: ' + (t.salesName || '未指定') + '</span>' +
+                  '</div>' +
+                '</div>' +
+
+                '<div class="d-flex justify-content-between align-items-center border-top pt-2" style="font-size: 0.85em;">' +
+                  '<span class="' + dateColor + '"><i class="fas fa-clock"></i> 死線: ' + t.deadline + '</span>' +
+                  '<button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">操作</button>' +
                 '</div>' +
               '</div>' +
-
-              '<div class="d-flex justify-content-between align-items-center border-top pt-2" style="font-size: 0.85em;">' +
-                '<span class="' + dateColor + '"><i class="fas fa-clock"></i> 死線: ' + t.deadline + '</span>' +
-                '<button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); window.openWorkflow(\'' + safeJobNum + '\')">操作</button>' +
-              '</div>' +
             '</div>' +
-          '</div>' +
-        '</div>';
-      });
-      container.innerHTML = html;
-    };
+          '</div>';
+        });
+        container.innerHTML = html;
+      };
 
-    if (!targetSection || targetSection === 'urgentTasksArea') {
-      var urgentTasks = [].concat(data.overdue, data.dueSoon);
-      renderCards(urgentTasks, 'urgentTasksArea', 'border-danger');
-    }
-    if (!targetSection || targetSection === 'onTrackTasksArea') {
-      renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
-    }
-    if (!targetSection || targetSection === 'upcomingTasksArea') {
-      renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
-    }
-    if (!targetSection || targetSection === 'pausedTasksArea') {
-      renderCards(data.paused, 'pausedTasksArea', 'border-warning');
-    }
-  }).api_getDashboardData(simEmail);
+      if (!targetSection || targetSection === 'urgentTasksArea') {
+        renderCards([].concat(data.overdue, data.dueSoon), 'urgentTasksArea', 'border-danger');
+      }
+      if (!targetSection || targetSection === 'onTrackTasksArea') {
+        renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
+      }
+      if (!targetSection || targetSection === 'upcomingTasksArea') {
+        renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
+      }
+      if (!targetSection || targetSection === 'pausedTasksArea') {
+        renderCards(data.paused, 'pausedTasksArea', 'border-warning');
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error("❌ [診斷] Google Apps Script 執行崩潰:", err);
+      showAlert('❌ 系統網路崩潰: ' + err.message, 'danger');
+    })
+    .api_getDashboardData(simEmail);
 }
-
   
 
   function renderWorkloadChart(workloadMap) {
@@ -1288,9 +1303,25 @@ setInterval(function() {
 }, 120000);
 */
 
-// 💡 綁定全域刷新事件：當背景定時器啟動，或手動重整時，順便幫小鈴鐺抓最新數字！
+// ==========================================
+// 💡 1. 補齊 fetchNotifications 防呆函數
+// ==========================================
+function fetchNotifications() {
+  if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  var email = (typeof currentUser !== 'undefined' && currentUser && currentUser.email) ? currentUser.email : '';
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success && typeof renderNotifications === 'function') {
+      renderNotifications(res.data);
+    }
+  }).api_getUserNotifications(email);
+}
+
+// 💡 2. 安全綁定全域刷新事件：避免函數未定義時報錯
 window.addEventListener('refreshAllViews', function() {
-  fetchNotifications();
+  if (typeof fetchNotifications === 'function') {
+    fetchNotifications();
+  }
 });
 
 </script>
