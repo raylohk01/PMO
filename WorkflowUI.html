@@ -713,8 +713,9 @@
     });
 
     deliverable.workflow.forEach(function(step, index) {
+
       var isCompleted = step.status === 'Completed';
-      var isCurrent = isStepTurn(step, deliverable) && (step.status === 'In Progress' || step.status === 'Pending Start') && !isProjectCompleted;
+      var isCurrent = isStepTurn(step, deliverable) && (step.status === 'In Progress' || step.status === 'Pending Start' || step.status === 'Pending') && !isProjectCompleted;
       
       var isPhaseDClientStep = (step.dept === 'Client');
       var isPMClientReviewStep = (step.dept === 'PM' && step.name.toLowerCase().includes('review'));
@@ -744,6 +745,7 @@
 
       var prevNonClientStep = deliverable.workflow.slice(0, index).reverse().find(function(s) { return s.dept !== 'Client'; });
       var inheritedAssignee = (isPhaseDClientStep && !step.assignee && prevNonClientStep && prevNonClientStep.assignee) ? prevNonClientStep.assignee : '';
+      var effectiveAssignee = step.assignee || inheritedAssignee; // 💡 讓系統知道自動接手的人是誰
 
       var assigneeBadge = '';
       if (step.assignee) {
