@@ -438,14 +438,18 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
           console.error("範本 [" + t.name + "] JSON 解析失敗:", e);
         }
 
+        // 💡 優化 1：使用 d-inline-block 把部門標籤跟文字包在一起，保證「不會在關卡中間斷行」
+        // 💡 優化 2：把 ➔ 換成精緻的 FontAwesome 小箭頭
         var chainHtml = steps.length > 0 
-          ? steps.map(function(s){ return '<span class="badge bg-light text-dark border me-1">' + (s.dept || 'PM') + '</span>' + (s.name || '步驟'); }).join(' ➔ ')
+          ? steps.map(function(s){ return '<span class="d-inline-block me-1"><span class="badge bg-light text-dark border me-1">' + (s.dept || 'PM') + '</span>' + (s.name || '步驟') + '</span>'; }).join('<i class="fas fa-chevron-right text-muted opacity-50 mx-2" style="font-size: 0.8em;"></i>')
           : '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>JSON 格式需格式化</span>';
 
         html += '<tr>' +
-          '<td><strong>' + t.name + '</strong></td>' +
-          '<td><div style="max-width: 500px; overflow-x: auto; white-space: nowrap;">' + chainHtml + '</div></td>' +
-          '<td class="text-end pe-3">' +
+          '<td style="width: 25%;"><strong>' + t.name + '</strong></td>' +
+          // 💡 核心修復：移除了 max-width: 500px; 讓文字自然流動填滿空間，並加大行距 (line-height: 2) 避免上下擠在一起
+          '<td><div style="line-height: 2;">' + chainHtml + '</div></td>' +
+          // 💡 強制按鈕區塊不換行
+          '<td class="text-end pe-3" style="white-space: nowrap; width: 15%;">' +
             '<button class="btn btn-sm btn-outline-primary me-1" onclick="openEditTemplateModal(\'' + t.name + '\')"><i class="fas fa-edit"></i> 編輯</button>' +
             '<button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(\'' + t.name + '\')"><i class="fas fa-trash"></i> 刪除</button>' +
           '</td>' +

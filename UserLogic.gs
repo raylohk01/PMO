@@ -510,6 +510,23 @@ function api_getDashboardData(simEmail) {
     const userRole = user ? user.role : 'Member';
     const userDept = user ? user.department : '';
 
+    // 💡 預先載入所有同事的部門對應表 (供主管看板判定使用)
+    let cachedDeptMap = {};
+    const uSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+    if (uSheet) {
+      const uData = uSheet.getDataRange().getValues();
+      if (uData.length > 1) {
+        const uHeaders = uData[0].map(h => String(h).trim().toLowerCase());
+        const uIdxName = uHeaders.findIndex(h => h === 'name' || h === 'username');
+        const uIdxDept = uHeaders.findIndex(h => h === 'department' || h === 'team');
+        for (let i = 1; i < uData.length; i++) {
+          if (uIdxName >= 0 && uIdxDept >= 0) {
+            cachedDeptMap[String(uData[i][uIdxName]).trim()] = String(uData[i][uIdxDept]).trim();
+          }
+        }
+      }
+    }
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if(!sheet) return { success: true, data: { overdue:[], dueSoon:[], onTrack:[], upcoming:[], paused:[] } };
 
@@ -578,32 +595,34 @@ function api_getDashboardData(simEmail) {
             } else {
               let activeMatch = false;
               let futureMatch = false;
-              let pastMatch = false; // 💡 新增：過去是否參與過
+              let pastMatch = false; 
 
               if (userRole === 'Team Head') {
-                activeMatch = activeSteps.some(s => s.dept === userDept);
+                // 主管除了看自己部門，也要看被自己部門「接手」的 Client 關卡
+                activeMatch = activeSteps.some(s => s.dept === userDept || (String(s.dept).toLowerCase().includes('client') && s.assignee && cachedDeptMap && cachedDeptMap[s.assignee] === userDept));
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
                 pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.dept === userDept && s.status === 'Completed');
               } else {
+                // 個人看板：只要 assignee 是我，這關就是我的 Active 任務！不管它是不是 Client 關卡。
                 activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
                 pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase() && s.status === 'Completed');
               }
 
-              if (activeMatch) {
+              // 💡 互斥邏輯修復：若正在處理或未來要處理，就不算在「純追蹤」
+              if (activeMatch || futureMatch) {
                 isMyTask = true;
-              } else if (futureMatch) {
-                isMyTask = true;
-                isUpcomingForUser = true; 
+                if (!activeMatch && futureMatch) isUpcomingForUser = true;
               } else if (pastMatch) {
                 isMyTask = true;
-                isTrackingForUser = true; // 💡 過去做過，且未來沒事了，進入追蹤狀態
+                isTrackingForUser = true; // 真的沒事了，才進入追蹤
               }
             }
 
             if (!isMyTask) return; 
 
             const displayStep = primaryActiveStep;
+
             const currentStepName = displayStep ? (displayStep.dept + ' ' + displayStep.name) : '未開始';
             const currentAssignee = displayStep ? displayStep.assignee : '';
 
@@ -640,12 +659,22 @@ function api_getDashboardData(simEmail) {
             
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
             let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
+            
+            // 💡 體驗升級：如果這是 Client 關卡，且狀態是「Reviewing (已交由客戶)」，則強制將它移至「追蹤中」！
+            let isClientReviewing = primaryActiveStep && String(primaryActiveStep.dept).toLowerCase().includes('client') && primaryActiveStep.reviewStatus === 'Reviewing';
+            
+            if (isClientReviewing && isActive) {
+               isActive = false;
+               isTrackingForUser = true;
+               item.isTracking = true;
+            }
 
             if (isPaused) {
               result.paused.push(item);
             } else if (isTrackingForUser) {
               result.tracking.push(item); // 💡 放進追蹤區
             } else if (isUpcomingForUser) {
+
               result.upcoming.push(item); 
             } else if (isActive) {
               if (daysLeft < 0) result.overdue.push(item);
@@ -1907,10 +1936,25 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
             const reviewStatus = String(activeStep.reviewStatus || '').trim();
             const currentRealStepName = activeStep.name || ('Step ' + activeStep.step);
 
-            if (activeDept === targetDept.toLowerCase()) {
+            // 💡 新增：判定這是否為本部門同事「自動接手」的 Client 審批關卡
+            let isClientStep = activeDept.includes('client') || currentRealStepName.toLowerCase().includes('client') || currentRealStepName.toLowerCase().includes('review');
+            let isOwnedByMyDeptMember = false;
+            
+            if (isClientStep && assignee) {
+               // 往前找最近一個「非 Client」的關卡
+               let prevStep = d.workflow.slice(0, activeStep.step - 1).reverse().find(s => s.dept !== 'Client');
+               // 如果上一關是我們部門，而且接手的人跟上一關的人一樣，就認定這張卡歸我們部門管！
+               if (prevStep && String(prevStep.dept).toLowerCase() === targetDept.toLowerCase() && assignee === prevStep.assignee) {
+                 isOwnedByMyDeptMember = true;
+               }
+            }
+
+            // 💡 條件放寬：原來屬於我們部門的，或是被我們部門同事接手的 Client 關卡，通通放行！
+            if (activeDept === targetDept.toLowerCase() || isOwnedByMyDeptMember) {
               const isClientReview = (reviewStatus === 'Reviewing') || 
                                      (currentRealStepName.toLowerCase().includes('client')) || 
-                                     (activeDept.includes('client'));
+                                     (activeDept.includes('client')) || 
+                                     isOwnedByMyDeptMember;
 
               let taskCategory = 'ACTIVE';
               if (isClientReview) taskCategory = 'CLIENT_REVIEW';
@@ -1985,10 +2029,24 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
       }
     }
 
-    // 將去重後的物件轉為陣列
-    const completedTasks = Object.keys(completedMap).map(k => completedMap[k]);
+    // 💡 互斥去重引擎：確保如果任務已經在「進行中 / 管線中 / 審批中」，就絕對不能再出現在「近期交棒(Completed)」中！
+    // 收集所有「活著」的卡片 ID (包含 Active, Pipeline, ClientReview, Risk)
+    let allAliveDeliverableIds = new Set();
+    [...activeTasks, ...pipelineTasks, ...clientReviewTasks, ...riskTasks].forEach(t => {
+      if (t.deliverableId) allAliveDeliverableIds.add(t.deliverableId);
+    });
+
+    // 將去重後的物件轉為陣列，並嚴格過濾掉那些還活著的卡片
+    let completedTasks = [];
+    Object.keys(completedMap).forEach(k => {
+      let ct = completedMap[k];
+      // 如果這張卡片的 deliverableId 已經存在於其他桶子中，就把它捨棄 (不放入近期交棒)
+      if (!allAliveDeliverableIds.has(ct.deliverableId)) {
+        completedTasks.push(ct);
+      }
+    });
     
-    // 把去重後的已完成卡片併入日曆呈現
+    // 把過濾後的已完成卡片併入日曆呈現
     completedTasks.forEach(ct => {
       calendarTasks.push(ct);
       calendarMap[ct.deadline] = (calendarMap[ct.deadline] || 0) + 1;
@@ -1998,6 +2056,7 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
 
     return {
       success: true,
+      
       data: {
         capacityList: capacityList,
         calendarMap: calendarMap,

@@ -756,9 +756,12 @@ window.openWorkflow = function(jobNumber) {
       var isCompleted = step.status === 'Completed';
       var isCurrent = isStepTurn(step, deliverable) && (step.status === 'In Progress' || step.status === 'Pending Start' || step.status === 'Pending') && !isProjectCompleted;
       
-      var isPhaseDClientStep = (step.dept === 'Client');
+      // 💡 強化判斷：只要部門是 Client，或是關卡名稱包含 Client 再次審批，都視為 Client 關卡
+      var isPhaseDClientStep = (step.dept === 'Client') || (step.name.toLowerCase().includes('client') && step.name.toLowerCase().includes('審批'));
       var isPMClientReviewStep = (step.dept === 'PM' && step.name.toLowerCase().includes('review'));
       var isClientStep = isPhaseDClientStep || isPMClientReviewStep;
+
+
 
       var isStepAssigned = !!step.assignee;
       var isMyTurn = isCurrent && currentUser && (step.dept === currentUser.department || isSuper || (isClientStep && isMyPM) || (isPhaseDClientStep && step.assignee === currentUser.name)) && (isStepAssigned || isClientStep);
@@ -889,12 +892,21 @@ window.openWorkflow = function(jobNumber) {
 
       if(isCurrent && !isProjectCompleted) {
         if (isPhaseDClientStep && isMyTurn) {
-          html += '<div class="alert alert-info p-3 mt-2 mb-0 rounded border border-info">';
-          html += '<div class="fw-bold text-dark mb-2"><i class="fas fa-user-tie text-primary me-1"></i> 請將檔案交由客戶審批，並追蹤結果：</div>';
-          html += '<div class="d-flex gap-2 mt-2">';
-          html += '<button class="btn btn-sm btn-success fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> 客戶同意 (推進下一關)</button>';
-          html += '<button class="btn btn-sm btn-outline-danger fw-bold shadow-sm" onclick="promptDynamicClientRevision(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-comment-dots me-1"></i> 客戶要求修改 (產生修改迴圈)</button>';
-          html += '</div></div>';
+          // 💡 體驗升級：如果還沒按下發送，顯示藍色發送按鈕
+          if (step.reviewStatus !== 'Reviewing') {
+            html += '<div class="alert alert-info p-3 mt-2 mb-0 rounded border border-info d-flex justify-content-between align-items-center">';
+            html += '<span><i class="fas fa-user-tie text-primary me-1"></i> 請確認無誤後，交由客戶審批</span>';
+            html += '<button class="btn btn-primary btn-sm fw-bold shadow-sm" onclick="startClientReview(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 🚀 交由客戶審批</button>';
+            html += '</div>';
+          } else {
+            // 已經發送，顯示等待結果按鈕
+            html += '<div class="alert alert-warning p-3 mt-2 mb-0 rounded border border-warning">';
+            html += '<div class="fw-bold text-dark mb-2"><i class="fas fa-hourglass-half text-warning me-1"></i> 專案已在【客戶追蹤】列中（客戶審批中...）</div>';
+            html += '<div class="d-flex gap-2 mt-2">';
+            html += '<button class="btn btn-sm btn-success fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> 客戶同意 (推進下一關)</button>';
+            html += '<button class="btn btn-sm btn-outline-danger fw-bold shadow-sm" onclick="promptDynamicClientRevision(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-comment-dots me-1"></i> 客戶要求修改 (產生修改迴圈)</button>';
+            html += '</div></div>';
+          }
         }
         else if (isPMClientReviewStep) {
           if (step.reviewStatus === 'Reviewing') {
@@ -1381,7 +1393,13 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
           var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
           if (nextS) {
             targetD.currentStep = nextS.step;
-            // 💡 關鍵修復：若下一關沒有負責人，設為 Pending (等待派案)
+            
+            // 💡 前端樂觀同步：如果是 Client 關卡，模擬後端的自動實體繼承！
+            var isNextClientStep = nextS.dept.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('review');
+            if (!nextS.assignee && isNextClientStep && curS.assignee) {
+              nextS.assignee = curS.assignee;
+            }
+
             nextS.status = nextS.assignee ? 'In Progress' : 'Pending';
           } else {
             targetD.status = 'Completed';
