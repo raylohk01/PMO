@@ -440,7 +440,7 @@
     renderOpColumns();
   }
 
-  function fetchDeptOperationData(customType, start, end) {
+  function fetchDeptOperationData(customType, start, end, isSilent) {
     var areaCap = document.getElementById('op_memberCapacityArea');
     var areaCal = document.getElementById('op_calendarGrid');
     var containerOverdue = document.getElementById('op_overdueContainer');
@@ -451,17 +451,20 @@
     var containerClientReview = document.getElementById('op_clientReviewContainer');
     var containerCompleted = document.getElementById('op_completedContainer');
 
-    if (areaCap) areaCap.innerHTML = '<span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>';
-    if (areaCal) areaCal.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>';
-    
-    var spinnerHtml = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i><br>載入中...</div>';
-    if (containerOverdue) containerOverdue.innerHTML = spinnerHtml;
-    if (containerUnassigned) containerUnassigned.innerHTML = spinnerHtml;
-    if (containerDueSoon) containerDueSoon.innerHTML = spinnerHtml;
-    if (containerActive) containerActive.innerHTML = spinnerHtml;
-    if (containerPipeline) containerPipeline.innerHTML = spinnerHtml;
-    if (containerClientReview) containerClientReview.innerHTML = spinnerHtml;
-    if (containerCompleted) containerCompleted.innerHTML = spinnerHtml;
+    // 💡 靜默更新：只有在第一次載入 (!isSilent) 時才顯示轉圈圈，背景廣播刷新時保持原畫面不清空
+    if (!isSilent) {
+      if (areaCap) areaCap.innerHTML = '<span class="text-muted small"><i class="fas fa-spinner fa-spin"></i> 計算產能中...</span>';
+      if (areaCal) areaCal.innerHTML = '<div class="text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 載入產能日曆中...</div>';
+      
+      var spinnerHtml = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin"></i><br>載入中...</div>';
+      if (containerOverdue) containerOverdue.innerHTML = spinnerHtml;
+      if (containerUnassigned) containerUnassigned.innerHTML = spinnerHtml;
+      if (containerDueSoon) containerDueSoon.innerHTML = spinnerHtml;
+      if (containerActive) containerActive.innerHTML = spinnerHtml;
+      if (containerPipeline) containerPipeline.innerHTML = spinnerHtml;
+      if (containerClientReview) containerClientReview.innerHTML = spinnerHtml;
+      if (containerCompleted) containerCompleted.innerHTML = spinnerHtml;
+    }
 
     var isEv1 = (customType && typeof customType === 'object' && customType.type);
     var safeType = (!isEv1 && typeof customType === 'string' && !customType.includes('[object')) ? customType : null;

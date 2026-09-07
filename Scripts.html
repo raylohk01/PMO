@@ -1389,7 +1389,7 @@ window.addEventListener('refreshAllViews', function() {
   // 💡 2. 永遠在背景更新「部門看板」
   try { 
     if (typeof fetchDeptOperationData === 'function') {
-      fetchDeptOperationData(); 
+      fetchDeptOperationData(null, null, null, true); 
     } 
   } catch(e){}
   

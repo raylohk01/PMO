@@ -1103,9 +1103,17 @@ function api_getCompletedProjects(keyword, startDate, endDate) {
     
 
 // ==========================================
-// 💡 更新工作流狀態 API (修正版：完美身分同步，斷絕讀取時間差)
+// 💡 更新工作流狀態 API (防彈鎖定版：解決連點閃退與文件衝突)
 // ==========================================
 function api_updateWorkflowState(jobNumber, deliverableId, payload) {
+  // 💡 加入排隊鎖：防止手速過快導致 Google Sheets 寫入衝突
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); // 最多排隊等待 10 秒
+  } catch (e) {
+    return { success: false, message: '系統忙碌中，請稍候再試！' };
+  }
+
   try {
     const userEmail = payload.userEmail || Session.getActiveUser().getEmail();
     const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
@@ -1160,7 +1168,6 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           deliverable.startedAt = nowIso;
           if (deliverable.workflow && deliverable.workflow.length > 0) {
             let firstS = deliverable.workflow[0];
-            // 💡 關鍵修復：若第一關無負責人，狀態改為 Pending
             firstS.status = firstS.assignee ? 'In Progress' : 'Pending';
             firstS.startedAt = firstS.assignee ? nowIso : null;
             firstS.pendingAssignmentAt = firstS.assignee ? null : nowIso;
@@ -1185,11 +1192,10 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
             if (nextStepObj) {
               deliverable.currentStep = nextStepObj.step;
               
-              // 💡 終極修復：若是 Client 相關關卡且未指派，強制由剛完成關卡的人(currentStepObj)自動接手！
               let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
               
               if (!nextStepObj.assignee && isNextClientStep && currentStepObj.assignee) {
-                nextStepObj.assignee = currentStepObj.assignee; // 實體繼承！
+                nextStepObj.assignee = currentStepObj.assignee;
               }
 
               if (nextStepObj.assignee) {
@@ -1197,12 +1203,10 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
                 nextStepObj.startedAt = nowIso;
                 nextStepObj.pendingAssignmentAt = null;
               } else {
-                // 💡 關鍵修復：若下一關沒有負責人，狀態改為 Pending
                 nextStepObj.status = 'Pending'; 
                 nextStepObj.pendingAssignmentAt = nowIso;
               }
             } else {
-
               deliverable.status = 'Completed';
               deliverable.completedAt = nowStr;
               deliverable.completedAtIso = nowIso;
@@ -1210,6 +1214,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           }
         }
 
+        // 💡 寫入前再三確認文件一致性
+        SpreadsheetApp.flush();
         sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
 
         let allDeliverablesCompleted = (wfData.deliverables || [])
@@ -1236,7 +1242,6 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
         }
 
         if (typeof notifyFirebaseUpdate === 'function') {
-          // 💡 終極防閃爍：把剛算好的 wfData 傳給廣播引擎，讓它同步更新快取，避免前端拿到舊資料閃退！
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
         }
 
@@ -1246,6 +1251,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
     throw new Error('找不到專案 ' + jobNumber);
   } catch (e) {
     return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock(); // 💡 確保無論成功失敗，都會釋放鎖
   }
 }
 
