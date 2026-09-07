@@ -986,24 +986,27 @@ window.openWorkflow = function(jobNumber) {
     if (dynamicClientRevisionModalInstance) dynamicClientRevisionModalInstance.show();
   }
 
-  function confirmDynamicClientRevision() {
-    var feedback = document.getElementById('dyn_cr_feedbackInput').value.trim();
-    if (!feedback) return showAlert('⚠️ 請填寫客戶修改意見！', 'warning');
+  function confirmRollbackStep() {
+    if (!selectedRollbackStepNum) return showAlert('⚠️ 請先點擊選擇要退回的關卡！', 'warning');
+    var reason = document.getElementById('rb_reasonInput').value.trim();
+    if (!reason) return showAlert('⚠️ 請填寫退回原因！', 'warning');
 
-    var btn = document.getElementById('dyn_cr_btnConfirm');
+    var btn = document.getElementById('rb_btnConfirm');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 處理中...'; }
 
     google.script.run.withSuccessHandler(function(res) {
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-undo me-1"></i> 確認退回並產生修改迴圈'; }
-      if (res && res.success) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-undo me-1"></i> 確認強制退回'; }
+      if(res && res.success) {
         showAlert('🎉 ' + res.message, 'success');
-        if (dynamicClientRevisionModalInstance) dynamicClientRevisionModalInstance.hide();
-        openWorkflow(currentProjectData.jobNumber);
+        if (rollbackModalInstance) rollbackModalInstance.hide();
+        // 💡 原地替換
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        }
         window.dispatchEvent(new Event('refreshAllViews'));
-      } else {
-        showAlert('❌ 操作失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-      }
-    }).api_triggerDynamicClientRevision(currentProjectData.jobNumber, activeDynRevDeliverableId, activeDynRevStepNum, feedback);
+      } else { showAlert('❌ 退回失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
+    }).api_rollbackWorkflowStep(currentProjectData.jobNumber, activeDeliverableId, selectedRollbackStepNum, reason);
   }
 
   function promptRollbackStep(preSelectedStepNum) {
@@ -1059,11 +1062,16 @@ window.openWorkflow = function(jobNumber) {
       if(res && res.success) {
         showAlert('🎉 ' + res.message, 'success');
         if (rollbackModalInstance) rollbackModalInstance.hide();
-        openWorkflow(currentProjectData.jobNumber);
+        // 💡 原地替換
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        }
         window.dispatchEvent(new Event('refreshAllViews'));
       } else { showAlert('❌ 退回失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
     }).api_rollbackWorkflowStep(currentProjectData.jobNumber, activeDeliverableId, selectedRollbackStepNum, reason);
   }
+
 
   function promptRestartProject() {
     if (!currentProjectData || !activeDeliverableId) return;
@@ -1096,7 +1104,13 @@ window.openWorkflow = function(jobNumber) {
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success) {
         showAlert('🎉 已正式交由客戶審批！此專案已同步顯示於【客戶追蹤】清單中。', 'success');
-        openWorkflow(currentProjectData.jobNumber);
+        // 💡 原地替換，不再 call openWorkflow 避免閃爍
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        }
+        // 💡 廣播通知背後看板立刻移動卡片
+        window.dispatchEvent(new Event('refreshAllViews')); 
       } else { showAlert('❌ 操作失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
     }).api_startClientReviewStep(currentProjectData.jobNumber, deliverableId, stepNumber);
   }
@@ -1151,8 +1165,12 @@ window.openWorkflow = function(jobNumber) {
       if(res && res.success) {
         showAlert('🎉 已成功退回修改！', 'success');
         if (clientRevisionModalInstance) clientRevisionModalInstance.hide();
-        openWorkflow(currentProjectData.jobNumber);
-        if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
+        // 💡 原地替換
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        }
+        window.dispatchEvent(new Event('refreshAllViews'));
       } else { showAlert('❌ 修改退回失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
     }).api_triggerClientRevision(currentProjectData.jobNumber, activeRevisionDeliverableId, selectedRevisionStepNum, feedback);
   }
@@ -1396,10 +1414,11 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
             
             // 💡 前端樂觀同步：如果是 Client 關卡，模擬後端的自動實體繼承！
             var isNextClientStep = nextS.dept.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('review');
-            if (!nextS.assignee && isNextClientStep && curS.assignee) {
+            if (isNextClientStep && curS.assignee && !nextS.assignee) {
               nextS.assignee = curS.assignee;
             }
 
+            // 💡 終極防閃爍：只要有接手人，就必須是 In Progress！
             nextS.status = nextS.assignee ? 'In Progress' : 'Pending';
           } else {
             targetD.status = 'Completed';
@@ -1421,6 +1440,8 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
         renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
       }
       if (typeof loadIndividualView === 'function') loadIndividualView(currentUser.email, null, true);
+      
+      window.dispatchEvent(new Event('refreshAllViews')); // 💡 加上這一行！確保推進時看板立刻更新
       
       // 💡 3秒後解除無敵狀態，此時 Google Sheets 已經穩定寫入最新資料
       setTimeout(function() { window.isUpdatingProject = false; }, 3000);
@@ -1578,5 +1599,29 @@ function confirmEditJobNumber() {
     }
   }).api_updateJobNumber(oldJobNumber, newJobNumber);
 }
+
+function confirmDynamicClientRevision() {
+    var feedback = document.getElementById('dyn_cr_feedbackInput').value.trim();
+    if (!feedback) return showAlert('⚠️ 請填寫客戶修改意見！', 'warning');
+
+    var btn = document.getElementById('dyn_cr_btnConfirm');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 處理中...'; }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-undo me-1"></i> 確認退回並產生修改迴圈'; }
+      if (res && res.success) {
+        showAlert('🎉 ' + res.message, 'success');
+        if (dynamicClientRevisionModalInstance) dynamicClientRevisionModalInstance.hide();
+        // 💡 原地替換
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        }
+        window.dispatchEvent(new Event('refreshAllViews'));
+      } else {
+        showAlert('❌ 操作失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+      }
+    }).api_triggerDynamicClientRevision(currentProjectData.jobNumber, activeDynRevDeliverableId, activeDynRevStepNum, feedback);
+  }
 
 </script>

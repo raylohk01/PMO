@@ -660,23 +660,35 @@ function api_getDashboardData(simEmail) {
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
             let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
             
-            // 💡 體驗升級：如果這是 Client 關卡，且狀態是「Reviewing (已交由客戶)」，則強制將它移至「追蹤中」！
+            // 💡 只有按下發送按鈕 (Reviewing) 才算真正交棒！沒按下前都算在 Active (進行中)
             let isClientReviewing = primaryActiveStep && String(primaryActiveStep.dept).toLowerCase().includes('client') && primaryActiveStep.reviewStatus === 'Reviewing';
             
             if (isClientReviewing && isActive) {
                isActive = false;
                isTrackingForUser = true;
                item.isTracking = true;
+            } else if (isActive) {
+               // 💡 強力互斥：只要是進行中，就絕對不可能是追蹤中！
+               isTrackingForUser = false;
+               item.isTracking = false;
+            }
+
+            // 💡 終極防護：主管或 PM 視角
+            if ((isSuperManager || isProjectPM) && isActive && !isClientReviewing) {
+               isTrackingForUser = false;
+               isUpcomingForUser = false;
+               item.isTracking = false;
             }
 
             if (isPaused) {
               result.paused.push(item);
             } else if (isTrackingForUser) {
-              result.tracking.push(item); // 💡 放進追蹤區
+              result.tracking.push(item); 
             } else if (isUpcomingForUser) {
-
               result.upcoming.push(item); 
             } else if (isActive) {
+
+
               if (daysLeft < 0) result.overdue.push(item);
               else if (daysLeft <= 3) result.dueSoon.push(item);
               else result.onTrack.push(item);
@@ -883,10 +895,10 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
               }
 
               if (typeof notifyFirebaseUpdate === 'function') {
-                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
               }
 
-              return { success: true, message: '派案與 PM 資料同步成功！' };
+              return { success: true, message: '派案與 PM 資料同步成功！', updatedWorkflowData: wfData };
             }
           }
         }
@@ -1224,7 +1236,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
         }
 
         if (typeof notifyFirebaseUpdate === 'function') {
-          notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+          // 💡 終極防閃爍：把剛算好的 wfData 傳給廣播引擎，讓它同步更新快取，避免前端拿到舊資料閃退！
+          notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
         }
 
         return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData };
@@ -1741,10 +1754,14 @@ function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
 
       sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
       sheet.getRange(rowIndex, logCol).setValue(JSON.stringify(logData));
+      
+      // 💡 終極防閃爍：把剛算好的 wfData 傳給廣播引擎，讓它同步更新快取！
+      if (typeof notifyFirebaseUpdate === 'function') notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), userName, true, wfData);
     }
-
-    return { success: true, message: '已成功送入客戶審批！' };
+    // 💡 回傳最新資料給前端原地渲染
+    return { success: true, message: '已成功送入客戶審批！', updatedWorkflowData: wfData };
   } catch (e) {
+
     return { success: false, message: e.message };
   }
 }
@@ -1951,13 +1968,16 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
 
             // 💡 條件放寬：原來屬於我們部門的，或是被我們部門同事接手的 Client 關卡，通通放行！
             if (activeDept === targetDept.toLowerCase() || isOwnedByMyDeptMember) {
-              const isClientReview = (reviewStatus === 'Reviewing') || 
+              
+              // 💡 嚴格判定：必須真的按下發送按鈕 (reviewStatus === 'Reviewing')，才算進入客戶審批！
+              const isClientReview = (reviewStatus === 'Reviewing') && (
                                      (currentRealStepName.toLowerCase().includes('client')) || 
                                      (activeDept.includes('client')) || 
-                                     isOwnedByMyDeptMember;
+                                     isOwnedByMyDeptMember );
 
               let taskCategory = 'ACTIVE';
               if (isClientReview) taskCategory = 'CLIENT_REVIEW';
+
               else if (deadline < todayStr) taskCategory = 'OVERDUE';
               else if (!assignee || assignee === '未指派') taskCategory = 'UNASSIGNED';
               else {
@@ -2029,19 +2049,20 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
       }
     }
 
-    // 💡 互斥去重引擎：確保如果任務已經在「進行中 / 管線中 / 審批中」，就絕對不能再出現在「近期交棒(Completed)」中！
-    // 收集所有「活著」的卡片 ID (包含 Active, Pipeline, ClientReview, Risk)
-    let allAliveDeliverableIds = new Set();
-    [...activeTasks, ...pipelineTasks, ...clientReviewTasks, ...riskTasks].forEach(t => {
-      if (t.deliverableId) allAliveDeliverableIds.add(t.deliverableId);
-    });
+    // 💡 互斥去重引擎 (防彈升級版)：確保任務不會產生分身
+    let aliveIds = {};
+    
+    // 把所有活著的卡片 ID 登記起來
+    activeTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+    pipelineTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+    clientReviewTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+    riskTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
 
-    // 將去重後的物件轉為陣列，並嚴格過濾掉那些還活著的卡片
     let completedTasks = [];
     Object.keys(completedMap).forEach(k => {
       let ct = completedMap[k];
-      // 如果這張卡片的 deliverableId 已經存在於其他桶子中，就把它捨棄 (不放入近期交棒)
-      if (!allAliveDeliverableIds.has(ct.deliverableId)) {
+      // 💡 只有當這張卡片「沒有」在活著的名單中時，才允許它出現在近期交棒
+      if (!aliveIds[ct.deliverableId]) {
         completedTasks.push(ct);
       }
     });
@@ -2056,7 +2077,7 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
 
     return {
       success: true,
-      
+
       data: {
         capacityList: capacityList,
         calendarMap: calendarMap,
@@ -2589,7 +2610,11 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
 
-              return { success: true, message: `已成功將專案退回至 Step ${rollbackStepNum}` };
+              if (typeof notifyFirebaseUpdate === 'function') {
+                notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), Session.getActiveUser().getEmail().split('@')[0], true, wfData);
+              }
+
+              return { success: true, message: `已成功將專案退回至 Step ${rollbackStepNum}`, updatedWorkflowData: wfData };
             }
           }
         }
@@ -2805,7 +2830,8 @@ function api_triggerDynamicClientRevision(jobNumber, deliverableId, stepNumber, 
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
 
-              return { success: true, message: `已產生修改流程，此項目為第 ${targetD.revisionCount} 次退回！` };
+              if (typeof notifyFirebaseUpdate === 'function') notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), activeUser, true, wfData);
+              return { success: true, message: `已產生修改流程，此項目為第 ${targetD.revisionCount} 次退回！`, updatedWorkflowData: wfData };
             }
           }
         }
@@ -3106,10 +3132,8 @@ function sendSystemEmail(toUser, subject, title, message) {
   }
 }
 
-// ==========================================
-// 💡 全量 Firebase 廣播與快取推送引擎 (秒讀基礎)
-// ==========================================
-function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
+// 💡 全量 Firebase 廣播與快取推送引擎 (加入同步寫入快取機制)
+function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent, updatedWfData) {
   try {
     const cleanJobNum = String(jobNumber || 'GLOBAL').split('-P')[0];
     const firebaseUrl = "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app/";
@@ -3122,15 +3146,16 @@ function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
     });
 
     if (cleanJobNum !== 'GLOBAL') {
-      // 1. 廣播時間戳記
       UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanJobNum + ".json", {
         method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
       });
 
-      // 2. 🚀 將專案完整內容寫入 Firebase 快取 (存於 project_cache/ 下)
       try {
         let freshProject = api_getProjectWorkflow(cleanJobNum);
         if (freshProject && freshProject.success) {
+          // 如果有傳入最新算好的 wfData，就直接覆蓋掉舊的，確保快取絕對是最新的！
+          if (updatedWfData) freshProject.data.workflowData = updatedWfData;
+          
           UrlFetchApp.fetch(firebaseUrl + "project_cache/" + cleanJobNum + ".json", {
             method: "put",
             contentType: "application/json",
