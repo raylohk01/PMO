@@ -371,6 +371,18 @@ function api_createProject(payload) {
     const headers = data[0].map(h => String(h).trim().toLowerCase());
 
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    
+    // 💡 新增：防撞專案編號全庫掃描機制
+    const reqJobNum = payload.jobNumber ? String(payload.jobNumber).trim() : '';
+    if (reqJobNum && idxJobNum >= 0) {
+      for (let r = 1; r < data.length; r++) {
+        // 嚴格比對：忽略大小寫與前後空白
+        if (String(data[r][idxJobNum]).trim().toLowerCase() === reqJobNum.toLowerCase()) {
+          throw new Error('撞名警告：專案編號 [' + reqJobNum + '] 已經存在，請更換另一個編號！');
+        }
+      }
+    }
+
     const idxClient = headers.findIndex(h => h.includes('client'));
     const idxSales = headers.findIndex(h => h.includes('sales'));
     const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
@@ -1131,6 +1143,14 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
             let nextStepObj = deliverable.workflow.find(s => s.step > stepNum && s.status !== 'Completed');
             if (nextStepObj) {
               deliverable.currentStep = nextStepObj.step;
+              
+              // 💡 終極修復：若是 Client 相關關卡且未指派，強制由剛完成關卡的人(currentStepObj)自動接手！
+              let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
+              
+              if (!nextStepObj.assignee && isNextClientStep && currentStepObj.assignee) {
+                nextStepObj.assignee = currentStepObj.assignee; // 實體繼承！
+              }
+
               if (nextStepObj.assignee) {
                 nextStepObj.status = 'In Progress';
                 nextStepObj.startedAt = nowIso;
@@ -1141,6 +1161,7 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
                 nextStepObj.pendingAssignmentAt = nowIso;
               }
             } else {
+
               deliverable.status = 'Completed';
               deliverable.completedAt = nowStr;
               deliverable.completedAtIso = nowIso;
@@ -2218,7 +2239,18 @@ function api_submitWorkflowStep(jobNumber, deliverableId, stepNumber, formData, 
 
                 const nextStepIdx = currentStepIdx + 1;
                 if (nextStepIdx < targetD.workflow.length) {
-                  targetD.workflow[nextStepIdx].status = 'In Progress';
+                  let nextStepObj = targetD.workflow[nextStepIdx];
+                  
+                  // 自動繼承
+                  let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
+                  if (!nextStepObj.assignee && isNextClientStep && targetD.workflow[currentStepIdx].assignee) {
+                    nextStepObj.assignee = targetD.workflow[currentStepIdx].assignee;
+                  }
+
+                  nextStepObj.status = nextStepObj.assignee ? 'In Progress' : 'Pending';
+                  if (nextStepObj.status === 'In Progress') {
+                    nextStepObj.startedAt = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+                  }
                 } else {
                   targetD.status = 'Completed';
                 }
