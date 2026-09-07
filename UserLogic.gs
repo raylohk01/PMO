@@ -516,7 +516,7 @@ function api_getDashboardData(simEmail) {
     const today = new Date();
     today.setHours(0,0,0,0);
 
-    let result = { overdue: [], dueSoon: [], onTrack: [], upcoming: [], paused: [], actionRequired: [] };
+    let result = { overdue: [], dueSoon: [], onTrack: [], upcoming: [], paused: [], tracking: [], actionRequired: [] };
 
     for(let i = 1; i < data.length; i++) {
       try {
@@ -556,6 +556,7 @@ function api_getDashboardData(simEmail) {
 
             let isMyTask = false;
             let isUpcomingForUser = false;
+            let isTrackingForUser = false; // 💡 新增：是否為追蹤狀態
 
             const isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(userRole);
             const isProjectPM = pmName && pmName.toLowerCase() === userName.toLowerCase();
@@ -565,13 +566,16 @@ function api_getDashboardData(simEmail) {
             } else {
               let activeMatch = false;
               let futureMatch = false;
+              let pastMatch = false; // 💡 新增：過去是否參與過
 
               if (userRole === 'Team Head') {
                 activeMatch = activeSteps.some(s => s.dept === userDept);
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
+                pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.dept === userDept && s.status === 'Completed');
               } else {
                 activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+                pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase() && s.status === 'Completed');
               }
 
               if (activeMatch) {
@@ -579,6 +583,9 @@ function api_getDashboardData(simEmail) {
               } else if (futureMatch) {
                 isMyTask = true;
                 isUpcomingForUser = true; 
+              } else if (pastMatch) {
+                isMyTask = true;
+                isTrackingForUser = true; // 💡 過去做過，且未來沒事了，進入追蹤狀態
               }
             }
 
@@ -613,17 +620,19 @@ function api_getDashboardData(simEmail) {
               type: d.type || 'Standard', status: d.status || 'Pending Start',
               deadline: effectiveDeadlineStr, daysLeft: daysLeft,
               currentStepName: currentStepName, assignee: currentAssignee,
-              pmName: pmName, salesName: salesName
+              pmName: pmName, salesName: salesName,
+              isTracking: isTrackingForUser // 💡 新增屬性
             };
 
             let isPaused = d.status === 'Paused' || pStatus.includes('pause');
             
-            // 💡 關鍵修復：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
             let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
 
             if (isPaused) {
               result.paused.push(item);
+            } else if (isTrackingForUser) {
+              result.tracking.push(item); // 💡 放進追蹤區
             } else if (isUpcomingForUser) {
               result.upcoming.push(item); 
             } else if (isActive) {
@@ -648,6 +657,7 @@ function api_getDashboardData(simEmail) {
     result.overdue.sort(sortByDeadline);
     result.dueSoon.sort(sortByDeadline);
     result.onTrack.sort(sortByDeadline);
+    result.tracking.sort(sortByDeadline); // 💡 新增
     result.upcoming.sort(sortByDeadline);
     result.paused.sort(sortByDeadline);
 
@@ -3080,4 +3090,96 @@ function cleanYMD(raw) {
     if (!isNaN(d.getTime())) return Utilities.formatDate(d, "GMT+8", "yyyy-MM-dd");
   }
   return str.split('T')[0].split(' ')[0];
+}
+
+// ==========================================
+// 💡 修改專案編號 API (具備防撞名檢查與 Firebase 舊節點清理)
+// ==========================================
+function api_updateJobNumber(oldJobNumber, newJobNumber) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
+    oldJobNumber = String(oldJobNumber || '').trim();
+    newJobNumber = String(newJobNumber || '').trim();
+
+    if (!oldJobNumber || !newJobNumber) throw new Error('新舊專案編號不能為空');
+    if (oldJobNumber.toLowerCase() === newJobNumber.toLowerCase()) throw new Error('新舊專案編號相同，無需修改');
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+    
+    if (idxJobNum === -1) throw new Error('找不到專案編號欄位');
+
+    let targetRowIndex = -1;
+
+    // 1. 全局掃描：防撞名檢查 & 尋找目標列
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = String(data[i][idxJobNum] || '').trim();
+      
+      // 🚨 防撞名機制：如果新編號已經存在，立刻拋出錯誤並中斷
+      if (currentJob.toLowerCase() === newJobNumber.toLowerCase()) {
+        throw new Error(`撞名警告：專案編號 [${newJobNumber}] 已被其他專案使用，請更換另一個編號！`);
+      }
+      
+      // 定位舊專案行數
+      if (currentJob.toLowerCase() === oldJobNumber.toLowerCase()) {
+        targetRowIndex = i + 1;
+      }
+    }
+
+    if (targetRowIndex === -1) throw new Error(`找不到原專案編號 [${oldJobNumber}]`);
+
+    // 2. 執行修改 (更新 Spreadsheet)
+    sheet.getRange(targetRowIndex, idxJobNum + 1).setValue(newJobNumber);
+
+    // 3. 寫入活動日誌 (Audit Log)
+    if (idxAudit >= 0) {
+      let logs = [];
+      let cellStrLog = String(data[targetRowIndex - 1][idxAudit] || '').trim();
+      if (cellStrLog.startsWith('[')) { 
+        try { logs = JSON.parse(cellStrLog); } catch(e) {} 
+      }
+      const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+      
+      logs.unshift({
+        timestamp: nowStr,
+        user: activeUser,
+        action: 'Update Job Number',
+        details: `⚠️ 將專案編號由 [${oldJobNumber}] 修改為 [${newJobNumber}]`
+      });
+      sheet.getRange(targetRowIndex, idxAudit + 1).setValue(JSON.stringify(logs));
+    }
+
+    // 4. 清理 Firebase 舊快取，並廣播新資料 (避免出現無主幽靈資料)
+    try {
+      const cleanOldJobNum = oldJobNumber.split('-P')[0];
+      const firebaseUrl = "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app/";
+      
+      // 呼叫 Firebase 刪除 API 砍掉舊節點
+      UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanOldJobNum + ".json", {
+        method: "delete", muteHttpExceptions: true
+      });
+      UrlFetchApp.fetch(firebaseUrl + "project_cache/" + cleanOldJobNum + ".json", {
+        method: "delete", muteHttpExceptions: true
+      });
+      
+      // 廣播新節點 (使用既有的 notifyFirebaseUpdate)
+      if (typeof notifyFirebaseUpdate === 'function') {
+        notifyFirebaseUpdate(newJobNumber, userEmail, activeUser, true);
+      }
+    } catch (fbErr) {
+      console.log("Firebase 快取清理失敗: " + fbErr.message);
+    }
+
+    return { success: true, message: `專案編號已成功修改為 ${newJobNumber}！` };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }

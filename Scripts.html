@@ -194,6 +194,7 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
     if (!targetSection) {
       document.getElementById('urgentTasksArea').innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="fas fa-spinner fa-spin"></i> 讀取任務中...</div>';
       document.getElementById('onTrackTasksArea').innerHTML = '';
+      if(document.getElementById('trackingTasksArea')) document.getElementById('trackingTasksArea').innerHTML = '';
       document.getElementById('upcomingTasksArea').innerHTML = '';
       document.getElementById('pausedTasksArea').innerHTML = '';
       if (document.getElementById('pmAlertArea')) document.getElementById('pmAlertArea').innerHTML = '';
@@ -223,6 +224,7 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
       if (document.getElementById('countOverdue')) document.getElementById('countOverdue').innerText = data.overdue.length;
       if (document.getElementById('countDueSoon')) document.getElementById('countDueSoon').innerText = data.dueSoon.length;
       if (document.getElementById('countOnTrack')) document.getElementById('countOnTrack').innerText = data.onTrack.length;
+      if (document.getElementById('countTracking')) document.getElementById('countTracking').innerText = (data.tracking || []).length;
       if (document.getElementById('countUpcoming')) document.getElementById('countUpcoming').innerText = data.upcoming.length;
       if (document.getElementById('countPaused')) document.getElementById('countPaused').innerText = (data.paused || []).length;
 
@@ -254,6 +256,10 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
             : '<span class="badge bg-warning text-dark ms-1"><i class="fas fa-exclamation-triangle"></i> 待分配</span>';
 
           var pauseBadge = t.status === 'Paused' ? '<span class="badge bg-warning text-dark ms-1">已暫停</span>' : '';
+          
+          // 💡 新增：如果是追蹤狀態，顯示交棒標籤
+          var trackingBadgeHtml = t.isTracking ? '<div class="mt-2 pt-2 border-top"><span class="badge bg-info text-dark w-100" style="white-space: normal; text-align: left;"><i class="fas fa-eye me-1"></i>我已完成，等待 ' + t.currentStepName + ' (' + (t.assignee || '未指派') + ') 處理中</span></div>' : '';
+
           var safeJobNum = String(t.jobNumber).replace(/'/g, "\\'");
 
           html += 
@@ -273,6 +279,7 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
                     '<span><i class="fas fa-user-tie"></i> PM: ' + (t.pmName || '未指定') + '</span>' +
                     '<span><i class="fas fa-shopping-cart"></i> Sales: ' + (t.salesName || '未指定') + '</span>' +
                   '</div>' +
+                  trackingBadgeHtml + // 💡 把交棒標籤放在這裡！
                 '</div>' +
 
                 '<div class="d-flex justify-content-between align-items-center border-top pt-2" style="font-size: 0.85em;">' +
@@ -292,8 +299,8 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
       if (!targetSection || targetSection === 'onTrackTasksArea') {
         renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
       }
-      if (!targetSection || targetSection === 'upcomingTasksArea') {
-        renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
+      if (!targetSection || targetSection === 'trackingTasksArea') {
+        renderCards(data.tracking, 'trackingTasksArea', 'border-info'); // 💡 使用藍色邊框 (border-info)
       }
       if (!targetSection || targetSection === 'pausedTasksArea') {
         renderCards(data.paused, 'pausedTasksArea', 'border-warning');
@@ -745,15 +752,52 @@ function saveTemplateFromModal() {
     }).api_deleteTemplate(name);
   }
 
-  function restoreProject(jobNumber) {
-    google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success) {
-        showAlert('♻️ 專案已成功還原！', 'success');
-        loadRecycleBinView();
-        if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
-      }
-    }).api_manageProjectStatus(jobNumber, 'RESTORE');
-  }
+// ==========================================
+  // 💡 [修復版] 專案回收箱：一鍵還原功能 (支援專屬 Modal)
+  // ==========================================
+  var restoreProjectModalInstance = null;
+  var currentRestoreJobNumber = null;
+
+  document.addEventListener("DOMContentLoaded", function() {
+    var rpEl = document.getElementById('restoreProjectModal');
+    if (rpEl && typeof bootstrap !== 'undefined') restoreProjectModalInstance = new bootstrap.Modal(rpEl);
+  });
+
+  window.restoreProject = function(jobNumber) {
+    currentRestoreJobNumber = jobNumber;
+    var el = document.getElementById('rp_jobNumber');
+    if (el) el.innerText = jobNumber;
+    if (restoreProjectModalInstance) restoreProjectModalInstance.show();
+  };
+
+  window.confirmRestoreProject = function() {
+    if (!currentRestoreJobNumber) return;
+
+    var btn = document.getElementById('rp_btnConfirm');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 還原中...'; }
+
+    var payloadString = JSON.stringify({
+      jobNumber: String(currentRestoreJobNumber).trim(),
+      action: 'RESUME',
+      user: (typeof currentUser === 'object' && currentUser && currentUser.email) ? currentUser.email.split('@')[0] : 'System'
+    });
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle me-1"></i> 確認還原'; }
+        if (res && res.success) {
+          showAlert('🎉 專案 [' + currentRestoreJobNumber + '] 已成功還原！', 'success');
+          if (restoreProjectModalInstance) restoreProjectModalInstance.hide();
+          if (typeof loadRecycleBinView === 'function') loadRecycleBinView();
+          
+          // 觸發全域更新
+          window.dispatchEvent(new Event('refreshAllViews')); 
+        } else {
+          showAlert('❌ 還原失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        }
+      })
+      .api_manageProjectStatus(payloadString);
+  };
 
   function permanentDeleteProject(jobNumber) {
     if(!confirm('⚠️ 警告：這將【永久刪除】專案 ' + jobNumber + ' 且無法復原！確定要執行嗎？')) return;
@@ -1328,42 +1372,43 @@ function unlockUserBtn(btn, originalHtml) {
 
   
 // ==========================================
-// 💡 全域事件廣播機制 (補齊 SCT 商業項目總覽即時同步)
+// 💡 全域事件廣播機制 (解鎖背景更新，切換頁籤瞬間顯現)
 // ==========================================
 window.addEventListener('refreshAllViews', function() {
-  // 1. 若停留在「我的任務」
+  // 💡 1. 永遠在背景更新「我的任務」 (移除 display !== 'none' 限制)
   try { 
-    var dashSec = document.getElementById('individualSection') || document.getElementById('dashboardSection') || document.getElementById('myTasksSection');
-    if (dashSec && dashSec.style.display !== 'none' && typeof loadIndividualView === 'function' && typeof currentUser !== 'undefined' && currentUser) { 
+    if (typeof loadIndividualView === 'function' && typeof currentUser !== 'undefined' && currentUser) { 
       loadIndividualView(currentUser.email, null, true); 
     } 
   } catch(e){}
   
-  // 2. 若停留在「部門看板」
+  // 💡 2. 永遠在背景更新「部門看板」
   try { 
-    var deptSec = document.getElementById('deptHeadSection');
-    if (deptSec && deptSec.style.display !== 'none' && typeof fetchDeptOperationData === 'function') {
+    if (typeof fetchDeptOperationData === 'function') {
       fetchDeptOperationData(); 
     } 
   } catch(e){}
   
-  // 3. 若停留在「客戶追蹤」
+  // 💡 3. 永遠在背景更新「客戶追蹤」
   try { 
-    var clientSec = document.getElementById('clientReviewSection');
-    if (clientSec && clientSec.style.display !== 'none' && typeof loadClientReviewView === 'function') {
+    if (typeof loadClientReviewView === 'function') {
       loadClientReviewView(); 
     } 
   } catch(e){}
 
-  // 🚀 4. 若停留在「SCT 商業項目總覽 / 全局管理」
+  // 4. 若停留在「SCT 商業項目總覽 / 全局管理」
   try {
     var anaSec = document.getElementById('analyticsSection');
     if (anaSec && anaSec.style.display !== 'none' && typeof fetchAnalyticsData === 'function' && typeof currentAnalyticsTimeRange !== 'undefined') {
       fetchAnalyticsData(currentAnalyticsTimeRange);
     }
   } catch(e){}
-});
 
+  // 5. 更新通知鈴鐺
+  if (typeof fetchNotifications === 'function') {
+    fetchNotifications();
+  }
+});
 // ==========================================
 // 💡 全系統「唯一」智慧背景定時器 (每 30 秒，具備嚴格防打斷檢測)
 // ==========================================
@@ -1397,12 +1442,7 @@ function fetchNotifications() {
   }).api_getUserNotifications(email);
 }
 
-// 💡 2. 安全綁定全域刷新事件：避免函數未定義時報錯
-window.addEventListener('refreshAllViews', function() {
-  if (typeof fetchNotifications === 'function') {
-    fetchNotifications();
-  }
-});
+
 
 </script>
 

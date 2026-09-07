@@ -48,7 +48,10 @@
             <div class="card shadow-sm border-0 mb-3">
               <div class="card-header bg-white fw-bold"><i class="fas fa-info-circle text-primary"></i> 專案概況</div>
               <div class="card-body" style="font-size: 0.9em;">
-                <p class="mb-1"><strong>專案編號：</strong> <span id="wf_infoJobNumber" class="fw-bold text-primary">...</span></p>
+                <p class="mb-1 d-flex justify-content-between align-items-center">
+                <span><strong>專案編號：</strong> <span id="wf_infoJobNumber" class="fw-bold text-primary">...</span></span>
+                <button id="btn_editJobNumber" class="btn btn-outline-danger btn-xs py-0 px-1" style="font-size: 0.75em; display: none;" onclick="openEditJobNumberModal()" title="修改專案編號"><i class="fas fa-pen"></i> 修改</button>
+                </p>
                 <p class="mb-1"><strong>客戶名稱：</strong> <span id="wf_clientName" class="text-dark fw-bold">...</span></p>
                 <p class="mb-1"><strong>任務 / 流程：</strong> <span id="wf_taskTemplateName" class="badge bg-info text-dark">...</span></p>
                 <p class="mb-1 d-flex justify-content-between align-items-center">
@@ -128,6 +131,36 @@
     </div>
   </div>
 </div>
+
+<!-- 🚀 修改專案編號 Modal -->
+<div class="modal fade" id="editJobNumberModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content shadow">
+      <div class="modal-header bg-danger text-white py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-id-card me-1"></i> 修改專案編號 (Job Number)</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <div class="alert alert-warning small mb-3 border-warning">
+          <i class="fas fa-exclamation-triangle me-1"></i> <strong>警告：</strong> 專案編號是系統唯一識別碼。如專案編號相同則不能修改，請通知系統管理員。
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold text-muted">目前編號：</label>
+          <input type="text" class="form-control" id="ej_oldJobNumber" disabled>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold text-dark">新專案編號：</label>
+          <input type="text" class="form-control border-danger fw-bold" id="ej_newJobNumber" placeholder="請輸入新編號">
+        </div>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-danger btn-sm fw-bold" id="ej_btnConfirm" onclick="confirmEditJobNumber()"><i class="fas fa-save me-1"></i> 確認修改</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <!-- 🚀 修改總死線 Modal -->
 <div class="modal fade" id="updateDeadlineModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
@@ -399,62 +432,37 @@
   });
 
   // ==========================================
-  // 💡 [0.05 秒極速秒開版] 開啟專案工作流視窗
-  // 優先從 Firebase 快取渲染畫面，背景靜默同步 Google Sheet 最新資料
-  // ==========================================
-  window.openWorkflow = function(jobNumber) {
-    if (typeof listenProjectRealtime === 'function') listenProjectRealtime(jobNumber);
+// 💡 [0.05 秒極速秒開版] 開啟專案工作流視窗
+// ==========================================
+window.openWorkflow = function(jobNumber) {
+  if (typeof listenProjectRealtime === 'function') listenProjectRealtime(jobNumber);
+  
+  try {
+    var modalEl = document.getElementById('workflowModal');
+    if (!modalEl) return showAlert('❌ 錯誤：系統找不到 workflowModal HTML 標籤！', 'danger');
     
-    try {
-      var modalEl = document.getElementById('workflowModal');
-      if (!modalEl) return showAlert('❌ 錯誤：系統找不到 workflowModal HTML 標籤！', 'danger');
-      
-      if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-        workflowModalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
-      }
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+      workflowModalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    }
 
-      document.getElementById('wf_jobNumber').innerText = jobNumber;
-      if (document.getElementById('wf_infoJobNumber')) document.getElementById('wf_infoJobNumber').innerText = jobNumber;
-      
-      workflowModalInstance.show();
+    document.getElementById('wf_jobNumber').innerText = jobNumber;
+    if (document.getElementById('wf_infoJobNumber')) document.getElementById('wf_infoJobNumber').innerText = jobNumber;
+    
+    workflowModalInstance.show();
 
-      var cleanJobNum = String(jobNumber).split('-P')[0];
+    var cleanJobNum = String(jobNumber).split('-P')[0];
 
-      // 🚀 步驟 1：先從 Firebase 快取秒讀（< 50ms 瞬間呈現畫面，撕掉 Loading 轉圈）
-      if (typeof firebase !== 'undefined' && firebase.apps.length) {
-        firebase.database().ref('project_cache/' + cleanJobNum).once('value').then(function(snapshot) {
-          var fbData = snapshot.val();
-          if (fbData && fbData.workflowData) {
-            currentProjectData = fbData;
-            document.getElementById('wf_clientName').innerText = fbData.client || '未設定';
-            document.getElementById('wf_pmName').innerText = fbData.pmName || '未設定';
-            if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = fbData.salesPerson || fbData.sales || '未設定';
-            if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(fbData.mainDeadline);
-            
-            var isSuperManager = currentUser && (['Admin', 'Management'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
-            var dropdownEl = document.getElementById('projectManageDropdown');
-            if (dropdownEl) dropdownEl.style.display = isSuperManager ? 'inline-block' : 'none';
-
-            var btnChangePM = document.getElementById('btn_changePM');
-            if (btnChangePM) btnChangePM.style.display = isSuperManager ? 'inline-block' : 'none';
-
-            renderAuditLog(fbData.auditLog || []);
-            renderDeliverableTabs(fbData.workflowData.deliverables || []);
-          }
-        }).catch(function(e) { 
-          console.warn("Firebase 秒讀讀取跳過或暫無快取:", e); 
-        });
-      }
-
-      // 🚀 步驟 2：背景默默讀取 Google Sheet 最新真實數據進行數據校準
-      google.script.run.withSuccessHandler(function(res) {
-        if(res && res.success) {
-          currentProjectData = res.data;
-          document.getElementById('wf_clientName').innerText = res.data.client || '未設定';
-          document.getElementById('wf_pmName').innerText = res.data.pmName || '未設定';
-          if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = res.data.salesPerson || res.data.sales || '未設定';
-          if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(res.data.mainDeadline);
-
+    // 🚀 步驟 1：先從 Firebase 快取秒讀
+    if (typeof firebase !== 'undefined' && firebase.apps.length) {
+      firebase.database().ref('project_cache/' + cleanJobNum).once('value').then(function(snapshot) {
+        var fbData = snapshot.val();
+        if (fbData && fbData.workflowData) {
+          currentProjectData = fbData;
+          document.getElementById('wf_clientName').innerText = fbData.client || '未設定';
+          document.getElementById('wf_pmName').innerText = fbData.pmName || '未設定';
+          if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = fbData.salesPerson || fbData.sales || '未設定';
+          if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(fbData.mainDeadline);
+          
           var isSuperManager = currentUser && (['Admin', 'Management'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
           var dropdownEl = document.getElementById('projectManageDropdown');
           if (dropdownEl) dropdownEl.style.display = isSuperManager ? 'inline-block' : 'none';
@@ -462,20 +470,51 @@
           var btnChangePM = document.getElementById('btn_changePM');
           if (btnChangePM) btnChangePM.style.display = isSuperManager ? 'inline-block' : 'none';
 
-          renderAuditLog(res.data.auditLog);
-          renderDeliverableTabs(res.data.workflowData.deliverables || []);
-        } else {
-          // 若無快取且背景讀取失敗才顯示提示
-          if (!currentProjectData) {
-            document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
-          }
-        }
-      }).api_getProjectWorkflow(jobNumber);
+          // 💡 顯示修改專案編號按鈕 (僅限主管或該案 PM)
+          var btnEditJobNumber = document.getElementById('btn_editJobNumber');
+          if (btnEditJobNumber) btnEditJobNumber.style.display = isSuperManager || (currentUser && fbData.pmName === currentUser.name) ? 'inline-block' : 'none';
 
-    } catch (err) {
-      showAlert('❌ 開啟視窗時發生錯誤: ' + err.message, 'danger');
+          renderAuditLog(fbData.auditLog || []);
+          renderDeliverableTabs(fbData.workflowData.deliverables || []);
+        }
+      }).catch(function(e) { 
+        console.warn("Firebase 秒讀讀取跳過或暫無快取:", e); 
+      });
     }
-  };
+
+    // 🚀 步驟 2：背景默默讀取 Google Sheet 最新真實數據進行數據校準
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        currentProjectData = res.data;
+        document.getElementById('wf_clientName').innerText = res.data.client || '未設定';
+        document.getElementById('wf_pmName').innerText = res.data.pmName || '未設定';
+        if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = res.data.salesPerson || res.data.sales || '未設定';
+        if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(res.data.mainDeadline);
+
+        var isSuperManager = currentUser && (['Admin', 'Management'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
+        var dropdownEl = document.getElementById('projectManageDropdown');
+        if (dropdownEl) dropdownEl.style.display = isSuperManager ? 'inline-block' : 'none';
+
+        var btnChangePM = document.getElementById('btn_changePM');
+        if (btnChangePM) btnChangePM.style.display = isSuperManager ? 'inline-block' : 'none';
+
+        // 💡 顯示修改專案編號按鈕 (僅限主管或該案 PM)
+        var btnEditJobNumber = document.getElementById('btn_editJobNumber');
+        if (btnEditJobNumber) btnEditJobNumber.style.display = isSuperManager || (currentUser && res.data.pmName === currentUser.name) ? 'inline-block' : 'none';
+
+        renderAuditLog(res.data.auditLog);
+        renderDeliverableTabs(res.data.workflowData.deliverables || []);
+      } else {
+        if (!currentProjectData) {
+          document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
+        }
+      }
+    }).api_getProjectWorkflow(jobNumber);
+
+  } catch (err) {
+    showAlert('❌ 開啟視窗時發生錯誤: ' + err.message, 'danger');
+  }
+};
   
   function renderAuditLog(logs) {
     var logArea = document.getElementById('wf_auditLogArea');
@@ -1477,4 +1516,49 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
       { name: stepName, dept: dept, fields: fields }
     );
   }
+
+// ==========================================
+// 💡 修改專案編號 (Job Number) 彈窗與提交邏輯
+// ==========================================
+var editJobNumberModalInstance = null;
+
+document.addEventListener("DOMContentLoaded", function() {
+  var ejEl = document.getElementById('editJobNumberModal');
+  if (ejEl && typeof bootstrap !== 'undefined') editJobNumberModalInstance = new bootstrap.Modal(ejEl);
+});
+
+function openEditJobNumberModal() {
+  if (!currentProjectData) return;
+  document.getElementById('ej_oldJobNumber').value = currentProjectData.jobNumber;
+  document.getElementById('ej_newJobNumber').value = currentProjectData.jobNumber;
+  if (editJobNumberModalInstance) editJobNumberModalInstance.show();
+}
+
+function confirmEditJobNumber() {
+  var oldJobNumber = document.getElementById('ej_oldJobNumber').value.trim();
+  var newJobNumber = document.getElementById('ej_newJobNumber').value.trim();
+  
+  if (!newJobNumber) return showAlert('⚠️ 請輸入新專案編號！', 'warning');
+  if (oldJobNumber.toLowerCase() === newJobNumber.toLowerCase()) return showAlert('⚠️ 新編號與原編號相同！', 'warning');
+
+  var btn = document.getElementById('ej_btnConfirm');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 檢查並修改中...'; }
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save me-1"></i> 確認修改'; }
+    if (res && res.success) {
+      showAlert('🎉 ' + res.message, 'success');
+      if (editJobNumberModalInstance) editJobNumberModalInstance.hide();
+      
+      // 成功後，自動用新編號重新打開視窗
+      openWorkflow(newJobNumber); 
+      
+      // 觸發外部畫面更新 (例如看板列表)
+      window.dispatchEvent(new Event('refreshAllViews'));
+    } else {
+      showAlert('❌ 修改失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+    }
+  }).api_updateJobNumber(oldJobNumber, newJobNumber);
+}
+
 </script>
