@@ -19,12 +19,20 @@
   document.addEventListener("DOMContentLoaded", function() {
     var userEl = document.getElementById('userModal');
     if (userEl) userModalInstance = new bootstrap.Modal(userEl);
+    // ... 原本的 Modal 初始化 ...
 
-    var npEl = document.getElementById('newProjectModal');
-    if (npEl) newProjectModalInstance = new bootstrap.Modal(npEl);
-
-    var tmplEl = document.getElementById('templateEditModal');
-    if (tmplEl) templateEditModalInstance = new bootstrap.Modal(tmplEl);
+    // 💡 監聽通知面板「被點開」的瞬間
+    var notifCanvas = document.getElementById('notificationOffcanvas');
+    if (notifCanvas) {
+      notifCanvas.addEventListener('show.bs.offcanvas', function () {
+        // 記錄使用者「最後查看通知的時間」
+        localStorage.setItem('pmo_notif_read_time', new Date().getTime());
+        
+        // 點開的瞬間，立刻把右上角紅點隱藏
+        var badge = document.getElementById('notifBadge');
+        if (badge) badge.style.display = 'none'; 
+      });
+    }
 
     fetchDepartmentsAndInit();
   });
@@ -519,11 +527,19 @@ function loadRecycleBinView() {
   // 💡 在變數宣告區新增一個變數來記住舊名字 (可以加在 currentTemplateSteps 附近)
   var currentEditingTemplateName = null;
 
-  function openTemplateModal() {
-    currentEditingTemplateName = null; // 新增時清空舊名字
-    document.getElementById('tmpl_name').value = '';
-    document.getElementById('tmpl_name').readOnly = false;
-    document.getElementById('tmplModalTitle').innerText = '新增視覺化工作流範本';
+  function openTemplateModal(btn) {
+    // 1. 給予視覺回饋 (轉圈圈)
+    if (!btn && typeof event !== 'undefined' && event.currentTarget) btn = event.currentTarget;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 讀取中...';
+    }
+
+    currentEditingTemplateName = null; 
+    var nameInput = document.getElementById('tmpl_name');
+    if(nameInput) { nameInput.value = ''; nameInput.readOnly = false; }
+    var titleEl = document.getElementById('tmplModalTitle');
+    if(titleEl) titleEl.innerText = '新增視覺化工作流範本';
     
     currentTemplateSteps = [
       { step: 1, name: 'PM 開案與 Briefing', dept: 'PM', fields: ['Brief_URL'] },
@@ -533,38 +549,81 @@ function loadRecycleBinView() {
     ];
 
     syncDeptListAndRender(function() {
+      // 2. 解鎖按鈕
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-plus me-1"></i> 新增視覺化範本';
+      }
+      
       renderTemplateStepCards();
-      if(templateEditModalInstance) templateEditModalInstance.show();
+      
+      // 3. 雙重保險：如果 modal instance 遺失，強制重新宣告
+      if (!templateEditModalInstance) {
+        var tmplEl = document.getElementById('templateEditModal');
+        if (tmplEl) templateEditModalInstance = new bootstrap.Modal(tmplEl);
+      }
+      
+      if(templateEditModalInstance) {
+        templateEditModalInstance.show();
+      } else {
+        showAlert('❌ 找不到範本編輯視窗元素', 'danger');
+      }
     });
   }
 
-  function openEditTemplateModal(templateName) {
-    currentEditingTemplateName = templateName; // 💡 記住原本的名字
-    document.getElementById('tmpl_name').value = templateName;
-    document.getElementById('tmpl_name').readOnly = false; // 💡 解鎖！允許修改！
-    document.getElementById('tmplModalTitle').innerText = '編輯範本：' + templateName;
+  function openEditTemplateModal(templateName, btn) {
+    if (!btn && typeof event !== 'undefined' && event.currentTarget) btn = event.currentTarget;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+
+    currentEditingTemplateName = templateName; 
+    var nameInput = document.getElementById('tmpl_name');
+    if (nameInput) { nameInput.value = templateName; nameInput.readOnly = false; }
+    var titleEl = document.getElementById('tmplModalTitle');
+    if (titleEl) titleEl.innerText = '編輯範本：' + templateName;
 
     syncDeptListAndRender(function() {
-      google.script.run.withSuccessHandler(function(res) {
-        if(res && res.success) {
-          var target = res.data.find(function(t){ return t.name === templateName; });
-          if(target) {
-            try { currentTemplateSteps = JSON.parse(target.json || '[]'); } catch(e){}
-            renderTemplateStepCards();
-            if(templateEditModalInstance) templateEditModalInstance.show();
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-edit"></i> 編輯'; }
+          if(res && res.success) {
+            var target = res.data.find(function(t){ return t.name === templateName; });
+            if(target) {
+              try { currentTemplateSteps = JSON.parse(target.json || '[]'); } catch(e){}
+              renderTemplateStepCards();
+              
+              if (!templateEditModalInstance) {
+                var tmplEl = document.getElementById('templateEditModal');
+                if (tmplEl) templateEditModalInstance = new bootstrap.Modal(tmplEl);
+              }
+              if(templateEditModalInstance) templateEditModalInstance.show();
+            }
           }
-        }
-      }).api_getTemplates();
+        })
+        .withFailureHandler(function(err) {
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-edit"></i> 編輯'; }
+          showAlert('❌ 讀取範本資料失敗', 'danger');
+        })
+        .api_getTemplates();
     });
   }
 
   function syncDeptListAndRender(callback) {
-    google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success) {
-        cachedDeptList = res.data.map(function(d){ return d.name; });
-      }
-      if(callback) callback();
-    }).api_getDepartments();
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if(res && res.success) {
+          cachedDeptList = res.data.map(function(d){ return d.name; });
+        }
+        if(callback) callback();
+      })
+      .withFailureHandler(function(err) {
+        console.error("部門資料同步失敗:", err);
+        // 💡 防呆：就算失敗了，也要繼續執行 callback 把視窗打開！
+        if(callback) callback(); 
+      })
+      .api_getDepartments();
   }
 
 // ==========================================
@@ -1472,7 +1531,7 @@ function fetchNotifications() {
 }
 
 // ==========================================
-// 💡 2. 訊息中心：繪製動態通知牆與小紅點
+// 💡 訊息中心：繪製動態通知牆與小紅點
 // ==========================================
 function renderNotifications(notifs) {
   var list = document.getElementById('notificationList');
@@ -1480,31 +1539,29 @@ function renderNotifications(notifs) {
   
   if (!list) return;
 
-  // 1. 如果沒有新通知
   if (!notifs || notifs.length === 0) {
     list.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-double fa-2x mb-3 opacity-25"></i><br>目前沒有新通知或待辦事項</div>';
-    if (badge) badge.style.display = 'none'; // 隱藏小紅點
+    if (badge) badge.style.display = 'none';
     return;
   }
   
-  // 2. 更新右上角小紅點數量
-  if (badge) {
-    badge.innerText = notifs.length > 99 ? '99+' : notifs.length;
-    badge.style.display = 'inline-block';
-    // 加入一點彈跳動畫提示有新訊息
-    badge.classList.add('animate__animated', 'animate__bounceIn');
-    setTimeout(function(){ badge.classList.remove('animate__animated', 'animate__bounceIn'); }, 1000);
-  }
+  // 💡 1. 取得使用者上次點開面板的時間
+  var lastReadTime = parseInt(localStorage.getItem('pmo_notif_read_time') || '0');
+  var unreadCount = 0;
   
-  // 3. 繪製通知清單
   var html = '';
   notifs.forEach(function(n) {
-    // 格式化時間 (MM/DD HH:mm)
     var d = new Date(n.time);
     var timeStr = isNaN(d.getTime()) ? n.rawTime : ((d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'));
     
-    // 依據通知級別給予不同的背景提示色
+    // 💡 2. 判斷這筆通知是否為「未讀」（它的發生時間 > 上次查看時間）
+    var notifTime = d.getTime();
+    var isUnread = notifTime > lastReadTime;
+    if (isUnread) unreadCount++;
+
     var bgClass = (n.type === 'OVERDUE' || n.type === 'NUDGE') ? 'bg-danger bg-opacity-10 border-start border-4 border-danger' : '';
+    // 如果是未讀的普通通知，給個淡淡的藍色底色做區別
+    if (isUnread && !bgClass) bgClass = 'bg-primary bg-opacity-10'; 
 
     html += 
       '<a href="#" class="list-group-item list-group-item-action py-3 border-bottom ' + bgClass + '" onclick="if(typeof openWorkflow === \'function\') { openWorkflow(\'' + (n.title.match(/\[(.*?)\]/) ? n.title.match(/\[(.*?)\]/)[1] : '') + '\'); }">' +
@@ -1516,14 +1573,23 @@ function renderNotifications(notifs) {
       '</a>';
   });
   
+  // 💡 3. 更新右上角小紅點 (只顯示未讀數量)
+  if (badge) {
+    if (unreadCount > 0) {
+      badge.innerText = unreadCount > 99 ? '99+' : unreadCount;
+      badge.style.display = 'inline-block';
+      badge.classList.add('animate__animated', 'animate__bounceIn');
+      setTimeout(function(){ badge.classList.remove('animate__animated', 'animate__bounceIn'); }, 1000);
+    } else {
+      badge.style.display = 'none'; // 沒有「新」通知就隱藏數字
+    }
+  }
+  
   list.innerHTML = html;
 
-  // 檢查並觸發緊急彈窗
   if (typeof checkAndShowUrgentAlerts === 'function') {
     checkAndShowUrgentAlerts(notifs);
   }
-
-
 }
 
 
@@ -1681,7 +1747,9 @@ function checkAndShowUrgentAlerts(notifs) {
 
   // 4. 繪製緊急卡片 (加入右上角的 X 按鈕)
   var listHtml = '';
-  urgentItems.slice(0, 5).forEach(function(item) {
+  // 💡 解除限制：有多少緊急任務就顯示多少，視窗會自動出現捲軸
+  urgentItems.forEach(function(item) {
+
     listHtml += 
       '<div class="list-group-item list-group-item-action p-3 position-relative" id="urgent_item_' + item.uniqueId + '">' +
         '<div class="d-flex w-100 justify-content-between align-items-start mb-1">' +
