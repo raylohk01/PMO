@@ -176,6 +176,10 @@ function switchSection(sectionId) {
     if (document.getElementById('nav_deptKanban')) document.getElementById('nav_deptKanban').style.display = canDept ? 'block' : 'none';
     if (document.getElementById('nav_management')) document.getElementById('nav_management').style.display = canManage ? 'block' : 'none';
     if (document.getElementById('nav_admin')) document.getElementById('nav_admin').style.display = canAdmin ? 'block' : 'none';
+
+    // 💡 補上這行：登入初始化完成後，立刻去抓取右上角通知與檢查緊急彈窗！
+    if (typeof fetchNotifications === 'function') fetchNotifications();
+
   }
 
   function hideAllSections() { 
@@ -1467,6 +1471,61 @@ function fetchNotifications() {
   }).api_getUserNotifications(email);
 }
 
+// ==========================================
+// 💡 2. 訊息中心：繪製動態通知牆與小紅點
+// ==========================================
+function renderNotifications(notifs) {
+  var list = document.getElementById('notificationList');
+  var badge = document.getElementById('notifBadge');
+  
+  if (!list) return;
+
+  // 1. 如果沒有新通知
+  if (!notifs || notifs.length === 0) {
+    list.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-check-double fa-2x mb-3 opacity-25"></i><br>目前沒有新通知或待辦事項</div>';
+    if (badge) badge.style.display = 'none'; // 隱藏小紅點
+    return;
+  }
+  
+  // 2. 更新右上角小紅點數量
+  if (badge) {
+    badge.innerText = notifs.length > 99 ? '99+' : notifs.length;
+    badge.style.display = 'inline-block';
+    // 加入一點彈跳動畫提示有新訊息
+    badge.classList.add('animate__animated', 'animate__bounceIn');
+    setTimeout(function(){ badge.classList.remove('animate__animated', 'animate__bounceIn'); }, 1000);
+  }
+  
+  // 3. 繪製通知清單
+  var html = '';
+  notifs.forEach(function(n) {
+    // 格式化時間 (MM/DD HH:mm)
+    var d = new Date(n.time);
+    var timeStr = isNaN(d.getTime()) ? n.rawTime : ((d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'));
+    
+    // 依據通知級別給予不同的背景提示色
+    var bgClass = (n.type === 'OVERDUE' || n.type === 'NUDGE') ? 'bg-danger bg-opacity-10 border-start border-4 border-danger' : '';
+
+    html += 
+      '<a href="#" class="list-group-item list-group-item-action py-3 border-bottom ' + bgClass + '" onclick="if(typeof openWorkflow === \'function\') { openWorkflow(\'' + (n.title.match(/\[(.*?)\]/) ? n.title.match(/\[(.*?)\]/)[1] : '') + '\'); }">' +
+        '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
+          '<strong class="text-' + n.color + '"><i class="fas ' + n.icon + ' me-1"></i> ' + n.title + '</strong>' +
+          '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
+        '</div>' +
+        '<p class="mb-0 small text-dark">' + n.message + '</p>' +
+      '</a>';
+  });
+  
+  list.innerHTML = html;
+
+  // 檢查並觸發緊急彈窗
+  if (typeof checkAndShowUrgentAlerts === 'function') {
+    checkAndShowUrgentAlerts(notifs);
+  }
+
+
+}
+
 
 
 </script>
@@ -1557,4 +1616,142 @@ function fetchNotifications() {
       });
     };
   })();
+
+
+
+// ==========================================
+// 🚨 智慧緊急彈窗與計時器邏輯 (Local Storage)
+// ==========================================
+var urgentModalInstance = null;
+
+document.addEventListener("DOMContentLoaded", function() {
+  var uaEl = document.getElementById('urgentAlertModal');
+  if (uaEl && typeof bootstrap !== 'undefined') {
+    urgentModalInstance = new bootstrap.Modal(uaEl);
+  }
+});
+
+// ==========================================
+// 🚨 智慧緊急彈窗與計時器邏輯 (Local Storage)
+// ==========================================
+
+// 攔截通知並判斷是否彈出
+function checkAndShowUrgentAlerts(notifs) {
+  // 🛑【測試模式開關】若測試完畢，請改回 false
+  var TEST_MODE = true; 
+
+  // 💡 1. 讀取已經被使用者點擊「X」隱藏的通知 ID 紀錄
+  var dismissedAlerts = JSON.parse(localStorage.getItem('pmo_dismissed_alerts') || '[]');
+
+  var urgentItems = notifs.filter(function(n) {
+    if (!n.isUrgent && !TEST_MODE) return false;
+    
+    // 💡 2. 產生這筆通知的唯一識別碼 (專案編號_通知類型_發生時間)
+    // 把空格或特殊符號濾掉避免 HTML ID 報錯
+    var safeTime = String(n.rawTime || n.time).replace(/[^a-zA-Z0-9]/g, ''); 
+    n.uniqueId = (n.jobNumber || 'NA') + '_' + n.type + '_' + safeTime;
+    
+    // 💡 3. 如果這個 ID 已經在「被隱藏」的黑名單中，就過濾掉不顯示
+    if (dismissedAlerts.includes(n.uniqueId)) return false;
+    
+    return true;
+  });
+  
+  if (urgentItems.length === 0) {
+    if (TEST_MODE) {
+       urgentItems.push({
+         color: 'danger', icon: 'fa-bug', title: '【測試模式】虛擬緊急通知',
+         message: '這是一則測試用的通知，看到這個畫面代表功能運作正常！',
+         jobNumber: '', uniqueId: 'test_123'
+       });
+    } else {
+       return; 
+    }
+  }
+
+  var now = new Date().getTime();
+  
+  if (!TEST_MODE) {
+    var muteUntil = localStorage.getItem('pmo_mute_until');
+    if (muteUntil && now < parseInt(muteUntil)) return;
+
+    var lastAlertTime = localStorage.getItem('pmo_last_alert_time');
+    if (lastAlertTime && (now - parseInt(lastAlertTime) < 7200000)) return;
+  }
+
+  // 4. 繪製緊急卡片 (加入右上角的 X 按鈕)
+  var listHtml = '';
+  urgentItems.slice(0, 5).forEach(function(item) {
+    listHtml += 
+      '<div class="list-group-item list-group-item-action p-3 position-relative" id="urgent_item_' + item.uniqueId + '">' +
+        '<div class="d-flex w-100 justify-content-between align-items-start mb-1">' +
+          '<strong class="text-' + item.color + ' pe-4"><i class="fas ' + item.icon + ' me-1"></i>' + item.title + '</strong>' +
+          // 💡 這裡加上右上角的 X 按鈕
+          '<button type="button" class="btn-close" style="font-size: 0.6em; margin-top: 3px;" onclick="dismissUrgentItem(\'' + item.uniqueId + '\')" title="關閉此通知 (不再顯示)"></button>' +
+        '</div>' +
+        '<p class="mb-2 small text-dark">' + item.message + '</p>' +
+        '<div class="text-end">' +
+          '<button class="btn btn-sm btn-primary py-0 shadow-sm" onclick="handleUrgentClick(\'' + (item.jobNumber || '') + '\')">進入處理 <i class="fas fa-arrow-right fa-sm"></i></button>' +
+        '</div>' +
+      '</div>';
+  });
+  
+  var listEl = document.getElementById('urgentAlertList');
+  if(listEl) listEl.innerHTML = listHtml;
+
+  if (urgentModalInstance) {
+    urgentModalInstance.show();
+    if (!TEST_MODE) localStorage.setItem('pmo_last_alert_time', now);
+  }
+}
+
+// 💡 點擊「X」單獨關閉該項通知
+function dismissUrgentItem(uniqueId) {
+  // 1. 把 ID 寫入 LocalStorage，讓他永遠不再出現
+  var dismissedAlerts = JSON.parse(localStorage.getItem('pmo_dismissed_alerts') || '[]');
+  if (!dismissedAlerts.includes(uniqueId)) {
+    dismissedAlerts.push(uniqueId);
+    // 限制儲存數量避免塞爆瀏覽器容量 (只記住最近 200 筆被關閉的)
+    if (dismissedAlerts.length > 200) dismissedAlerts.shift(); 
+    localStorage.setItem('pmo_dismissed_alerts', JSON.stringify(dismissedAlerts));
+  }
+
+  // 2. 畫面上直接移除該卡片
+  var itemEl = document.getElementById('urgent_item_' + uniqueId);
+  if (itemEl) {
+    itemEl.remove();
+    
+    // 3. 如果卡片被刪光了，自動關閉整個紅色大視窗
+    var listEl = document.getElementById('urgentAlertList');
+    if (listEl && listEl.children.length === 0) {
+      if (urgentModalInstance) urgentModalInstance.hide();
+    }
+  }
+}
+
+// 點擊「進入處理」：關閉彈窗並自動打開專案
+function handleUrgentClick(jobNumber) {
+  if (urgentModalInstance) urgentModalInstance.hide();
+  if (jobNumber && typeof window.openWorkflow === 'function') {
+    window.openWorkflow(jobNumber);
+  }
+}
+
+// 點擊「今天不再顯示」：靜音至午夜
+function muteUrgentAlertsToday() {
+  var midnight = new Date();
+  midnight.setHours(23, 59, 59, 999);
+  localStorage.setItem('pmo_mute_until', midnight.getTime());
+  if (urgentModalInstance) urgentModalInstance.hide();
+  showAlert('🔇 已靜音，今天午夜前將不再彈出緊急提醒。', 'info');
+}
+
+// 點擊「2小時後提醒」或打叉：保持預設的 2 小時冷卻期
+function setUrgentAlertTimer() {
+  localStorage.removeItem('pmo_mute_until'); // 確保沒有被永久靜音
+  if (urgentModalInstance) urgentModalInstance.hide();
+  showAlert('⏰ 系統將在 2 小時後再次提醒您。', 'info');
+}
+
+
 </script>
