@@ -5,10 +5,29 @@
 function api_getCurrentUser() {
   try {
     const email = Session.getActiveUser().getEmail();
-    const user = getUserByEmail(email);
-    if (!user) {
-      return { success: true, data: { email: email, name: email.split('@')[0], department: 'PM', role: 'Management' } };
+    
+    // 💡 1. 嚴格網域檢查：擋下非 hk01 的私人帳號
+    if (!email.toLowerCase().endsWith('@hk01.com')) {
+      return { 
+        success: false, 
+        errorType: 'INVALID_DOMAIN', 
+        email: email, 
+        message: '僅限 @hk01.com 企業帳號登入' 
+      };
     }
+
+    const user = getUserByEmail(email);
+    
+    // 💡 2. 修補漏洞：若在系統名單找不到，回傳無權限 (而不是給管理員權限)
+    if (!user) {
+      return { 
+        success: false, 
+        errorType: 'UNAUTHORIZED_USER', 
+        email: email, 
+        message: '您的帳號不在系統授權名單內，請聯繫管理員。' 
+      };
+    }
+    
     return { success: true, data: user };
   } catch(e) {
     return { success: false, message: e.message };
@@ -371,6 +390,18 @@ function api_createProject(payload) {
     const headers = data[0].map(h => String(h).trim().toLowerCase());
 
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    
+    // 💡 新增：防撞專案編號全庫掃描機制
+    const reqJobNum = payload.jobNumber ? String(payload.jobNumber).trim() : '';
+    if (reqJobNum && idxJobNum >= 0) {
+      for (let r = 1; r < data.length; r++) {
+        // 嚴格比對：忽略大小寫與前後空白
+        if (String(data[r][idxJobNum]).trim().toLowerCase() === reqJobNum.toLowerCase()) {
+          throw new Error('撞名警告：專案編號 [' + reqJobNum + '] 已經存在，請更換另一個編號！');
+        }
+      }
+    }
+
     const idxClient = headers.findIndex(h => h.includes('client'));
     const idxSales = headers.findIndex(h => h.includes('sales'));
     const idxPM = headers.findIndex(h => h.includes('pmname') || h === 'pm');
@@ -498,6 +529,23 @@ function api_getDashboardData(simEmail) {
     const userRole = user ? user.role : 'Member';
     const userDept = user ? user.department : '';
 
+    // 💡 預先載入所有同事的部門對應表 (供主管看板判定使用)
+    let cachedDeptMap = {};
+    const uSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+    if (uSheet) {
+      const uData = uSheet.getDataRange().getValues();
+      if (uData.length > 1) {
+        const uHeaders = uData[0].map(h => String(h).trim().toLowerCase());
+        const uIdxName = uHeaders.findIndex(h => h === 'name' || h === 'username');
+        const uIdxDept = uHeaders.findIndex(h => h === 'department' || h === 'team');
+        for (let i = 1; i < uData.length; i++) {
+          if (uIdxName >= 0 && uIdxDept >= 0) {
+            cachedDeptMap[String(uData[i][uIdxName]).trim()] = String(uData[i][uIdxDept]).trim();
+          }
+        }
+      }
+    }
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if(!sheet) return { success: true, data: { overdue:[], dueSoon:[], onTrack:[], upcoming:[], paused:[] } };
 
@@ -516,7 +564,7 @@ function api_getDashboardData(simEmail) {
     const today = new Date();
     today.setHours(0,0,0,0);
 
-    let result = { overdue: [], dueSoon: [], onTrack: [], upcoming: [], paused: [], actionRequired: [] };
+    let result = { overdue: [], dueSoon: [], onTrack: [], upcoming: [], paused: [], tracking: [], actionRequired: [] };
 
     for(let i = 1; i < data.length; i++) {
       try {
@@ -556,6 +604,7 @@ function api_getDashboardData(simEmail) {
 
             let isMyTask = false;
             let isUpcomingForUser = false;
+            let isTrackingForUser = false; // 💡 新增：是否為追蹤狀態
 
             const isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(userRole);
             const isProjectPM = pmName && pmName.toLowerCase() === userName.toLowerCase();
@@ -565,26 +614,34 @@ function api_getDashboardData(simEmail) {
             } else {
               let activeMatch = false;
               let futureMatch = false;
+              let pastMatch = false; 
 
               if (userRole === 'Team Head') {
-                activeMatch = activeSteps.some(s => s.dept === userDept);
+                // 主管除了看自己部門，也要看被自己部門「接手」的 Client 關卡
+                activeMatch = activeSteps.some(s => s.dept === userDept || (String(s.dept).toLowerCase().includes('client') && s.assignee && cachedDeptMap && cachedDeptMap[s.assignee] === userDept));
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
+                pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.dept === userDept && s.status === 'Completed');
               } else {
+                // 個人看板：只要 assignee 是我，這關就是我的 Active 任務！不管它是不是 Client 關卡。
                 activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
+                pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase() && s.status === 'Completed');
               }
 
-              if (activeMatch) {
+              // 💡 互斥邏輯修復：若正在處理或未來要處理，就不算在「純追蹤」
+              if (activeMatch || futureMatch) {
                 isMyTask = true;
-              } else if (futureMatch) {
+                if (!activeMatch && futureMatch) isUpcomingForUser = true;
+              } else if (pastMatch) {
                 isMyTask = true;
-                isUpcomingForUser = true; 
+                isTrackingForUser = true; // 真的沒事了，才進入追蹤
               }
             }
 
             if (!isMyTask) return; 
 
             const displayStep = primaryActiveStep;
+
             const currentStepName = displayStep ? (displayStep.dept + ' ' + displayStep.name) : '未開始';
             const currentAssignee = displayStep ? displayStep.assignee : '';
 
@@ -613,20 +670,44 @@ function api_getDashboardData(simEmail) {
               type: d.type || 'Standard', status: d.status || 'Pending Start',
               deadline: effectiveDeadlineStr, daysLeft: daysLeft,
               currentStepName: currentStepName, assignee: currentAssignee,
-              pmName: pmName, salesName: salesName
+              pmName: pmName, salesName: salesName,
+              isTracking: isTrackingForUser // 💡 新增屬性
             };
 
             let isPaused = d.status === 'Paused' || pStatus.includes('pause');
             
-            // 💡 關鍵修復：只要專案已經啟動，即使下一關還在等待派案，也算在進行中，避免退回待啟動區
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
             let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
+            
+            // 💡 只有按下發送按鈕 (Reviewing) 才算真正交棒！沒按下前都算在 Active (進行中)
+            let isClientReviewing = primaryActiveStep && String(primaryActiveStep.dept).toLowerCase().includes('client') && primaryActiveStep.reviewStatus === 'Reviewing';
+            
+            if (isClientReviewing && isActive) {
+               isActive = false;
+               isTrackingForUser = true;
+               item.isTracking = true;
+            } else if (isActive) {
+               // 💡 強力互斥：只要是進行中，就絕對不可能是追蹤中！
+               isTrackingForUser = false;
+               item.isTracking = false;
+            }
+
+            // 💡 終極防護：主管或 PM 視角
+            if ((isSuperManager || isProjectPM) && isActive && !isClientReviewing) {
+               isTrackingForUser = false;
+               isUpcomingForUser = false;
+               item.isTracking = false;
+            }
 
             if (isPaused) {
               result.paused.push(item);
+            } else if (isTrackingForUser) {
+              result.tracking.push(item); 
             } else if (isUpcomingForUser) {
               result.upcoming.push(item); 
             } else if (isActive) {
+
+
               if (daysLeft < 0) result.overdue.push(item);
               else if (daysLeft <= 3) result.dueSoon.push(item);
               else result.onTrack.push(item);
@@ -648,6 +729,7 @@ function api_getDashboardData(simEmail) {
     result.overdue.sort(sortByDeadline);
     result.dueSoon.sort(sortByDeadline);
     result.onTrack.sort(sortByDeadline);
+    result.tracking.sort(sortByDeadline); // 💡 新增
     result.upcoming.sort(sortByDeadline);
     result.paused.sort(sortByDeadline);
 
@@ -832,10 +914,10 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
               }
 
               if (typeof notifyFirebaseUpdate === 'function') {
-                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+                notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
               }
 
-              return { success: true, message: '派案與 PM 資料同步成功！' };
+              return { success: true, message: '派案與 PM 資料同步成功！', updatedWorkflowData: wfData };
             }
           }
         }
@@ -1040,9 +1122,17 @@ function api_getCompletedProjects(keyword, startDate, endDate) {
     
 
 // ==========================================
-// 💡 更新工作流狀態 API (修正版：完美身分同步，斷絕讀取時間差)
+// 💡 更新工作流狀態 API (防彈鎖定版：解決連點閃退與文件衝突)
 // ==========================================
 function api_updateWorkflowState(jobNumber, deliverableId, payload) {
+  // 💡 加入排隊鎖：防止手速過快導致 Google Sheets 寫入衝突
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); // 最多排隊等待 10 秒
+  } catch (e) {
+    return { success: false, message: '系統忙碌中，請稍候再試！' };
+  }
+
   try {
     const userEmail = payload.userEmail || Session.getActiveUser().getEmail();
     const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
@@ -1097,7 +1187,6 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           deliverable.startedAt = nowIso;
           if (deliverable.workflow && deliverable.workflow.length > 0) {
             let firstS = deliverable.workflow[0];
-            // 💡 關鍵修復：若第一關無負責人，狀態改為 Pending
             firstS.status = firstS.assignee ? 'In Progress' : 'Pending';
             firstS.startedAt = firstS.assignee ? nowIso : null;
             firstS.pendingAssignmentAt = firstS.assignee ? null : nowIso;
@@ -1121,12 +1210,18 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
             let nextStepObj = deliverable.workflow.find(s => s.step > stepNum && s.status !== 'Completed');
             if (nextStepObj) {
               deliverable.currentStep = nextStepObj.step;
+              
+              let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
+              
+              if (!nextStepObj.assignee && isNextClientStep && currentStepObj.assignee) {
+                nextStepObj.assignee = currentStepObj.assignee;
+              }
+
               if (nextStepObj.assignee) {
                 nextStepObj.status = 'In Progress';
                 nextStepObj.startedAt = nowIso;
                 nextStepObj.pendingAssignmentAt = null;
               } else {
-                // 💡 關鍵修復：若下一關沒有負責人，狀態改為 Pending
                 nextStepObj.status = 'Pending'; 
                 nextStepObj.pendingAssignmentAt = nowIso;
               }
@@ -1138,6 +1233,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           }
         }
 
+        // 💡 寫入前再三確認文件一致性
+        SpreadsheetApp.flush();
         sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
 
         let allDeliverablesCompleted = (wfData.deliverables || [])
@@ -1164,7 +1261,7 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
         }
 
         if (typeof notifyFirebaseUpdate === 'function') {
-          notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
+          notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
         }
 
         return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData };
@@ -1173,6 +1270,8 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
     throw new Error('找不到專案 ' + jobNumber);
   } catch (e) {
     return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock(); // 💡 確保無論成功失敗，都會釋放鎖
   }
 }
 
@@ -1681,10 +1780,14 @@ function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
 
       sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
       sheet.getRange(rowIndex, logCol).setValue(JSON.stringify(logData));
+      
+      // 💡 終極防閃爍：把剛算好的 wfData 傳給廣播引擎，讓它同步更新快取！
+      if (typeof notifyFirebaseUpdate === 'function') notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), userName, true, wfData);
     }
-
-    return { success: true, message: '已成功送入客戶審批！' };
+    // 💡 回傳最新資料給前端原地渲染
+    return { success: true, message: '已成功送入客戶審批！', updatedWorkflowData: wfData };
   } catch (e) {
+
     return { success: false, message: e.message };
   }
 }
@@ -1876,13 +1979,31 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
             const reviewStatus = String(activeStep.reviewStatus || '').trim();
             const currentRealStepName = activeStep.name || ('Step ' + activeStep.step);
 
-            if (activeDept === targetDept.toLowerCase()) {
-              const isClientReview = (reviewStatus === 'Reviewing') || 
+            // 💡 新增：判定這是否為本部門同事「自動接手」的 Client 審批關卡
+            let isClientStep = activeDept.includes('client') || currentRealStepName.toLowerCase().includes('client') || currentRealStepName.toLowerCase().includes('review');
+            let isOwnedByMyDeptMember = false;
+            
+            if (isClientStep && assignee) {
+               // 往前找最近一個「非 Client」的關卡
+               let prevStep = d.workflow.slice(0, activeStep.step - 1).reverse().find(s => s.dept !== 'Client');
+               // 如果上一關是我們部門，而且接手的人跟上一關的人一樣，就認定這張卡歸我們部門管！
+               if (prevStep && String(prevStep.dept).toLowerCase() === targetDept.toLowerCase() && assignee === prevStep.assignee) {
+                 isOwnedByMyDeptMember = true;
+               }
+            }
+
+            // 💡 條件放寬：原來屬於我們部門的，或是被我們部門同事接手的 Client 關卡，通通放行！
+            if (activeDept === targetDept.toLowerCase() || isOwnedByMyDeptMember) {
+              
+              // 💡 嚴格判定：必須真的按下發送按鈕 (reviewStatus === 'Reviewing')，才算進入客戶審批！
+              const isClientReview = (reviewStatus === 'Reviewing') && (
                                      (currentRealStepName.toLowerCase().includes('client')) || 
-                                     (activeDept.includes('client'));
+                                     (activeDept.includes('client')) || 
+                                     isOwnedByMyDeptMember );
 
               let taskCategory = 'ACTIVE';
               if (isClientReview) taskCategory = 'CLIENT_REVIEW';
+
               else if (deadline < todayStr) taskCategory = 'OVERDUE';
               else if (!assignee || assignee === '未指派') taskCategory = 'UNASSIGNED';
               else {
@@ -1954,10 +2075,25 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
       }
     }
 
-    // 將去重後的物件轉為陣列
-    const completedTasks = Object.keys(completedMap).map(k => completedMap[k]);
+    // 💡 互斥去重引擎 (防彈升級版)：確保任務不會產生分身
+    let aliveIds = {};
     
-    // 把去重後的已完成卡片併入日曆呈現
+    // 把所有活著的卡片 ID 登記起來
+    activeTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+    pipelineTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+    clientReviewTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+    riskTasks.forEach(t => { if(t.deliverableId) aliveIds[t.deliverableId] = true; });
+
+    let completedTasks = [];
+    Object.keys(completedMap).forEach(k => {
+      let ct = completedMap[k];
+      // 💡 只有當這張卡片「沒有」在活著的名單中時，才允許它出現在近期交棒
+      if (!aliveIds[ct.deliverableId]) {
+        completedTasks.push(ct);
+      }
+    });
+    
+    // 把過濾後的已完成卡片併入日曆呈現
     completedTasks.forEach(ct => {
       calendarTasks.push(ct);
       calendarMap[ct.deadline] = (calendarMap[ct.deadline] || 0) + 1;
@@ -1967,6 +2103,7 @@ function api_getDeptOperationData(dept, timeRange, startDate, endDate) {
 
     return {
       success: true,
+
       data: {
         capacityList: capacityList,
         calendarMap: calendarMap,
@@ -2208,7 +2345,18 @@ function api_submitWorkflowStep(jobNumber, deliverableId, stepNumber, formData, 
 
                 const nextStepIdx = currentStepIdx + 1;
                 if (nextStepIdx < targetD.workflow.length) {
-                  targetD.workflow[nextStepIdx].status = 'In Progress';
+                  let nextStepObj = targetD.workflow[nextStepIdx];
+                  
+                  // 自動繼承
+                  let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
+                  if (!nextStepObj.assignee && isNextClientStep && targetD.workflow[currentStepIdx].assignee) {
+                    nextStepObj.assignee = targetD.workflow[currentStepIdx].assignee;
+                  }
+
+                  nextStepObj.status = nextStepObj.assignee ? 'In Progress' : 'Pending';
+                  if (nextStepObj.status === 'In Progress') {
+                    nextStepObj.startedAt = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+                  }
                 } else {
                   targetD.status = 'Completed';
                 }
@@ -2488,7 +2636,11 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
 
-              return { success: true, message: `已成功將專案退回至 Step ${rollbackStepNum}` };
+              if (typeof notifyFirebaseUpdate === 'function') {
+                notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), Session.getActiveUser().getEmail().split('@')[0], true, wfData);
+              }
+
+              return { success: true, message: `已成功將專案退回至 Step ${rollbackStepNum}`, updatedWorkflowData: wfData };
             }
           }
         }
@@ -2704,7 +2856,8 @@ function api_triggerDynamicClientRevision(jobNumber, deliverableId, stepNumber, 
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
 
-              return { success: true, message: `已產生修改流程，此項目為第 ${targetD.revisionCount} 次退回！` };
+              if (typeof notifyFirebaseUpdate === 'function') notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), activeUser, true, wfData);
+              return { success: true, message: `已產生修改流程，此項目為第 ${targetD.revisionCount} 次退回！`, updatedWorkflowData: wfData };
             }
           }
         }
@@ -3005,10 +3158,8 @@ function sendSystemEmail(toUser, subject, title, message) {
   }
 }
 
-// ==========================================
-// 💡 全量 Firebase 廣播與快取推送引擎 (秒讀基礎)
-// ==========================================
-function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
+// 💡 全量 Firebase 廣播與快取推送引擎 (加入同步寫入快取機制)
+function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent, updatedWfData) {
   try {
     const cleanJobNum = String(jobNumber || 'GLOBAL').split('-P')[0];
     const firebaseUrl = "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app/";
@@ -3021,15 +3172,16 @@ function notifyFirebaseUpdate(jobNumber, userEmail, userName, isGlobalEvent) {
     });
 
     if (cleanJobNum !== 'GLOBAL') {
-      // 1. 廣播時間戳記
       UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanJobNum + ".json", {
         method: "patch", contentType: "application/json", payload: payload, muteHttpExceptions: true
       });
 
-      // 2. 🚀 將專案完整內容寫入 Firebase 快取 (存於 project_cache/ 下)
       try {
         let freshProject = api_getProjectWorkflow(cleanJobNum);
         if (freshProject && freshProject.success) {
+          // 如果有傳入最新算好的 wfData，就直接覆蓋掉舊的，確保快取絕對是最新的！
+          if (updatedWfData) freshProject.data.workflowData = updatedWfData;
+          
           UrlFetchApp.fetch(firebaseUrl + "project_cache/" + cleanJobNum + ".json", {
             method: "put",
             contentType: "application/json",
@@ -3080,4 +3232,96 @@ function cleanYMD(raw) {
     if (!isNaN(d.getTime())) return Utilities.formatDate(d, "GMT+8", "yyyy-MM-dd");
   }
   return str.split('T')[0].split(' ')[0];
+}
+
+// ==========================================
+// 💡 修改專案編號 API (具備防撞名檢查與 Firebase 舊節點清理)
+// ==========================================
+function api_updateJobNumber(oldJobNumber, newJobNumber) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    const activeUser = userEmail ? userEmail.split('@')[0] : 'System';
+
+    oldJobNumber = String(oldJobNumber || '').trim();
+    newJobNumber = String(newJobNumber || '').trim();
+
+    if (!oldJobNumber || !newJobNumber) throw new Error('新舊專案編號不能為空');
+    if (oldJobNumber.toLowerCase() === newJobNumber.toLowerCase()) throw new Error('新舊專案編號相同，無需修改');
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+    if (!sheet) throw new Error('找不到 Projects 工作表');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+    
+    const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+    const idxAudit = headers.findIndex(h => h === 'textjobtype' || h.includes('textjobtype') || h.includes('audit'));
+    
+    if (idxJobNum === -1) throw new Error('找不到專案編號欄位');
+
+    let targetRowIndex = -1;
+
+    // 1. 全局掃描：防撞名檢查 & 尋找目標列
+    for (let i = 1; i < data.length; i++) {
+      const currentJob = String(data[i][idxJobNum] || '').trim();
+      
+      // 🚨 防撞名機制：如果新編號已經存在，立刻拋出錯誤並中斷
+      if (currentJob.toLowerCase() === newJobNumber.toLowerCase()) {
+        throw new Error(`撞名警告：專案編號 [${newJobNumber}] 已被其他專案使用，請更換另一個編號！`);
+      }
+      
+      // 定位舊專案行數
+      if (currentJob.toLowerCase() === oldJobNumber.toLowerCase()) {
+        targetRowIndex = i + 1;
+      }
+    }
+
+    if (targetRowIndex === -1) throw new Error(`找不到原專案編號 [${oldJobNumber}]`);
+
+    // 2. 執行修改 (更新 Spreadsheet)
+    sheet.getRange(targetRowIndex, idxJobNum + 1).setValue(newJobNumber);
+
+    // 3. 寫入活動日誌 (Audit Log)
+    if (idxAudit >= 0) {
+      let logs = [];
+      let cellStrLog = String(data[targetRowIndex - 1][idxAudit] || '').trim();
+      if (cellStrLog.startsWith('[')) { 
+        try { logs = JSON.parse(cellStrLog); } catch(e) {} 
+      }
+      const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
+      
+      logs.unshift({
+        timestamp: nowStr,
+        user: activeUser,
+        action: 'Update Job Number',
+        details: `⚠️ 將專案編號由 [${oldJobNumber}] 修改為 [${newJobNumber}]`
+      });
+      sheet.getRange(targetRowIndex, idxAudit + 1).setValue(JSON.stringify(logs));
+    }
+
+    // 4. 清理 Firebase 舊快取，並廣播新資料 (避免出現無主幽靈資料)
+    try {
+      const cleanOldJobNum = oldJobNumber.split('-P')[0];
+      const firebaseUrl = "https://hk01-pmo-realtime-default-rtdb.asia-southeast1.firebasedatabase.app/";
+      
+      // 呼叫 Firebase 刪除 API 砍掉舊節點
+      UrlFetchApp.fetch(firebaseUrl + "projects/" + cleanOldJobNum + ".json", {
+        method: "delete", muteHttpExceptions: true
+      });
+      UrlFetchApp.fetch(firebaseUrl + "project_cache/" + cleanOldJobNum + ".json", {
+        method: "delete", muteHttpExceptions: true
+      });
+      
+      // 廣播新節點 (使用既有的 notifyFirebaseUpdate)
+      if (typeof notifyFirebaseUpdate === 'function') {
+        notifyFirebaseUpdate(newJobNumber, userEmail, activeUser, true);
+      }
+    } catch (fbErr) {
+      console.log("Firebase 快取清理失敗: " + fbErr.message);
+    }
+
+    return { success: true, message: `專案編號已成功修改為 ${newJobNumber}！` };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }

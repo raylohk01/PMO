@@ -125,3 +125,26 @@
 
   </div>
 </div>
+
+
+<!-- 🚀 還原專案專用 Modal -->
+<div class="modal fade" id="restoreProjectModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content shadow">
+      <div class="modal-header bg-success text-white py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-undo me-1"></i> 確認還原專案</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <p class="mb-0 text-dark">確定要將專案 <strong id="rp_jobNumber" class="text-primary fs-5"></strong> 從回收箱還原嗎？</p>
+        <p class="small text-muted mt-2 mb-0">還原後，專案將回到「進行中」狀態並重新出現在任務看板。</p>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" id="rp_btnConfirm" onclick="confirmRestoreProject()"><i class="fas fa-check-circle me-1"></i> 確認還原</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+

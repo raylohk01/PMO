@@ -15,7 +15,8 @@
     </button>
     
     <div class="collapse navbar-collapse" id="navbarNav">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+      <!-- 💡 加上 desktop-nav-links，手機端會自動隱藏 -->
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0 desktop-nav-links">
         <li class="nav-item" id="nav_tasks">
           <a class="nav-link fw-bold" href="#" onclick="switchSection('individualSection')">我的任務</a>
         </li>
@@ -57,3 +58,31 @@
     </div>
   </div>
 </nav>
+
+<!-- 💡 Mobile UX: 專屬底部導覽列 (Bottom Navigation Bar) -->
+<div class="bottom-nav d-md-none">
+  <a href="#" class="bottom-nav-item active" id="bnav_tasks" onclick="switchSection('individualSection'); updateBottomNav('bnav_tasks');">
+    <i class="fas fa-tasks"></i><span>任務</span>
+  </a>
+  <a href="#" class="bottom-nav-item" id="bnav_clientReview" onclick="switchSection('clientReviewSection'); updateBottomNav('bnav_clientReview');">
+    <i class="fas fa-clock"></i><span>追蹤</span>
+  </a>
+  <a href="#" class="bottom-nav-item" id="bnav_deptKanban" onclick="switchSection('deptHeadSection'); updateBottomNav('bnav_deptKanban');">
+    <i class="fas fa-columns"></i><span>看板</span>
+  </a>
+  <a href="#" class="bottom-nav-item" id="bnav_management" onclick="switchSection('analyticsSection'); updateBottomNav('bnav_management');">
+    <i class="fas fa-tv"></i><span>管理</span>
+  </a>
+  <a href="#" class="bottom-nav-item" id="bnav_admin" onclick="switchSection('adminSection'); updateBottomNav('bnav_admin');">
+    <i class="fas fa-cog"></i><span>設定</span>
+  </a>
+</div>
+
+<script>
+  // 連動底部導航按鈕的亮燈狀態
+  function updateBottomNav(activeId) {
+    document.querySelectorAll('.bottom-nav-item').forEach(function(el) { el.classList.remove('active'); });
+    var target = document.getElementById(activeId);
+    if (target) target.classList.add('active');
+  }
+</script>

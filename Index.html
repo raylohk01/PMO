@@ -2,6 +2,10 @@
 <html lang="zh-HK">
 <head>
   <meta charset="UTF-8">
+  <!-- 💡 Mobile UX: 鎖定縮放與 App-like 體驗 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>HK01 PMO Dashboard</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -22,9 +26,66 @@
     .color-picker { width: 40px; height: 35px; padding: 0; border: none; cursor: pointer; }
     .task-card-clickable { cursor: pointer; transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out; }
     .task-card-clickable:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important; }
+
+    /* === 📱 Mobile UX 優化專區 (僅手機端生效) === */
+    @media (max-width: 768px) {
+      body { padding-bottom: 75px; } /* 預留底部導航空間 */
+      .desktop-nav-links { display: none !important; } /* 隱藏桌機版上方文字導覽 */
+      
+      /* 底部導航列 (Bottom Navigation) */
+      .bottom-nav {
+        position: fixed; bottom: 0; left: 0; right: 0; height: 65px;
+        background-color: #ffffff; box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        display: flex; justify-content: space-around; align-items: center;
+        z-index: 1040;
+        padding-bottom: env(safe-area-inset-bottom); /* 適配 iPhone 底部小白條 */
+      }
+      .bottom-nav-item {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        color: #6c757d; text-decoration: none; font-size: 0.7rem; width: 100%; height: 100%;
+      }
+      .bottom-nav-item.active { color: #005088; font-weight: bold; }
+      .bottom-nav-item i { font-size: 1.3rem; margin-bottom: 3px; }
+      
+      /* 部門看板橫向滑動優化 (Scroll Snapping) */
+      .kanban-scroll-container {
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+      .kanban-scroll-container > div {
+        scroll-snap-align: center;
+        min-width: 85vw !important; /* 手機上放寬卡片佔比至 85% */
+      }
+      .kanban-scroll-container::-webkit-scrollbar { display: none; } /* 隱藏醜陋滾動條 */
+    }
+    
+    /* 電腦版自動隱藏底部導航 */
+    @media (min-width: 769px) { .bottom-nav { display: none !important; } }
+
+
   </style>
 </head>
 <body>
+
+<!-- 🛡️ 身份驗證阻斷遮罩 (預設隱藏) -->
+  <div id="authBlocker" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #f4f6f9; z-index: 100000; justify-content: center; align-items: center; flex-direction: column;">
+    <div class="card shadow-lg border-0" style="max-width: 400px; width: 90%; border-radius: 12px; overflow: hidden;">
+      <div class="bg-primary text-white text-center py-4">
+        <i class="fas fa-shield-alt fa-3x mb-3"></i>
+        <h4 class="fw-bold mb-0">HK01 PMO 安全驗證</h4>
+      </div>
+      <div class="card-body p-4 text-center">
+        <h5 class="text-danger fw-bold mb-3" id="authErrorTitle">無效的網域</h5>
+        <p class="text-muted mb-4" id="authErrorMessage">
+          您目前使用的帳號 (<strong id="authCurrentEmail" class="text-dark"></strong>) 不具備存取權限。<br>請切換為 <strong class="text-primary">@hk01.com</strong> 企業帳號。
+        </p>
+        <!-- 💡 自動抓取當前網址並跳轉 Google 帳號切換頁面 -->
+        <button class="btn btn-primary btn-lg w-100 fw-bold shadow-sm" onclick="switchGoogleAccount()">
+          <i class="fab fa-google me-2"></i>切換 Google 帳號
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- 🚀 專屬動態通知牆 (Offcanvas 側邊面板) -->
   <div class="offcanvas offcanvas-end shadow-lg" tabindex="-1" id="notificationOffcanvas" aria-labelledby="notificationOffcanvasLabel">
@@ -125,6 +186,14 @@
         }
       }, duration);
     };
+
+    function switchGoogleAccount() {
+      // 動態抓取當前網址，確保切換後能完美跳回原位
+      var currentUrl = encodeURIComponent(window.location.href);
+      window.location.href = 'https://accounts.google.com/AccountChooser?continue=' + currentUrl;
+    }
+
+
   </script>
 
 </body>

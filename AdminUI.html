@@ -39,12 +39,18 @@
   <div class="card shadow-sm border-0">
     <div class="card-body p-0">
       <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0 w-100" style="table-layout: fixed; min-width: 900px;">
+          <!-- 💡 終極武器：使用 colgroup 強制鎖死三個欄位的真實比例 -->
+          <colgroup>
+            <col style="width: 20%;">
+            <col style="width: 68%;">
+            <col style="width: 12%;">
+          </colgroup>
           <thead class="table-dark">
             <tr>
-              <th style="width: 20%;">範本名稱</th>
-              <th style="width: 70%;">步驟流程鏈</th>
-              <th class="text-end pe-3" style="width: 10%;">操作</th>
+              <th>範本名稱</th>
+              <th>步驟流程鏈</th>
+              <th class="text-end pe-3">操作</th>
             </tr>
           </thead>
           <tbody id="templateTableBody">
