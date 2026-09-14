@@ -333,11 +333,16 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
         renderCards(data.onTrack, 'onTrackTasksArea', 'border-success');
       }
       if (!targetSection || targetSection === 'trackingTasksArea') {
-        renderCards(data.tracking, 'trackingTasksArea', 'border-info'); // 💡 使用藍色邊框 (border-info)
+        renderCards(data.tracking, 'trackingTasksArea', 'border-info');
+      }
+      // 💡 補上這行：將「待啟動 / 即將到來」的任務繪製出來！
+      if (!targetSection || targetSection === 'upcomingTasksArea') {
+        renderCards(data.upcoming, 'upcomingTasksArea', 'border-secondary');
       }
       if (!targetSection || targetSection === 'pausedTasksArea') {
         renderCards(data.paused, 'pausedTasksArea', 'border-warning');
       }
+
     })
     .withFailureHandler(function(err) {
       console.error("❌ [診斷] Google Apps Script 執行崩潰:", err);
@@ -630,6 +635,13 @@ function loadRecycleBinView() {
 // 💡 [範本編輯器修復版] 支援上移/下移、邊界鎖定與並行群組自動鄰近排序
 // ==========================================
 
+// ==========================================
+// 💡 [範本編輯器升級版] 支援關卡模式 (Step Mode) 與 Checklist
+// ==========================================
+
+// ==========================================
+// 💡 [範本編輯器升級版] 支援 Checklist + 補充資料欄位
+// ==========================================
 function renderTemplateStepCards() {
   var container = document.getElementById('tmpl_stepsContainer');
   if(!container) return;
@@ -656,11 +668,8 @@ function renderTemplateStepCards() {
       deptOptions += '<option value="' + dept + '" ' + selected + '>' + dept + '</option>';
     });
 
-    // 💡 防呆 1：嚴格只有「最後一個」關卡才是最終把關！
     var isFirstStep = (idx === 0);
     var isLastStep = (idx === totalSteps - 1);
-
-    // 防呆 2：Step 1 及 最終 Step 不可移除
     var isLockedStep = isFirstStep || isLastStep;
 
     var badgeClass = isLastStep ? 'bg-dark text-warning border border-warning' : 'bg-primary';
@@ -670,9 +679,8 @@ function renderTemplateStepCards() {
     var disabledAttr = (isLastStep && !canEditFinal) ? 'disabled title="僅 Management 可修改最終結案關卡"' : '';
     var bgClass = isLastStep ? 'bg-light' : 'bg-white';
 
-    // 💡 上移 / 下移 / 移除 按鈕控制
-    var canMoveUp = (idx > 1 && idx < totalSteps - 1); // 不可移至 Step 1 之上
-    var canMoveDown = (idx >= 1 && idx < totalSteps - 2); // 不可移至最終 Step 之下
+    var canMoveUp = (idx > 1 && idx < totalSteps - 1); 
+    var canMoveDown = (idx >= 1 && idx < totalSteps - 2); 
 
     var moveUpBtn = canMoveUp 
       ? '<button class="btn btn-xs btn-outline-secondary me-1 py-0 px-2" onclick="moveTemplateStep(' + idx + ', -1)" title="上移關卡"><i class="fas fa-arrow-up"></i> 上移</button>' 
@@ -683,20 +691,67 @@ function renderTemplateStepCards() {
       : '<button class="btn btn-xs btn-outline-secondary me-1 py-0 px-2 opacity-25" disabled><i class="fas fa-arrow-down"></i> 下移</button>';
 
     var removeBtn = isLockedStep
-      ? '<span class="badge bg-secondary text-light py-1 px-2"><i class="fas fa-lock me-1"></i>固定關卡 (不可移除)</span>'
+      ? '<span class="badge bg-secondary text-light py-1 px-2"><i class="fas fa-lock me-1"></i>固定關卡</span>'
       : '<button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="removeTemplateStep(' + idx + ')" ' + disabledAttr + '><i class="fas fa-times-circle me-1"></i>移除此關</button>';
 
-    var fieldsHtml = '';
-    (step.fields || []).forEach(function(field, fIdx) {
-      fieldsHtml += 
-      '<div class="input-group input-group-sm mb-1">' +
-        '<span class="input-group-text"><i class="fas fa-pen"></i></span>' +
-        '<input type="text" class="form-control" value="' + field + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value)" placeholder="欄位名稱 (如: Draft_URL)" ' + readOnlyAttr + '>' +
-        '<button class="btn btn-outline-danger" type="button" onclick="removeStepField(' + idx + ', ' + fIdx + ')" ' + disabledAttr + '><i class="fas fa-trash"></i></button>' +
-      '</div>';
-    });
-
     var parallelGroupVal = step.parallelGroup || '';
+    var stepMode = step.mode || 'STANDARD';
+    var modeOptions = 
+      '<option value="STANDARD" ' + (stepMode==='STANDARD'?'selected':'') + '>🚀 標準推進關卡</option>' +
+      '<option value="CHECKLIST" ' + (stepMode==='CHECKLIST'?'selected':'') + '>☑️ Check List 關卡</option>' +
+      '<option value="APPROVAL_PREV" ' + (stepMode==='APPROVAL_PREV'?'selected':'') + '>🤝 繼承審批 (上一關人員)</option>' +
+      '<option value="APPROVAL_PM" ' + (stepMode==='APPROVAL_PM'?'selected':'') + '>👑 PM 強制審批</option>' +
+      '<option value="FILE_ONLY" ' + (stepMode==='FILE_ONLY'?'selected':'') + '>📁 文件上傳關卡</option>';
+
+    var fieldsHtml = '';
+    
+    // 💡 1. 處理 Checklist 區塊
+    if (stepMode === 'CHECKLIST') {
+      fieldsHtml += '<div class="mb-3 bg-light p-2 rounded border">' +
+        '<div class="d-flex justify-content-between align-items-center mb-1">' +
+          '<small class="fw-bold text-info"><i class="fas fa-list-check me-1"></i> 預設檢查項目 (Checklist)</small>' +
+          '<button class="btn btn-xs btn-outline-info py-0 px-2" style="font-size:0.75em;" onclick="addChecklistItem(' + idx + ')" ' + disabledAttr + '><i class="fas fa-plus"></i> 新增檢查項</button>' +
+        '</div>';
+          
+      var items = step.checklistItems || [];
+      if (items.length === 0) fieldsHtml += '<div class="text-muted small mb-1">尚未設定檢查項目</div>';
+      
+      items.forEach(function(item, iIdx) {
+        fieldsHtml += 
+        '<div class="input-group input-group-sm mb-1">' +
+          '<span class="input-group-text bg-white"><i class="far fa-square text-muted"></i></span>' +
+          '<input type="text" class="form-control border-start-0" value="' + item + '" onchange="updateChecklistItem(' + idx + ', ' + iIdx + ', this.value)" placeholder="檢查項目說明" ' + readOnlyAttr + '>' +
+          '<button class="btn btn-outline-danger" type="button" onclick="removeChecklistItem(' + idx + ', ' + iIdx + ')" ' + disabledAttr + '><i class="fas fa-trash"></i></button>' +
+        '</div>';
+      });
+      fieldsHtml += '</div>';
+    }
+
+    // 💡 2. 處理填寫/補充欄位區塊 (STANDARD, FILE_ONLY, 或 CHECKLIST 附帶的欄位)
+    if (stepMode === 'STANDARD' || stepMode === 'FILE_ONLY' || stepMode === 'CHECKLIST') {
+      var fieldTitle = stepMode === 'CHECKLIST' ? '此關卡需填寫之補充資料 / 網址 (選填)' : (stepMode === 'STANDARD' ? '此關卡需填寫欄位' : '要求上傳之文件/連結');
+      fieldsHtml += '<div class="bg-white p-2 rounded border">' +
+        '<div class="d-flex justify-content-between align-items-center mb-1">' +
+          '<small class="fw-bold text-muted"><i class="fas fa-tasks me-1"></i> ' + fieldTitle + '</small>' +
+          '<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:0.75em;" onclick="addStepField(' + idx + ')" ' + disabledAttr + '><i class="fas fa-plus"></i> 新增欄位</button>' +
+        '</div>';
+          
+      (step.fields || []).forEach(function(field, fIdx) {
+        fieldsHtml += 
+        '<div class="input-group input-group-sm mb-1">' +
+          '<span class="input-group-text"><i class="fas fa-pen"></i></span>' +
+          '<input type="text" class="form-control" value="' + field + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value)" placeholder="欄位名稱 (如: Brief_URL / 備註)" ' + readOnlyAttr + '>' +
+          '<button class="btn btn-outline-danger" type="button" onclick="removeStepField(' + idx + ', ' + fIdx + ')" ' + disabledAttr + '><i class="fas fa-trash"></i></button>' +
+        '</div>';
+      });
+      fieldsHtml += '</div>';
+    } else if (stepMode === 'APPROVAL_PREV' || stepMode === 'APPROVAL_PM') {
+      var approverText = stepMode === 'APPROVAL_PM' ? '專案負責 PM' : '上一關卡執行者';
+      fieldsHtml += '<div class="alert alert-warning py-2 px-3 mb-0 small border-0">' +
+        '<i class="fas fa-exclamation-triangle me-1"></i> 系統將自動指派給 <strong>' + approverText + '</strong> 進行審批。<br>' +
+        '畫面將提供【審批通過】與【退回修改】按鈕，無須設定輸入欄位。' +
+      '</div>';
+    }
 
     html += 
     '<div class="card mb-3 ' + cardBorder + '">' +
@@ -709,14 +764,20 @@ function renderTemplateStepCards() {
           '<div>' + removeBtn + '</div>' +
         '</div>' +
         '<div class="row g-2 mb-2">' +
-          '<div class="col-md-5">' +
+          '<div class="col-md-3">' +
             '<label class="form-label small text-muted mb-1">關卡名稱</label>' +
             '<input type="text" class="form-control form-control-sm fw-bold ' + (isLastStep ? 'text-primary' : '') + '" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱" ' + readOnlyAttr + '>' +
           '</div>' +
-          '<div class="col-md-4">' +
+          '<div class="col-md-3">' +
             '<label class="form-label small text-muted mb-1">負責部門</label>' +
             '<select class="form-select form-select-sm" onchange="currentTemplateSteps[' + idx + '].dept = this.value" ' + disabledAttr + '>' +
               deptOptions +
+            '</select>' +
+          '</div>' +
+          '<div class="col-md-3">' +
+            '<label class="form-label small text-muted mb-1">關卡模式</label>' +
+            '<select class="form-select form-select-sm border-info" onchange="changeStepMode(' + idx + ', this.value)" ' + disabledAttr + '>' +
+              modeOptions +
             '</select>' +
           '</div>' +
           '<div class="col-md-3">' +
@@ -724,13 +785,7 @@ function renderTemplateStepCards() {
             '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 A (相同則並行)" ' + readOnlyAttr + '>' +
           '</div>' +
         '</div>' +
-        '<div class="bg-white p-2 rounded border">' +
-          '<div class="d-flex justify-content-between align-items-center mb-1">' +
-            '<small class="fw-bold text-muted"><i class="fas fa-tasks me-1"></i> 此關卡需填寫欄位</small>' +
-            '<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size:0.75em;" onclick="addStepField(' + idx + ')" ' + disabledAttr + '><i class="fas fa-plus"></i> 新增欄位</button>' +
-          '</div>' +
-          fieldsHtml +
-        '</div>' +
+        fieldsHtml +
       '</div>' +
     '</div>';
   });
@@ -779,6 +834,42 @@ function addTemplateStep() {
     renderTemplateStepCards();
   }
 
+  // 💡 切換關卡模式
+function changeStepMode(stepIdx, newMode) {
+  var step = currentTemplateSteps[stepIdx];
+  step.mode = newMode;
+  
+  // 模式切換時，確保對應的資料結構存在
+  if (newMode === 'CHECKLIST' && !step.checklistItems) {
+    step.checklistItems = ['新檢查項目'];
+  } else if (newMode === 'STANDARD' || newMode === 'FILE_ONLY') {
+    if (!step.fields) step.fields = ['URL'];
+  }
+  
+  // 重新渲染畫面
+  renderTemplateStepCards();
+}
+
+// 💡 新增 Checklist 項目
+function addChecklistItem(stepIdx) {
+  if (!currentTemplateSteps[stepIdx].checklistItems) {
+    currentTemplateSteps[stepIdx].checklistItems = [];
+  }
+  currentTemplateSteps[stepIdx].checklistItems.push('新檢查項目');
+  renderTemplateStepCards();
+}
+
+// 💡 更新 Checklist 項目
+function updateChecklistItem(stepIdx, itemIdx, val) {
+  currentTemplateSteps[stepIdx].checklistItems[itemIdx] = val;
+}
+
+// 💡 移除 Checklist 項目
+function removeChecklistItem(stepIdx, itemIdx) {
+  currentTemplateSteps[stepIdx].checklistItems.splice(itemIdx, 1);
+  renderTemplateStepCards();
+}
+
   function updateStepField(stepIdx, fieldIdx, val) {
     currentTemplateSteps[stepIdx].fields[fieldIdx] = val;
   }
@@ -787,6 +878,8 @@ function addTemplateStep() {
     currentTemplateSteps[stepIdx].fields.splice(fieldIdx, 1);
     renderTemplateStepCards();
   }
+
+
 
   // 💡 儲存範本前：自動校正與排序並行群組，消除「隔著中間關卡」的並行斷層
 function saveTemplateFromModal() {
@@ -980,37 +1073,76 @@ function saveUser() {
     .api_saveUser(userData);
 }
 
-  function openNewProjectModal() {
-    document.getElementById('newProjectForm').reset();
-    
-    var today = new Date();
-    var todayStr = today.toISOString().split('T')[0];
-    var future5 = new Date();
-    future5.setDate(today.getDate() + 5);
-    var future5Str = future5.toISOString().split('T')[0];
+  // ==========================================
+// 💡 [修復版] 開啟新增專案 Modal (加入防呆與彈窗防護)
+// ==========================================
+function openNewProjectModal(btn) {
+  // 1. 給予點擊視覺回饋 (轉圈圈)
+  if (!btn && typeof event !== 'undefined' && event.currentTarget) btn = event.currentTarget;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 讀取中...';
+  }
 
-    document.getElementById('np_tentativeDate').value = todayStr;
-    document.getElementById('np_deadline').value = future5Str;
+  // 2. 雙重保險：確保 Modal Instance 存在
+  if (!newProjectModalInstance) {
+    var npEl = document.getElementById('newProjectModal');
+    if (npEl && typeof bootstrap !== 'undefined') {
+      newProjectModalInstance = new bootstrap.Modal(npEl);
+    }
+  }
 
-    document.getElementById('np_deliverablesArea').innerHTML = '<div class="text-center text-muted my-3"><i class="fas fa-spinner fa-spin"></i> 載入範本中...</div>';
-    if (newProjectModalInstance) newProjectModalInstance.show();
+  // 3. 表單重置與預設日期填寫
+  var form = document.getElementById('newProjectForm');
+  if (form) form.reset();
+  
+  var today = new Date();
+  var todayStr = today.toISOString().split('T')[0];
+  var future5 = new Date();
+  future5.setDate(today.getDate() + 5);
+  var future5Str = future5.toISOString().split('T')[0];
 
-    google.script.run.withSuccessHandler(function(res) {
-      if(res.success) {
+  if (document.getElementById('np_tentativeDate')) document.getElementById('np_tentativeDate').value = todayStr;
+  if (document.getElementById('np_deadline')) document.getElementById('np_deadline').value = future5Str;
+
+  var delivArea = document.getElementById('np_deliverablesArea');
+  if (delivArea) delivArea.innerHTML = '<div class="text-center text-muted my-3"><i class="fas fa-spinner fa-spin"></i> 載入範本中...</div>';
+
+  // 4. 強制彈出視窗
+  if (newProjectModalInstance) {
+    newProjectModalInstance.show();
+  } else {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i> 新增專案'; }
+    return showAlert('❌ 找不到新增專案視窗元素 (newProjectModal)', 'danger');
+  }
+
+  // 5. 抓取範本資料 (加上 withFailureHandler 防卡死)
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i> 新增專案'; }
+      if(res && res.success) {
         availableTemplates = res.data;
-        document.getElementById('np_deliverablesArea').innerHTML = ''; 
+        if (delivArea) delivArea.innerHTML = ''; 
         deliverableCounter = 1;
-        addDeliverableRow(); 
+        if (typeof addDeliverableRow === 'function') addDeliverableRow(); 
       } else {
-        document.getElementById('np_deliverablesArea').innerHTML = '<div class="alert alert-danger">範本載入失敗: ' + res.message + '</div>';
+        if (delivArea) delivArea.innerHTML = '<div class="alert alert-danger">範本載入失敗: ' + (res ? res.message : '未知錯誤') + '</div>';
       }
-    }).api_getTemplates();
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i> 新增專案'; }
+      if (delivArea) delivArea.innerHTML = '<div class="alert alert-danger">後端連線失敗: ' + err.message + '</div>';
+    })
+    .api_getTemplates();
 
-    google.script.run.withSuccessHandler(function(res) {
+  // 6. 抓取 PM 團隊負載
+  google.script.run
+    .withSuccessHandler(function(res) {
       if(res && res.success) {
         var pmSelect = document.getElementById('np_pmSelect');
-        var members = res.data.members;
-        var stats = res.data.stats;
+        if (!pmSelect) return;
+        var members = res.data.members || [];
+        var stats = res.data.stats || {};
         
         var html = '<option value="" disabled selected>請選擇 PM...</option>';
         members.forEach(function(pm) {
@@ -1020,8 +1152,9 @@ function saveUser() {
         });
         pmSelect.innerHTML = html;
       }
-    }).api_getPMTeamWorkload();
-  }
+    })
+    .api_getPMTeamWorkload();
+}
 
   // ==========================================
 // 💡 [升級版] 新增子項目 UI (支援稍後補充 TBD)
@@ -1704,7 +1837,7 @@ document.addEventListener("DOMContentLoaded", function() {
 // 攔截通知並判斷是否彈出
 function checkAndShowUrgentAlerts(notifs) {
   // 🛑【測試模式開關】若測試完畢，請改回 false
-  var TEST_MODE = true; 
+  var TEST_MODE = false; 
 
   // 💡 1. 讀取已經被使用者點擊「X」隱藏的通知 ID 紀錄
   var dismissedAlerts = JSON.parse(localStorage.getItem('pmo_dismissed_alerts') || '[]');

@@ -352,6 +352,7 @@ function api_createProject(payload) {
         ];
       }
 
+      // 🎯 需覆蓋替換的區塊 (加入 mode 與 checklistItems) ----
       let formattedSteps = steps.map((s, sIdx) => {
         const dName = s.dept || 'PM';
         const defaultAssignee = (dName.toUpperCase() === 'PM') ? masterPmName : (s.assignee || '');
@@ -360,6 +361,8 @@ function api_createProject(payload) {
           step: sIdx + 1,
           name: s.name || ('步驟 ' + (sIdx + 1)),
           dept: dName,
+          mode: s.mode || 'STANDARD',             // 💡 關鍵補回：傳承關卡模式
+          checklistItems: s.checklistItems || [], // 💡 關鍵補回：傳承預設 CheckList 清單
           assignee: defaultAssignee,
           status: 'Pending Start',
           isStarted: false,
@@ -699,15 +702,15 @@ function api_getDashboardData(simEmail) {
                item.isTracking = false;
             }
 
+            // 💡 [修復版] 分流邏輯：精準區分待啟動、進行中與追蹤中
             if (isPaused) {
               result.paused.push(item);
             } else if (isTrackingForUser) {
               result.tracking.push(item); 
-            } else if (isUpcomingForUser) {
+            } else if (isUpcomingForUser || d.status === 'Pending Start' || d.status === 'Not Started' || primaryActiveStep.status === 'Pending Start' || primaryActiveStep.status === 'Pending') {
+              // 💡 待啟動/即將到來的任務，通通放入 upcoming
               result.upcoming.push(item); 
             } else if (isActive) {
-
-
               if (daysLeft < 0) result.overdue.push(item);
               else if (daysLeft <= 3) result.dueSoon.push(item);
               else result.onTrack.push(item);
@@ -880,6 +883,16 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                 });
               } else {
                 targetS.assignee = assignee;
+              }
+
+              // 🎯 需覆蓋替換的區塊 (更換負責人時，自動同步後續繼承審批關卡) ----
+              // 💡 關鍵修復：若緊接著的下一關為「繼承審批 (APPROVAL_PREV)」，自動將其負責人同步更換為新 assignee
+              let targetIdx = targetD.workflow.findIndex(s => s.step === targetS.step);
+              if (targetIdx >= 0 && targetIdx + 1 < targetD.workflow.length) {
+                let nextS = targetD.workflow[targetIdx + 1];
+                if (nextS.mode === 'APPROVAL_PREV') {
+                  nextS.assignee = assignee;
+                }
               }
 
               let isCurrentTurn = (targetS.step === targetD.currentStep) || 
@@ -1211,9 +1224,13 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
             if (nextStepObj) {
               deliverable.currentStep = nextStepObj.step;
               
-              let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
+              // 🎯 需覆蓋替換的區塊 (加入 APPROVAL_PREV 模式自動繼承上一關負責人) ----
+              let isNextInheritStep = (nextStepObj.mode === 'APPROVAL_PREV') ||
+                                      nextStepObj.dept.toLowerCase().includes('client') || 
+                                      nextStepObj.name.toLowerCase().includes('client') || 
+                                      nextStepObj.name.toLowerCase().includes('review');
               
-              if (!nextStepObj.assignee && isNextClientStep && currentStepObj.assignee) {
+              if (!nextStepObj.assignee && isNextInheritStep && currentStepObj.assignee) {
                 nextStepObj.assignee = currentStepObj.assignee;
               }
 
@@ -1233,9 +1250,9 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           }
         }
 
-        // 💡 寫入前再三確認文件一致性
-        SpreadsheetApp.flush();
+        // 🎯 需覆蓋替換的區塊 (加上 SpreadsheetApp.flush()) ----
         sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
+        SpreadsheetApp.flush(); // 💡 關鍵修復：setValue 後立刻強制 Flush 落盤，防止背景讀到舊資料導致畫面閃退！
 
         let allDeliverablesCompleted = (wfData.deliverables || [])
           .filter(d => d.status !== 'Deleted' && d.status !== 'Recycle Bin')
