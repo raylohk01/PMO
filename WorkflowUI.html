@@ -506,8 +506,10 @@ window.openWorkflow = function(jobNumber) {
             activeDeliverableId = fbData.workflowData.deliverables[targetIndex].id;
           }
 
-          renderAuditLog(fbData.auditLog || [], activeDeliverableId); // 💡 加入參數
+          // 🎯 需覆蓋替換的區塊 (將 Tabs 移到上面先執行) ----
+          // 💡 關鍵修復：先畫 Tabs 並確立 activeDeliverableId，再畫 Log，過濾器才不會失效！
           renderDeliverableTabs(fbData.workflowData.deliverables || []);
+          renderAuditLog(fbData.auditLog || [], activeDeliverableId);
         }
       }).catch(function(e) { 
         console.warn("Firebase 秒讀讀取跳過或暫無快取:", e); 
@@ -538,8 +540,11 @@ window.openWorkflow = function(jobNumber) {
             activeDeliverableId = res.data.workflowData.deliverables[targetIndex].id;
         }
 
-        renderAuditLog(res.data.auditLog || [], activeDeliverableId); // 💡 加入參數
+        // 🎯 需覆蓋替換的區塊 (將 Tabs 移到上面先執行) ----
+        // 💡 關鍵修復：先畫 Tabs 並確立 activeDeliverableId，再畫 Log
         renderDeliverableTabs(res.data.workflowData.deliverables || []);
+        renderAuditLog(res.data.auditLog || [], activeDeliverableId);
+
       } else {
         if (!currentProjectData) {
           document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
@@ -849,9 +854,9 @@ function renderDeliverableContent(deliverable) {
       '</div>';
     }
 
-    // 🎯 需覆蓋替換的區塊 (嚴格包裝在 isCompleted 內，防止退回時雙重顯示) ----
-    // 💡 關鍵修復：把 submittedData 的唯讀展示區塊「嚴格包裝」在 isCompleted 條件內
-    // 這樣當關卡被退回 (變成 In Progress) 時，才不會發生「唯讀舊資料」跟「輸入框」同時出現的 UI 災難
+    // 🎯 需覆蓋替換的區塊 (將顯示條件嚴格改回 isCompleted) ----
+    // 💡 關鍵修復：將唯讀展示區塊嚴格限制在「已完成」狀態。
+    // 退回狀態 (isCurrent) 時，所有歷史紀錄將直接轉化為下方的可編輯輸入框！
     if (isCompleted) {
       if (stepMode === 'CHECKLIST') {
         var items = step.checklistItems || [];
@@ -911,7 +916,7 @@ function renderDeliverableContent(deliverable) {
           return (step.submittedData && step.submittedData[key]) ? step.submittedData[key] : '';
         };
 
-        // Checklist 1 對 1 一組一組配對 (Checklist item + 補充資料 Textbox)
+        // 🎯 需覆蓋替換的區塊 (自動把歷史資料轉成輸入框) ----
         if (stepMode === 'CHECKLIST') {
           var items = step.checklistItems || ['預設檢查項目'];
           html += '<h6 class="fw-bold text-info mb-3"><i class="fas fa-tasks me-1"></i> 請確認完成以下檢查清單 (需 100% 勾選並填寫補充資料)：</h6>';
@@ -928,6 +933,22 @@ function renderDeliverableContent(deliverable) {
             '</div>';
           });
 
+          // 💡 關鍵升級：將非預設 Checklist 的「過往額外補充紀錄」，也自動轉成輸入框讓使用者編輯！
+          var extraFields = [];
+          if (step.submittedData) {
+            for (var key in step.submittedData) {
+              if (key !== '客戶意見' && !items.includes(key)) extraFields.push(key);
+            }
+          }
+          if (extraFields.length > 0) {
+            html += '<div class="mt-3 border-top pt-2"><h6 class="fw-bold text-secondary mb-2"><i class="fas fa-history me-1"></i> 過往額外補充紀錄：</h6>';
+            extraFields.forEach(function(f) {
+              var savedVal = getSavedVal(f);
+              html += '<div class="mb-2"><label class="form-label small fw-bold text-dark">' + f + '</label><input type="text" data-label="' + f + '" class="form-control form-control-sm" value="' + savedVal + '" placeholder="請填寫內容或貼上網址..."></div>';
+            });
+            html += '</div>';
+          }
+
           html += '<div class="mb-3 text-end">' +
             '<button id="btn_add_chk_' + step.step + '" class="btn btn-xs btn-outline-info py-0 px-2" style="font-size:0.75em;" onclick="addDynamicChecklistItem(' + step.step + ')"><i class="fas fa-plus"></i> 現場新增檢查項</button>' +
           '</div>';
@@ -943,10 +964,25 @@ function renderDeliverableContent(deliverable) {
         } 
         // 🚀 STANDARD / FILE_ONLY 附帶欄位
         else {
-          if(step.fields && step.fields.length > 0) {
-            html += '<div class="mt-2 border-top pt-2">';
+          var activeFields = [];
+          if (step.fields) {
             step.fields.forEach(function(f) {
               var cleanF = f.replace('_', ' ');
+              if (!activeFields.includes(cleanF)) activeFields.push(cleanF);
+            });
+          }
+          // 💡 關鍵升級：把過去用「➕ 補充資料」新增的鍵值也加進來，變成可以編輯的輸入框
+          if (step.submittedData) {
+            for (var key in step.submittedData) {
+              if (key !== '客戶意見' && !activeFields.includes(key)) {
+                activeFields.push(key);
+              }
+            }
+          }
+
+          if(activeFields.length > 0) {
+            html += '<div class="mt-2 border-top pt-2">';
+            activeFields.forEach(function(cleanF) {
               var savedVal = getSavedVal(cleanF);
               html += '<div class="mb-2"><label class="form-label small fw-bold text-dark">' + cleanF + '</label><input type="text" data-label="' + cleanF + '" class="form-control form-control-sm" value="' + savedVal + '" placeholder="請填寫內容或貼上網址..."></div>';
             });
@@ -1057,20 +1093,39 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     userEmail: currentUser ? currentUser.email : '' 
   };
 
+  // 🎯 需覆蓋替換的區塊 (加入 dynamicChecklistItems 的收集與空值保留) ----
   if (actionType === 'SUBMIT' && stepNumber) {
     var inputs = {};
+    var dynamicChecklistItems = []; // 💡 準備收集畫面上最終的 Checklist 名單
     var container = document.getElementById('btn_submit_' + stepNumber) ? document.getElementById('btn_submit_' + stepNumber).parentElement : null;
     
+    // 🎯 需覆蓋替換的區塊 (棄用 innerText，改用 class 抓取) ----
     if (container) {
-      // 💡 精準抓取具有 data-label 的輸入框，絕不讀取 checkbox 的原生 on 屬性！
+      // 💡 關鍵修復：直接抓取帶有 chk-input class 的輸入框的 data-label，絕對不會有字串污染！
+      var chkInputs = container.querySelectorAll('.chk-input-' + stepNumber);
+      chkInputs.forEach(function(el) {
+        var cleanName = el.getAttribute('data-label');
+        if (cleanName && !dynamicChecklistItems.includes(cleanName)) {
+          dynamicChecklistItems.push(cleanName);
+        }
+      });
+
+      // 2. 收集文字框內容
       var textInputs = container.querySelectorAll('input[type="text"]');
       textInputs.forEach(function(el) {
         var label = el.getAttribute('data-label') || (el.previousElementSibling ? el.previousElementSibling.innerText : '補充資料');
         var val = el.value ? el.value.trim() : '';
-        if (val) inputs[label] = val;
+        
+        // 💡 關鍵修復：如果是 Checklist 的項目，就算使用者沒填 URL，也要存入預設值，絕對不丟棄！
+        if (dynamicChecklistItems.includes(label)) {
+          inputs[label] = val || '✅ 已確認';
+        } else if (val) {
+          inputs[label] = val; // 非 Checklist 欄位，有填才存
+        }
       });
     }
     payload.inputs = inputs;
+    if (dynamicChecklistItems.length > 0) payload.updatedChecklist = dynamicChecklistItems;
   }
 
   // 🚀 樂觀更新 (Optimistic UI)
@@ -1089,8 +1144,18 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
         var curS = targetD.workflow.find(function(s){ return s.step === parseFloat(stepNumber); });
         if (curS) {
           curS.status = 'Completed';
-          curS.submittedData = payload.inputs;
+             // 💡 關鍵修復：前端樂觀更新時也要合併舊資料，避免畫面閃爍時資料短暫消失！
+// 🎯 需覆蓋替換的區塊 (加上 payload.updatedChecklist 同步) ----
+          if (payload.inputs) {
+            if (!curS.submittedData) curS.submittedData = {};
+            Object.assign(curS.submittedData, payload.inputs);
+          }
+          // 💡 關鍵修復：樂觀更新時也要把新增的 checklist 項目寫入，確保完成瞬間立刻長出綠色勾勾！
+          if (payload.updatedChecklist) {
+            curS.checklistItems = payload.updatedChecklist;
+          }
           var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
+          
           if (nextS) {
             targetD.currentStep = nextS.step;
             var isNextClientStep = nextS.dept.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('review');

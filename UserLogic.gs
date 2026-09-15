@@ -1213,8 +1213,15 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
             currentStepObj.status = 'Completed';
             currentStepObj.completedAt = nowStr;
             currentStepObj.completedAtIso = nowIso;
+            // 🎯 需覆蓋替換的區塊 (接收 updatedChecklist 並寫入 JSON) ----
             if (payload.inputs) {
-              currentStepObj.submittedData = payload.inputs;
+              if (!currentStepObj.submittedData) currentStepObj.submittedData = {};
+              Object.assign(currentStepObj.submittedData, payload.inputs);
+            }
+            
+            // 💡 關鍵修復：將前端盤點的最新 Checklist (包含現場新增) 正式寫入資料庫
+            if (payload.updatedChecklist && Array.isArray(payload.updatedChecklist)) {
+              currentStepObj.checklistItems = payload.updatedChecklist;
             }
 
             if (currentStepObj.startedAt) {
@@ -1280,17 +1287,20 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           logs.unshift({ timestamp: nowStr, user: activeUser, action: action, details: logDetail, deliverableId: deliverableId });
           sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
         }
-        // 🎯 需覆蓋替換的區塊 (加上回傳 auditLog) ----
+        // 🎯 需覆蓋替換的區塊 (強制落盤、提早解鎖，避免 HTTP 請求卡死資料庫) ----
+        // 💡 關鍵修復 1：立刻強制落盤
+        SpreadsheetApp.flush();
+        
+        // 💡 關鍵修復 2：在呼叫 Firebase 外部網路請求前，立刻把鎖還給系統！
+        // 這樣就算 Firebase 延遲，也不會導致其他同事卡在「系統忙碌中」
+        lock.releaseLock(); 
+
         if (typeof notifyFirebaseUpdate === 'function') {
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
         }
 
-        // 💡 關鍵修復：將最新的 Audit Log 一併回傳給前端，讓畫面即時更新日誌
-        let latestLogs = [];
-        if (idxAudit >= 0) {
-           let logStr = String(sheet.getRange(i + 1, idxAudit + 1).getValue() || '').trim();
-           if (logStr.startsWith('[')) { try { latestLogs = JSON.parse(logStr); } catch(e){} }
-        }
+        // 💡 關鍵修復 3：直接使用剛才存好的 logs 陣列，不需再次向試算表請求
+        let latestLogs = (typeof logs !== 'undefined') ? logs : [];
 
         return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData, auditLog: latestLogs };
       }
@@ -1299,7 +1309,7 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
   } catch (e) {
     return { success: false, message: e.message };
   } finally {
-    lock.releaseLock(); // 💡 確保無論成功失敗，都會釋放鎖
+    if (lock.hasLock()) lock.releaseLock(); // 💡 確保無論成功失敗，都會釋放鎖
   }
 }
 
@@ -1676,15 +1686,20 @@ function api_assignStepAndStart(jobNumber, deliverableId, stepNumber, assignee) 
     return { success: false, message: e.message };
   }
 }
-// 💡 補齊 API：儲存步驟補充資料 / 連結
+// ==========================================
+// 💡 [終極防護版] 儲存步驟補充資料 / 連結 (加入排隊鎖、防同名覆蓋、廣播同步)
+// ==========================================
 function api_appendStepData(jobNumber, deliverableId, stepNumber, title, content) {
+  // 💡 1. 加上嚴格排隊鎖，防止與「推進關卡」發生 Race Condition
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) { return { success: false, message: '系統忙碌中，請稍候再試！' }; }
+
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if (!sheet) throw new Error('找不到 Projects 工作表');
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h).trim().toLowerCase());
-
     const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
 
     let rowIndex = -1;
@@ -1697,10 +1712,8 @@ function api_appendStepData(jobNumber, deliverableId, stepNumber, title, content
 
     if (rowIndex === -1) throw new Error('找不到專案 ' + jobNumber);
 
-    let wfCol = -1;
-    let logCol = -1;
-    let wfData = {};
-    let logData = [];
+    let wfCol = -1, logCol = -1;
+    let wfData = {}, logData = [];
 
     for (let c = 0; c < data[rowIndex - 1].length; c++) {
       let cellStr = String(data[rowIndex - 1][c] || '');
@@ -1717,7 +1730,15 @@ function api_appendStepData(jobNumber, deliverableId, stepNumber, title, content
     let targetStep = targetD.workflow.find(s => s.step === stepNumber);
     if (targetStep) {
       if (!targetStep.submittedData) targetStep.submittedData = {};
-      targetStep.submittedData[title] = content;
+      
+      // 💡 2. 防同名覆蓋機制：如果標題已經存在，自動加上 (1), (2) 序號，絕對不洗掉舊資料！
+      let uniqueTitle = title;
+      let counter = 1;
+      while (targetStep.submittedData[uniqueTitle] !== undefined) {
+        uniqueTitle = title + ' (' + counter + ')';
+        counter++;
+      }
+      targetStep.submittedData[uniqueTitle] = content;
 
       const now = new Date();
       const timeStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd HH:mm");
@@ -1728,16 +1749,30 @@ function api_appendStepData(jobNumber, deliverableId, stepNumber, title, content
         timestamp: timeStr,
         user: userName,
         action: 'Append Data',
-        details: `在 Step ${stepNumber} 補充了資料：[${title}]`
+        details: `在 Step ${stepNumber} 補充了資料：[${uniqueTitle}]`,
+        deliverableId: deliverableId // 💡 確保 Log 能被子項目正確過濾
       });
 
       sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
       sheet.getRange(rowIndex, logCol).setValue(JSON.stringify(logData));
+      
+      // 💡 3. 強制落盤並提早釋放鎖定
+      SpreadsheetApp.flush(); 
+      lock.releaseLock(); 
+
+      // 💡 4. 同步廣播給 Firebase，讓其他人的畫面也立即看見這筆補充資料！
+      if (typeof notifyFirebaseUpdate === 'function') {
+        notifyFirebaseUpdate(jobNumber, userEmail, userName, true, wfData);
+      }
+
+      return { success: true, message: '補充資料儲存成功！' };
     }
 
-    return { success: true, message: '補充資料儲存成功！' };
+    return { success: false, message: '找不到對應的關卡。' };
   } catch (e) {
     return { success: false, message: e.message };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock(); // 確保鎖定一定會被釋放
   }
 }
 
