@@ -2,6 +2,15 @@
 <!-- [DeptKanbanUI.html] 營運導向部門指揮中心 (雙完成指標升級版) -->
 <!-- ========================================== -->
 
+<style>
+  /* 💡 Mobile UX: 手機端隱藏沒有任務的直欄，電腦版維持不變 */
+  @media (max-width: 768px) {
+    .mobile-empty-col {
+      display: none !important;
+    }
+  }
+</style>
+
 <div id="deptHeadSection" class="section-container" style="display: none;">
   
   <!-- 💡 1. 頂部工具列：部門視角與時間過濾 -->
@@ -192,8 +201,8 @@
     </div>
   </div>
 
-  <!-- 💡 5. 7 欄式營運操作指揮區 -->
-  <div class="d-flex gap-2 overflow-auto pb-2" style="white-space: nowrap;">
+  <!-- 💡 5. 7 欄式營運操作指揮區 (加上 kanban-scroll-container 優化手機滑動) -->
+  <div class="d-flex gap-2 overflow-auto pb-2 kanban-scroll-container" style="white-space: nowrap;">
     
     <div style="min-width: 230px; flex: 1;">
       <div class="card shadow-sm border-0 border-top border-4 border-danger h-100">
@@ -787,6 +796,30 @@
     if (containerCompleted) {
       containerCompleted.innerHTML = completedList.length === 0 ? '<div class="text-center text-muted py-4 small">無近期完成項目</div>' : completedList.map(function(t){ return buildTaskCardHtml(t, 'border-success', false); }).join('');
     }
+
+    // 💡 Mobile UX: 動態折疊(隱藏)手機端沒有任務的直欄[cite: 5]
+    function toggleMobileEmptyCol(containerId, count) {
+      var container = document.getElementById(containerId);
+      // 往上找兩層父元素，鎖定最外圍的那層 <div style="min-width: 230px;">
+      if (container && container.parentElement && container.parentElement.parentElement) {
+        var columnWrapper = container.parentElement.parentElement;
+        if (count === 0) {
+          columnWrapper.classList.add('mobile-empty-col');
+        } else {
+          columnWrapper.classList.remove('mobile-empty-col');
+        }
+      }
+    }
+
+    // 針對 7 個直欄逐一檢測並折疊
+    toggleMobileEmptyCol('op_overdueContainer', overdueList.length);
+    toggleMobileEmptyCol('op_unassignedContainer', unassignedList.length);
+    toggleMobileEmptyCol('op_dueSoonContainer', dueSoonList.length);
+    toggleMobileEmptyCol('op_activeContainer', activeList.length);
+    if (containerPipeline) toggleMobileEmptyCol('op_pipelineContainer', pipelineList.length);
+    if (containerClientReview) toggleMobileEmptyCol('op_clientReviewContainer', clientReviewList.length);
+    if (containerCompleted) toggleMobileEmptyCol('op_completedContainer', completedList.length);
+
   }
 
   function quickDispatchMember(deliverableId, stepNumber) {

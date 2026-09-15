@@ -5,10 +5,29 @@
 function api_getCurrentUser() {
   try {
     const email = Session.getActiveUser().getEmail();
-    const user = getUserByEmail(email);
-    if (!user) {
-      return { success: true, data: { email: email, name: email.split('@')[0], department: 'PM', role: 'Management' } };
+    
+    // 💡 1. 嚴格網域檢查：擋下非 hk01 的私人帳號
+    if (!email.toLowerCase().endsWith('@hk01.com')) {
+      return { 
+        success: false, 
+        errorType: 'INVALID_DOMAIN', 
+        email: email, 
+        message: '僅限 @hk01.com 企業帳號登入' 
+      };
     }
+
+    const user = getUserByEmail(email);
+    
+    // 💡 2. 修補漏洞：若在系統名單找不到，回傳無權限 (而不是給管理員權限)
+    if (!user) {
+      return { 
+        success: false, 
+        errorType: 'UNAUTHORIZED_USER', 
+        email: email, 
+        message: '您的帳號不在系統授權名單內，請聯繫管理員。' 
+      };
+    }
+    
     return { success: true, data: user };
   } catch(e) {
     return { success: false, message: e.message };
@@ -333,6 +352,7 @@ function api_createProject(payload) {
         ];
       }
 
+      // 🎯 需覆蓋替換的區塊 ----------------------------------
       let formattedSteps = steps.map((s, sIdx) => {
         const dName = s.dept || 'PM';
         const defaultAssignee = (dName.toUpperCase() === 'PM') ? masterPmName : (s.assignee || '');
@@ -341,13 +361,15 @@ function api_createProject(payload) {
           step: sIdx + 1,
           name: s.name || ('步驟 ' + (sIdx + 1)),
           dept: dName,
+          mode: s.mode || 'STANDARD',             // 💡 關鍵修復：確保新專案繼承範本關卡模式
+          checklistItems: s.checklistItems || [], // 💡 關鍵修復：確保新專案繼承 CheckList 清單
           assignee: defaultAssignee,
           status: 'Pending Start',
           isStarted: false,
           fields: s.fields || ['URL'],
           parallelGroup: s.parallelGroup || s.group || '',
-          keyDate: delivDeadline,    // 寫入子項目獨立死線
-          deadline: delivDeadline,   // 寫入子項目獨立死線
+          keyDate: delivDeadline,
+          deadline: delivDeadline,
           accumulatedDays: 0
         };
       });
@@ -680,15 +702,15 @@ function api_getDashboardData(simEmail) {
                item.isTracking = false;
             }
 
+            // 💡 [修復版] 分流邏輯：精準區分待啟動、進行中與追蹤中
             if (isPaused) {
               result.paused.push(item);
             } else if (isTrackingForUser) {
               result.tracking.push(item); 
-            } else if (isUpcomingForUser) {
+            } else if (isUpcomingForUser || d.status === 'Pending Start' || d.status === 'Not Started' || primaryActiveStep.status === 'Pending Start' || primaryActiveStep.status === 'Pending') {
+              // 💡 待啟動/即將到來的任務，通通放入 upcoming
               result.upcoming.push(item); 
             } else if (isActive) {
-
-
               if (daysLeft < 0) result.overdue.push(item);
               else if (daysLeft <= 3) result.dueSoon.push(item);
               else result.onTrack.push(item);
@@ -863,6 +885,16 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                 targetS.assignee = assignee;
               }
 
+              // 🎯 需覆蓋替換的區塊 (更換負責人時，自動同步後續繼承審批關卡) ----
+              // 💡 關鍵修復：若緊接著的下一關為「繼承審批 (APPROVAL_PREV)」，自動將其負責人同步更換為新 assignee
+              let targetIdx = targetD.workflow.findIndex(s => s.step === targetS.step);
+              if (targetIdx >= 0 && targetIdx + 1 < targetD.workflow.length) {
+                let nextS = targetD.workflow[targetIdx + 1];
+                if (nextS.mode === 'APPROVAL_PREV') {
+                  nextS.assignee = assignee;
+                }
+              }
+
               let isCurrentTurn = (targetS.step === targetD.currentStep) || 
                                   targetD.workflow.filter(s => s.step < targetS.step && !s.parallelGroup).every(s => s.status === 'Completed');
 
@@ -884,13 +916,15 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                 let cellStrLog = String(data[i][idxAudit] || '').trim();
                 if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
 
+                // 🎯 需覆蓋替換的區塊 (加上 deliverableId 屬性) ----
                 let actionText = isPMDept 
                   ? `將專案 PM 及所有 PM 關卡負責人由 [${oldAssignee}] 更換為 [${assignee}]`
                   : (oldAssignee === '未指派'
                      ? `將 Step ${targetS.step} [${targetS.name}] 指派給 [${assignee}]`
                      : `將 Step ${targetS.step} 的負責人由 [${oldAssignee}] 更換為 [${assignee}]`);
 
-                logs.unshift({ timestamp: nowStr, user: activeUser, action: 'Dispatch Task', details: actionText });
+                // 💡 關鍵修復：加入 deliverableId
+                logs.unshift({ timestamp: nowStr, user: activeUser, action: 'Dispatch Task', details: actionText, deliverableId: deliverableId });
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
 
@@ -1192,9 +1226,13 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
             if (nextStepObj) {
               deliverable.currentStep = nextStepObj.step;
               
-              let isNextClientStep = nextStepObj.dept.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('client') || nextStepObj.name.toLowerCase().includes('review');
+              // 🎯 需覆蓋替換的區塊 (加入 APPROVAL_PREV 模式自動繼承上一關負責人) ----
+              let isNextInheritStep = (nextStepObj.mode === 'APPROVAL_PREV') ||
+                                      nextStepObj.dept.toLowerCase().includes('client') || 
+                                      nextStepObj.name.toLowerCase().includes('client') || 
+                                      nextStepObj.name.toLowerCase().includes('review');
               
-              if (!nextStepObj.assignee && isNextClientStep && currentStepObj.assignee) {
+              if (!nextStepObj.assignee && isNextInheritStep && currentStepObj.assignee) {
                 nextStepObj.assignee = currentStepObj.assignee;
               }
 
@@ -1214,9 +1252,9 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           }
         }
 
-        // 💡 寫入前再三確認文件一致性
-        SpreadsheetApp.flush();
+        // 🎯 需覆蓋替換的區塊 (加上 SpreadsheetApp.flush()) ----
         sheet.getRange(i + 1, cellColIdx + 1).setValue(JSON.stringify(wfData));
+        SpreadsheetApp.flush(); // 💡 關鍵修復：setValue 後立刻強制 Flush 落盤，防止背景讀到舊資料導致畫面閃退！
 
         let allDeliverablesCompleted = (wfData.deliverables || [])
           .filter(d => d.status !== 'Deleted' && d.status !== 'Recycle Bin')
@@ -1233,19 +1271,28 @@ function api_updateWorkflowState(jobNumber, deliverableId, payload) {
           let logStr = String(data[i][idxAudit] || '').trim();
           if (logStr.startsWith('[')) { try { logs = JSON.parse(logStr); } catch(e){} }
 
+          // 🎯 需覆蓋替換的區塊 (加上 deliverableId 屬性) ----
           let logDetail = action === 'START' 
             ? `啟動了子項目 [${deliverable.name}]` 
             : `完成了 Step ${stepNum} 的關卡工作` + (deliverable.status === 'Completed' ? ' (全案完工)' : '');
 
-          logs.unshift({ timestamp: nowStr, user: activeUser, action: action, details: logDetail });
+          // 💡 關鍵修復：加入 deliverableId 作為專屬標籤
+          logs.unshift({ timestamp: nowStr, user: activeUser, action: action, details: logDetail, deliverableId: deliverableId });
           sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
         }
-
+        // 🎯 需覆蓋替換的區塊 (加上回傳 auditLog) ----
         if (typeof notifyFirebaseUpdate === 'function') {
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
         }
 
-        return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData };
+        // 💡 關鍵修復：將最新的 Audit Log 一併回傳給前端，讓畫面即時更新日誌
+        let latestLogs = [];
+        if (idxAudit >= 0) {
+           let logStr = String(sheet.getRange(i + 1, idxAudit + 1).getValue() || '').trim();
+           if (logStr.startsWith('[')) { try { latestLogs = JSON.parse(logStr); } catch(e){} }
+        }
+
+        return { success: true, message: '工作流狀態更新成功！', updatedWorkflowData: wfData, auditLog: latestLogs };
       }
     }
     throw new Error('找不到專案 ' + jobNumber);
@@ -2604,6 +2651,9 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
                 let cellStrLog = String(data[i][idxAudit] || '').trim();
                 if (cellStrLog.startsWith('[')) {
                   try { logs = JSON.parse(cellStrLog); } catch(e) {}
+                } else if (cellStrLog) {
+                  // 💡 防呆：如果遇到舊版非 JSON 格式的 Log，優雅相容
+                  logs = [{ timestamp: "舊版紀錄", user: "System", action: cellStrLog }];
                 }
                 const activeUser = Session.getActiveUser().getEmail().split('@')[0];
                 const nowStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
@@ -2612,7 +2662,8 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
                   timestamp: nowStr,
                   user: activeUser,
                   action: 'Rollback Step',
-                  details: `將關卡強制退回至 Step ${targetS.step} [${targetS.name}]。原因：${reason}`
+                  details: `將關卡強制退回至 Step ${targetS.step} [${targetS.name}]。原因：${reason}`,
+                  deliverableId: deliverableId // 💡 關鍵修復：加入 deliverableId
                 });
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
@@ -2914,8 +2965,14 @@ function api_sendNudge(jobNumber, deliverableId, stepNumber) {
                       realAssignee = String(data[i][idxPM] || '').trim();
                     }
 
-                    if (realAssignee && typeof sendSystemEmail === 'function') {
+                    // 💡 防呆攔截：如果根本沒有負責人，直接回傳錯誤阻斷寄信程式！
+                    if (!realAssignee || realAssignee === '未指派' || realAssignee === '') {
+                      return { success: false, message: '該關卡尚未指派負責人，無法發送催辦通知！' };
+                    }
+
+                    if (typeof sendSystemEmail === 'function') {
                       sentTo = sendSystemEmail(
+
                         realAssignee, 
                         `[緊急催辦] 專案 ${jobNumber} 任務提醒`, 
                         `🚨 緊急催辦通知`, 
@@ -2941,7 +2998,7 @@ function api_sendNudge(jobNumber, deliverableId, stepNumber) {
 }
 
 // ==========================================
-// 💡 [新增] 混合式動態通知引擎 (Notification Center)
+// 💡 [測試升級版] 混合式動態通知引擎 (Management 上帝視角)
 // ==========================================
 function api_getUserNotifications(userEmail) {
   try {
@@ -2950,6 +3007,10 @@ function api_getUserNotifications(userEmail) {
 
     const activeEmail = userEmail || Session.getActiveUser().getEmail();
     const userName = activeEmail.split('@')[0].toLowerCase();
+    
+    // 💡 抓取使用者權限，判斷是否為管理層
+    const userObj = getUserByEmail(activeEmail);
+    const isManager = userObj ? ['Management', 'Admin'].includes(userObj.role) : false;
     
     const data = sheet.getDataRange().getValues();
     const headers = data[0].map(h => String(h || '').trim().toLowerCase());
@@ -2963,14 +3024,13 @@ function api_getUserNotifications(userEmail) {
     let notifications = [];
     const now = new Date();
     const todayStr = Utilities.formatDate(now, "GMT+8", "yyyy-MM-dd");
-    const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)); // 只抓最近 7 天的日誌
+    const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
 
     for (let i = 1; i < data.length; i++) {
       const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
       if (pStatus === 'Recycle Bin' || pStatus === 'Deleted') continue;
 
       const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
-      const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
       const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim().toLowerCase() : '';
 
       let wfData = {};
@@ -2981,8 +3041,8 @@ function api_getUserNotifications(userEmail) {
         if (c === idxAudit && cellStr.startsWith('[')) { try { logs = JSON.parse(cellStr); } catch(e){} }
       }
 
-      // 檢查該使用者是否與此專案有關聯 (PM 或 關卡執行者)
-      let isInvolved = (pmName === userName);
+      // 💡 特權 1：如果是管理層，強制將 isInvolved 設為 true，接收全公司專案通知
+      let isInvolved = (pmName === userName) || isManager; 
       let assignedSteps = [];
       
       if (wfData.deliverables) {
@@ -2998,18 +3058,22 @@ function api_getUserNotifications(userEmail) {
         });
       }
 
-      if (!isInvolved) continue; // 如果與我無關，跳過這個專案
+      if (!isInvolved) continue;
 
       // === A. 狀態型通知 (Live Status) ===
       assignedSteps.forEach(s => {
         let deadline = s.deadline || todayStr;
         let daysLeft = Math.ceil((new Date(deadline) - new Date(todayStr)) / 86400000);
         
+        // 💡 修改點：把時間綁定在死線的凌晨，這樣它的時間戳就是固定的，不會一直洗版紅點
+        let stableTime = new Date(deadline + 'T00:00:00').toISOString();
+
+        // 💡 [緊急] 已逾期
         if (daysLeft < 0) {
-          notifications.push({ type: 'OVERDUE', color: 'danger', icon: 'fa-exclamation-triangle', time: new Date().toISOString(),
-            title: `[${jobNumber}] 任務已逾期！`, message: `你的任務 ${s.stepName} 已經逾期，請盡速處理。` });
+          notifications.push({ type: 'OVERDUE', isUrgent: true, jobNumber: jobNumber, color: 'danger', icon: 'fa-exclamation-triangle', time: stableTime,
+            title: `[${jobNumber}] 任務已逾期！`, message: `你的任務 ${s.stepName} 已經逾期，請立刻處理。` });
         } else if (daysLeft <= 1) {
-          notifications.push({ type: 'DUE_SOON', color: 'warning', icon: 'fa-hourglass-half', time: new Date().toISOString(),
+          notifications.push({ type: 'DUE_SOON', isUrgent: false, jobNumber: jobNumber, color: 'warning', icon: 'fa-hourglass-half', time: stableTime,
             title: `[${jobNumber}] 任務即將到期`, message: `你的任務 ${s.stepName} 需於今天/明天內完成。` });
         }
       });
@@ -3017,39 +3081,49 @@ function api_getUserNotifications(userEmail) {
       // === B. 事件型通知 (Event Logs) ===
       logs.forEach(log => {
         let logDate = new Date(log.timestamp.replace(' ', 'T') + ':00');
-        if (isNaN(logDate) || logDate < sevenDaysAgo) return; // 只抓最近一週
+        if (isNaN(logDate) || logDate < sevenDaysAgo) return;
 
         const action = String(log.action || '').toLowerCase();
         const details = String(log.details || '').toLowerCase();
         const logUser = String(log.user || '').toLowerCase();
 
-        // 不要通知自己做過的事 (除非是重要的狀態改變)
-        if (logUser === userName && !action.includes('nudge')) return;
+        if (!isManager && logUser === userName && !action.includes('nudge')) return;
 
         let notif = null;
 
+        // 💡 [緊急] 新分配的工作 / 更改負責人
         if (action.includes('dispatch task')) {
           if (details.includes(`指派給 [${userName}]`)) {
-            notif = { type: 'ASSIGNED', color: 'primary', icon: 'fa-inbox', title: `[${jobNumber}] 新任務派發`, message: `${log.user} 指派了新任務給你。` };
-          } else if (details.includes(`由 [${userName}] 更換為`)) {
-            notif = { type: 'REASSIGNED', color: 'secondary', icon: 'fa-random', title: `[${jobNumber}] 任務轉交`, message: `你原本負責的任務已更換由其他同事接手。` };
+            notif = { type: 'ASSIGNED', isUrgent: true, jobNumber: jobNumber, color: 'primary', icon: 'fa-inbox', title: `[${jobNumber}] 新任務派發`, message: `${log.user} 指派了新任務給你。` };
+          } else if (isManager) {
+            notif = { type: 'ASSIGNED', isUrgent: false, jobNumber: jobNumber, color: 'primary', icon: 'fa-inbox', title: `[${jobNumber}] 任務派發`, message: `${log.user} 進行了派案：${details}` };
           }
         } 
         else if (action.includes('insert step')) {
-          notif = { type: 'SCOPE_CHANGE', color: 'info', icon: 'fa-plus-circle', title: `[${jobNumber}] 流程變更`, message: `${log.user} 在專案中插入了新的關卡步驟。` };
+          notif = { type: 'SCOPE_CHANGE', isUrgent: false, jobNumber: jobNumber, color: 'info', icon: 'fa-plus-circle', title: `[${jobNumber}] 流程變更`, message: `${log.user} 在專案中插入了新的關卡步驟。` };
         }
+        // 💡 [緊急] 退回修改
         else if (action.includes('revision') || action.includes('rollback')) {
-          notif = { type: 'REJECTED', color: 'danger', icon: 'fa-undo', title: `[${jobNumber}] 專案退回修改`, message: `${log.user} 提出修改要求或退回了關卡：${log.details}` };
+          notif = { type: 'REJECTED', isUrgent: true, jobNumber: jobNumber, color: 'danger', icon: 'fa-undo', title: `[${jobNumber}] 專案退回修改`, message: `${log.user} 提出修改要求或退回了關卡：${log.details}` };
         }
+        // 💡 [緊急] 系統催辦
         else if (action.includes('nudge')) {
-          notif = { type: 'NUDGE', color: 'danger', icon: 'fa-bullhorn', title: `[${jobNumber}] 📢 催辦提醒！`, message: `${log.user} 對你負責的關卡發出了催辦，請盡速查看！` };
+          notif = { type: 'NUDGE', isUrgent: true, jobNumber: jobNumber, color: 'danger', icon: 'fa-bullhorn', title: `[${jobNumber}] 📢 催辦提醒！`, message: `${log.user} 對你負責的關卡發出了催辦，請盡速查看！` };
         }
-        else if (action.includes('submit step') && pmName === userName) {
-          // PM 專屬：下屬完成關卡
-          notif = { type: 'STEP_DONE', color: 'success', icon: 'fa-check-circle', title: `[${jobNumber}] 關卡完成`, message: `${log.user} 已完成一項關卡，專案繼續推進。` };
+        else if (action.includes('submit step')) {
+          // 💡 [緊急] 客戶審批完成 或 工作推進 (對 PM)
+          if (pmName === userName) {
+            notif = { type: 'STEP_DONE', isUrgent: true, jobNumber: jobNumber, color: 'success', icon: 'fa-check-circle', title: `[${jobNumber}] 關卡完成/推進`, message: `${log.user} 已完成一項關卡，專案繼續推進。` };
+          }
+        }
+        // 💡 [緊急] 項目完成 (全案完工)
+        else if (action.includes('completed') || details.includes('全案完工')) {
+           if (pmName === userName) {
+             notif = { type: 'COMPLETED', isUrgent: true, jobNumber: jobNumber, color: 'success', icon: 'fa-trophy', title: `[${jobNumber}] 項目已完成`, message: `專案的所有關卡皆已完成，請確認結案。` };
+           }
         }
         else if (action.includes('pause project')) {
-          notif = { type: 'PAUSED', color: 'warning', icon: 'fa-pause-circle', title: `[${jobNumber}] 專案暫停`, message: `專案已被 ${log.user} 暫停。` };
+          notif = { type: 'PAUSED', isUrgent: false, jobNumber: jobNumber, color: 'warning', icon: 'fa-pause-circle', title: `[${jobNumber}] 專案暫停`, message: `專案已被 ${log.user} 暫停。` };
         }
 
         if (notif) {
@@ -3060,11 +3134,8 @@ function api_getUserNotifications(userEmail) {
       });
     }
 
-    // 依照時間由新到舊排序
     notifications.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    
-    // 最多只回傳最新的 30 則通知
-    return { success: true, data: notifications.slice(0, 30) };
+    return { success: true, data: notifications.slice(0, 50) }; 
 
   } catch (e) {
     return { success: false, message: e.message };
