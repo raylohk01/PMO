@@ -3342,7 +3342,6 @@ function api_updateJobNumber(oldJobNumber, newJobNumber) {
   }
 }
 
-
 // ==========================================
 // 💡 Phase C: 關卡強制退回上一步 (Rollback)
 // ==========================================
@@ -3363,13 +3362,14 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
 
     for (let i = 1; i < data.length; i++) {
       const currentJob = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
-      if (currentJob.toLowerCase() === String(jobNumber).toLowerCase().trim() || !jobNumber) {
+      // 💡 確保翻譯蒟蒻有發揮作用，即使傳來 A24-P1 也能對齊 A24
+      if (currentJob.toLowerCase() === String(jobNumber).split('-P')[0].toLowerCase().trim() || !jobNumber) {
 
         for (let c = 0; c < data[i].length; c++) {
           let cellStr = String(data[i][c] || '');
           if (cellStr.includes('deliverables') && cellStr.includes(deliverableId)) {
             
-            // 💡 關鍵修復：強制讀取絕對最新值 (防倒退嚕)
+            // 💡 強制讀取絕對最新值 (防倒退嚕)
             let latestWfStr = String(sheet.getRange(i + 1, c + 1).getValue() || '');
             let wfData = JSON.parse(latestWfStr);
             let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
@@ -3417,7 +3417,6 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
               // 3. 寫入活動日誌
               if (idxAudit >= 0) {
                 let logs = [];
-                // 💡 關鍵修復：強制讀取絕對最新值
                 let cellStrLog = String(sheet.getRange(i + 1, idxAudit + 1).getValue() || '').trim();
                 if (cellStrLog.startsWith('[')) {
                   try { logs = JSON.parse(cellStrLog); } catch(e) {}
@@ -3437,7 +3436,7 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
 
-              // 💡 關鍵修復：強制落盤並提早釋放鎖定
+              // 💡 強制落盤並提早釋放鎖定
               SpreadsheetApp.flush();
               lock.releaseLock();
 
@@ -3455,7 +3454,6 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
   } catch (e) {
     return { success: false, message: e.message };
   } finally {
-    // 💡 確保鎖定絕對會被釋放
     if (lock.hasLock()) lock.releaseLock();
   }
 }

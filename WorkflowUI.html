@@ -955,20 +955,23 @@ function renderDeliverableContent(deliverable) {
           return (step.submittedData && step.submittedData[key]) ? step.submittedData[key] : '';
         };
 
-        // 🎯 需覆蓋替換的區塊 (自動把歷史資料轉成輸入框) ----
+        // ▲▲▲ 替換為以下這段新代碼 ▲▲▲
         if (stepMode === 'CHECKLIST') {
           var items = step.checklistItems || ['預設檢查項目'];
           html += '<h6 class="fw-bold text-info mb-3"><i class="fas fa-tasks me-1"></i> 請確認完成以下檢查清單 (需 100% 勾選並填寫補充資料)：</h6>';
           
+          // 💡 關鍵修復：把小數點轉成底線
+          var safeStepId = String(step.step).replace('.', '_');
+
           items.forEach(function(item, iIdx) {
-            var checkId = 'chk_' + step.step + '_' + iIdx;
+            var checkId = 'chk_' + safeStepId + '_' + iIdx;
             var savedVal = getSavedVal(item);
             html += '<div class="bg-white p-2 rounded border mb-2 ms-1 shadow-sm">' +
               '<div class="form-check mb-1">' +
-                '<input class="form-check-input chk-item-' + step.step + '" type="checkbox" id="' + checkId + '" onchange="validateChecklistCompletion(' + step.step + ')">' +
+                '<input class="form-check-input chk-item-' + safeStepId + '" type="checkbox" id="' + checkId + '" onchange="validateChecklistCompletion(\'' + step.step + '\')">' +
                 '<label class="form-check-label small fw-bold text-dark cursor-pointer ms-1" for="' + checkId + '">' + item + '</label>' +
               '</div>' +
-              '<input type="text" class="form-control form-control-sm border-light-subtle chk-input-' + step.step + '" data-label="' + item + '" value="' + savedVal + '" placeholder="補充資料 / 連結 (選填)">' +
+              '<input type="text" class="form-control form-control-sm border-light-subtle chk-input-' + safeStepId + '" data-label="' + item + '" value="' + savedVal + '" placeholder="補充資料 / 連結 (選填)">' +
             '</div>';
           });
 
@@ -1100,9 +1103,9 @@ function getStepModeName(mode) {
   return '標準推進';
 }
 
-// 💡 輔助函數：Checklist 勾選防呆 (需 100% 勾選才解鎖送出按鈕)
 function validateChecklistCompletion(stepNum) {
-  var checkboxes = document.querySelectorAll('.chk-item-' + stepNum);
+  var safeStepId = String(stepNum).replace('.', '_');
+  var checkboxes = document.querySelectorAll('.chk-item-' + safeStepId);
   var allChecked = true;
   if (checkboxes.length === 0) allChecked = false;
   checkboxes.forEach(function(chk) { if (!chk.checked) allChecked = false; });
@@ -1157,16 +1160,15 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     userEmail: currentUser ? currentUser.email : '' 
   };
 
-  // 🎯 需覆蓋替換的區塊 (加入 dynamicChecklistItems 的收集與空值保留) ----
   if (actionType === 'SUBMIT' && stepNumber) {
     var inputs = {};
-    var dynamicChecklistItems = []; // 💡 準備收集畫面上最終的 Checklist 名單
+    var dynamicChecklistItems = []; 
     var container = document.getElementById('btn_submit_' + stepNumber) ? document.getElementById('btn_submit_' + stepNumber).parentElement : null;
     
-    // 🎯 需覆蓋替換的區塊 (棄用 innerText，改用 class 抓取) ----
     if (container) {
-      // 💡 關鍵修復：直接抓取帶有 chk-input class 的輸入框的 data-label，絕對不會有字串污染！
-      var chkInputs = container.querySelectorAll('.chk-input-' + stepNumber);
+      // 💡 關鍵：送出時也要用安全 ID 抓資料
+      var safeStepId = String(stepNumber).replace('.', '_');
+      var chkInputs = container.querySelectorAll('.chk-input-' + safeStepId);
       chkInputs.forEach(function(el) {
         var cleanName = el.getAttribute('data-label');
         if (cleanName && !dynamicChecklistItems.includes(cleanName)) {
@@ -1852,13 +1854,20 @@ function confirmEditJobNumber() {
   }).api_updateJobNumber(oldJobNumber, newJobNumber);
 }
 
-// 💡 動態產生客戶修改迴圈 (防閃爍版)
+// 💡 動態產生客戶修改迴圈 (終極防爆版)
   function confirmDynamicClientRevision() {
     var feedback = document.getElementById('dyn_cr_feedbackInput').value.trim();
     if (!feedback) return showAlert('⚠️ 請填寫客戶修改意見！', 'warning');
 
     var btn = document.getElementById('dyn_cr_btnConfirm');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 處理中...'; }
+    if (btn) { 
+      if (btn.disabled) return; // 💡 絕對防禦：防止滑鼠連點造成連環爆殖
+      btn.disabled = true; 
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 處理中...'; 
+    }
+
+    // 💡 絕對防禦：立刻鎖死前端狀態，告訴 Firebase 3 秒內閉嘴不要干擾我！
+    window.isUpdatingProject = true; 
 
     google.script.run.withSuccessHandler(function(res) {
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-undo me-1"></i> 確認退回並產生修改迴圈'; }
@@ -1868,7 +1877,7 @@ function confirmEditJobNumber() {
           dynamicClientRevisionModalInstance.hide();
         }
         
-        // 💡 原地替換，不重新 call openWorkflow
+        // 瞬間原地替換新資料
         if (res.updatedWorkflowData && typeof currentProjectData !== 'undefined') {
           currentProjectData.workflowData = res.updatedWorkflowData;
           if (typeof renderDeliverableTabs === 'function') {
@@ -1876,12 +1885,15 @@ function confirmEditJobNumber() {
           }
         }
         
-        // 💡 延遲 1.5 秒更新背後看板
         setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+        setTimeout(function() { window.isUpdatingProject = false; }, 3000);
       } else {
+        window.isUpdatingProject = false;
         showAlert('❌ 操作失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_triggerDynamicClientRevision(currentProjectData.jobNumber, activeDynRevDeliverableId, activeDynRevStepNum, feedback);
   }
+
+  
 
 </script>
