@@ -1118,10 +1118,8 @@ function api_getCompletedProjects(keyword, startDate, endDate) {
     let list = [];
     const kw = String(keyword || '').trim().toLowerCase();
 
- 
-
     for (let i = 1; i < data.length; i++) {
-      const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+      const baseJobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
       const clientName = idxClient >= 0 ? String(data[i][idxClient] || '').trim() : '';
       const pmName = idxPM >= 0 ? String(data[i][idxPM] || '').trim() : '';
       const mainDeadline = cleanYMD(idxDeadline >= 0 ? data[i][idxDeadline] : '');
@@ -1141,17 +1139,21 @@ function api_getCompletedProjects(keyword, startDate, endDate) {
       }
 
       if (wfData && wfData.deliverables && wfData.deliverables.length > 0) {
-        wfData.deliverables.forEach(d => {
-          // 💡 精準判定：子項目狀態為 Completed，或專案總狀態為 Completed
+        // 💡 關鍵修復：加入 dIdx 來抓取子項目的順序，藉此產生 P 碼
+        wfData.deliverables.forEach((d, dIdx) => {
+          // 精準判定：子項目狀態為 Completed，或專案總狀態為 Completed
           if (d.status === 'Completed' || pStatus === 'Completed') {
             let revCount = d.revisionCount || 0;
             if (!revCount && d.workflow) {
               revCount = d.workflow.filter(s => s.isSubStep || (s.name && s.name.includes('退回修改'))).length;
             }
 
-            // 關鍵字搜尋過濾
+            // 💡 核心邏輯：如果子項目大於 1 個，就自動把母編號加上 P 碼 (例如 A18-P3)
+            let displayJobNum = wfData.deliverables.length > 1 ? `${baseJobNumber}-P${dIdx + 1}` : baseJobNumber;
+
+            // 關鍵字搜尋過濾 (改用 displayJobNum 供搜尋)
             if (kw) {
-              let match = jobNumber.toLowerCase().includes(kw) || 
+              let match = displayJobNum.toLowerCase().includes(kw) || 
                           clientName.toLowerCase().includes(kw) || 
                           (d.name || '').toLowerCase().includes(kw) || 
                           pmName.toLowerCase().includes(kw);
@@ -1185,7 +1187,7 @@ function api_getCompletedProjects(keyword, startDate, endDate) {
             if (endDate && compDateOnly > endDate) return;
 
             list.push({
-              jobNumber: jobNumber,
+              jobNumber: displayJobNum, // 💡 替換為帶有 P 碼的編號
               client: clientName,
               deliverableName: d.name || '未命名任務',
               pmName: pmName,
