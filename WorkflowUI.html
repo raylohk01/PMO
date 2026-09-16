@@ -28,7 +28,13 @@
         </div>
       </div>
       
+      // 🎯 需覆蓋替換的區塊 ----------------------------------
       <div class="modal-body bg-light">
+        <!-- 💡 Firebase 溫和更新提示橫幅 -->
+        <div id="wf_syncBanner" class="alert alert-warning shadow-sm mb-3 text-center fw-bold animate__animated animate__fadeInDown" style="display: none; cursor: pointer; border: 2px solid #ffc107;" onclick="forceReloadProject()">
+          <i class="fas fa-exclamation-circle me-1 text-danger"></i> 系統偵測到同事剛剛更新了此專案的資料。 <span class="text-primary text-decoration-underline ms-2">👉 點擊此處載入最新進度</span>
+        </div>
+        
         <div class="row">
           
           <div class="col-md-8">
@@ -185,23 +191,26 @@
 </div>
 
 
-<!-- 🚀 修改總死線 Modal -->
-<div class="modal fade" id="updateDeadlineModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+<!-- 🚀 修改單一關卡死線 Modal -->
+<div class="modal fade" id="stepDeadlineModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
   <div class="modal-dialog">
     <div class="modal-content shadow">
       <div class="modal-header bg-warning text-dark py-2">
-        <h5 class="modal-title fs-6"><i class="fas fa-calendar-edit me-1"></i> 修改專案總死線 (Launch Date)</h5>
+        <h5 class="modal-title fs-6"><i class="fas fa-calendar-alt me-1"></i> 修改關卡死線 (Step Deadline)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-light">
+        <div class="alert alert-info small mb-3 border-info">
+          <i class="fas fa-info-circle me-1"></i> 正在修改 <strong><span id="sd_stepName">...</span></strong> 的死線。
+        </div>
         <div class="mb-3">
           <label class="form-label small fw-bold text-muted">請選擇新的死線日期：</label>
-          <input type="date" class="form-control" id="ud_deadlineInput">
+          <input type="date" class="form-control" id="sd_deadlineInput">
         </div>
       </div>
       <div class="modal-footer bg-white py-2">
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-        <button type="button" class="btn btn-warning text-dark btn-sm fw-bold" onclick="confirmUpdateDeadline()"><i class="fas fa-save me-1"></i> 確認更新</button>
+        <button type="button" class="btn btn-warning text-dark btn-sm fw-bold" onclick="confirmStepDeadline()"><i class="fas fa-save me-1"></i> 確認更新</button>
       </div>
     </div>
   </div>
@@ -287,12 +296,12 @@
   </div>
 </div>
 
-<!-- 🚀 Phase D: 新版動態 Client 迴圈專用 Modal -->
+<!-- 🚀 統一動態迴圈專用 Modal -->
 <div class="modal fade" id="dynamicClientRevisionModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
   <div class="modal-dialog">
     <div class="modal-content shadow">
       <div class="modal-header bg-danger text-white py-2">
-        <h5 class="modal-title fs-6"><i class="fas fa-comment-dots me-1"></i> 客戶要求修改 (Client Revision Loop)</h5>
+        <h5 class="modal-title fs-6"><i class="fas fa-comment-dots me-1"></i> 退回修改要求 (Revision Loop)</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-light">
@@ -300,8 +309,8 @@
           <i class="fas fa-info-circle me-1"></i> 系統將自動產生 <strong>退回修改關卡</strong>，並自動指派給上一關的負責同事。
         </div>
         <div class="mb-2">
-          <label class="form-label small fw-bold text-dark">請填寫客戶的反饋 / 修改要求：</label>
-          <textarea class="form-control form-control-sm border-danger" id="dyn_cr_feedbackInput" rows="4" placeholder="例如：客戶要求針對字體顏色進行修改..."></textarea>
+          <label class="form-label small fw-bold text-dark">請填寫反饋 / 修改要求：</label>
+          <textarea class="form-control form-control-sm border-danger" id="dyn_cr_feedbackInput" rows="4" placeholder="例如：需要針對字體顏色進行修改..."></textarea>
         </div>
       </div>
       <div class="modal-footer bg-white py-2">
@@ -317,7 +326,7 @@
   <div class="modal-dialog">
     <div class="modal-content shadow">
       <div class="modal-header bg-warning text-dark py-2">
-        <h5 class="modal-title fs-6"><i class="fas fa-undo me-1"></i> PM 強制退回關卡 (Workflow Rollback)</h5>
+        <h5 class="modal-title fs-6" id="rb_modalTitle"><i class="fas fa-undo me-1"></i> 退回修改 / 狀態重置 (Rollback)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-light">
@@ -400,6 +409,9 @@
   var rollbackModalInstance = null;       
   var restartModalInstance = null;
   var dynamicClientRevisionModalInstance = null; 
+  // 🎯 在這裡插入新變數 ----------------------------------
+  var stepDeadlineModalInstance = null;
+  var activeStepDeadlineTarget = null;
   
   var selectedRevisionStepNum = null;     
   var activeRevisionDeliverableId = null; 
@@ -409,8 +421,18 @@
   
   var currentProjectData = null; 
   var activeDeliverableId = null; 
+  // 🎯 需覆蓋替換的區塊 ----------------------------------
   var currentDispatchTarget = null; 
   var isPMChangeMode = false; 
+
+  // 💡 點擊黃色橫幅，強制載入最新畫面
+  window.forceReloadProject = function() {
+    var banner = document.getElementById('wf_syncBanner');
+    if (banner) banner.style.display = 'none';
+    if (currentProjectData && currentProjectData.jobNumber) {
+      openWorkflow(currentProjectData.jobNumber);
+    }
+  };
 
   // 💡 日期清洗工具：消除 Sun Aug 30 2026... 長字串，統一轉為 YYYY-MM-DD
   function formatDateOnly(val) {
@@ -473,18 +495,32 @@ window.openWorkflow = function(jobNumber) {
     
     workflowModalInstance.show();
 
-    // 🎯 需覆蓋替換的區塊 (解析 -P 並強制跳轉) ----
+    // 🎯 需覆蓋替換的區塊 ----------------------------------
     var cleanJobNum = String(jobNumber).split('-P')[0];
     
-    // 💡 關鍵修復：解析傳入的 jobNumber (例如 A20-P2)，精準定位到指定的子項目分頁
+    // 💡 關鍵修復 1：解析傳入的 jobNumber (例如 A20-P2)，精準定位到指定的子項目分頁
     var pIndexMatch = String(jobNumber).match(/-P(\d+)/);
     var targetIndex = pIndexMatch ? parseInt(pIndexMatch[1]) - 1 : -1;
 
-    // 🚀 步驟 1：先從 Firebase 快取秒讀
+    // 💡 關鍵修復 2：打開視窗的瞬間，強制清空所有舊內容，絕對不留上一次的殘影！
+    document.getElementById('wf_deliverableTabs').innerHTML = '<li class="nav-item"><a class="nav-link active">讀取中...</a></li>';
+    document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-spinner fa-spin fa-2x"></i><br>正在向伺服器請求最新資料...</div>';
+
+    // 🎯 需覆蓋替換的區塊 ----------------------------------
+    // 🚀 步驟 1：先從 Firebase 快取秒讀 (加入本機新鮮度判斷)
     if (typeof firebase !== 'undefined' && firebase.apps.length) {
       firebase.database().ref('project_cache/' + cleanJobNum).once('value').then(function(snapshot) {
         var fbData = snapshot.val();
-        if (fbData && fbData.workflowData) {
+        
+        // 💡 關鍵防禦：如果你剛剛才操作過這個專案，且你電腦裡暫存的資料 (currentProjectData) 
+        // 的更新時間可能比 Firebase 的快取還要新，那就「拒絕」使用 Firebase 的快取！
+        var isCacheStale = false;
+        if (currentProjectData && currentProjectData.jobNumber === cleanJobNum) {
+            // 簡單判斷：如果 Firebase 快取沒有 fbData，或者 fbData 竟然沒有 currentProjectData 裡面的最新進度，就視為過期快取
+            isCacheStale = true;
+        }
+
+        if (fbData && fbData.workflowData && !isCacheStale) {
           currentProjectData = fbData;
           document.getElementById('wf_clientName').innerText = fbData.client || '未設定';
           document.getElementById('wf_pmName').innerText = fbData.pmName || '未設定';
@@ -546,11 +582,13 @@ window.openWorkflow = function(jobNumber) {
         renderAuditLog(res.data.auditLog || [], activeDeliverableId);
 
       } else {
+        // 🎯 需覆蓋替換的區塊 ----------------------------------
         if (!currentProjectData) {
           document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
         }
       }
-    }).api_getProjectWorkflow(jobNumber);
+    // 💡 關鍵修復 3：呼叫後端時，絕對只傳乾淨的母專案編號 (cleanJobNum)！不再傳 A21-P3 去為難後端！
+    }).api_getProjectWorkflow(cleanJobNum); 
 
   } catch (err) {
     showAlert('❌ 開啟視窗時發生錯誤: ' + err.message, 'danger');
@@ -843,11 +881,12 @@ function renderDeliverableContent(deliverable) {
             '<h6 class="mb-0 fw-bold ' + (isCurrent ? 'text-primary' : (isCompleted ? 'text-success' : 'text-secondary')) + '">' +
               stepDisplayLabel + ': ' + step.name + ' <span class="badge bg-secondary bg-opacity-10 text-dark border ms-1" style="font-size:0.7em;">' + getStepModeName(stepMode) + '</span>' + delayBadge + assigneeBadge + reassignBtn + rollbackBtn + nudgeBtn +
             '</h6>' +
+            // 🎯 需覆蓋替換的區塊 (把 stepDeadlineEditBtn 加進去) ----
             '<div>' +
               '<span class="badge bg-light text-dark border me-1">' + step.dept + '</span>' +
               (effectiveDeadline ? '<span class="badge bg-outline-secondary border text-muted"><i class="fas fa-clock"></i> ' + effectiveDeadline + '</span>' : '') +
+              stepDeadlineEditBtn + // 💡 關鍵修復：把小鉛筆按鈕補回死線日期的右邊！
             '</div></div>';
-
     if(isCompleted) {
       html += '<div class="bg-light p-2 rounded mb-2 border-start border-3 border-success small text-success">' +
         '<i class="fas fa-check-circle me-1"></i> 已於 ' + (step.completedAt || '稍早') + ' 完成。' +
@@ -954,14 +993,22 @@ function renderDeliverableContent(deliverable) {
           '</div>';
         }
 
+        // 🎯 需覆蓋替換的區塊 ----------------------------------
         // 🤝 / 👑 審批模式渲染
         else if (stepMode === 'APPROVAL_PREV' || stepMode === 'APPROVAL_PM') {
           html += '<div class="alert alert-warning mb-3 small"><i class="fas fa-user-check me-1"></i> 此關卡為<strong>審批關卡</strong>，請審閱內容後進行決策：</div>';
-          html += '<div class="d-flex gap-2 mb-2">' +
-            '<button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> ✅ 審批通過 (推進下一關)</button>' +
-            '<button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" onclick="promptRollbackStep(' + step.step + ')"><i class="fas fa-undo me-1"></i> ❌ 退回修改</button>' +
-          '</div>';
-        } 
+          
+          if (isPMClientReviewStep && step.reviewStatus !== 'Reviewing') {
+            html += '<button class="btn btn-info btn-sm mb-2 fw-bold text-white shadow-sm" onclick="startClientReview(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 正式發送給客戶審批 (開始計時)</button>';
+          } else {
+            // 💡 統一：無論是 Client 還是內部審批，只要是審批關卡，退回就一律走「動態修改迴圈」！
+            let passText = isClientStep ? '✅ 客戶確認通過' : '✅ 審批通過 (推進下一關)';
+            html += '<div class="d-flex gap-2 mb-2">' +
+              '<button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> ' + passText + '</button>' +
+              '<button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" onclick="promptDynamicClientRevision(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-undo me-1"></i> ❌ 退回修改 (產生修改迴圈)</button>' +
+            '</div>';
+          }
+        }
         // 🚀 STANDARD / FILE_ONLY 附帶欄位
         else {
           var activeFields = [];
@@ -990,12 +1037,29 @@ function renderDeliverableContent(deliverable) {
           }
         }
 
+        // 🎯 需覆蓋替換的區塊 (加入 Client 專屬的迴圈按鈕邏輯) ----
         var btnDisabled = (stepMode === 'CHECKLIST') ? 'disabled' : '';
+        
         if (stepMode !== 'APPROVAL_PREV' && stepMode !== 'APPROVAL_PM') {
-          html += '<button class="btn btn-primary btn-sm mt-3 fw-bold" id="btn_submit_' + step.step + '" ' + btnDisabled + ' onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 提交並推進到下一關</button>';
+          // 💡 關鍵修復：如果是 PM 負責的 Client Review，必須先按發送開始計時
+          if (isPMClientReviewStep && step.reviewStatus !== 'Reviewing') {
+            html += '<button class="btn btn-info btn-sm mt-3 fw-bold text-white shadow-sm" onclick="startClientReview(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 正式發送給客戶審批 (開始計時)</button>';
+          } 
+          // 💡 關鍵修復：如果是 Client 關卡，必須顯示動態迴圈的退回按鈕！
+          else if (isClientStep) {
+            html += '<div class="d-flex gap-2 mt-3">' +
+              '<button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> 客戶確認通過</button>' +
+              '<button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" onclick="promptDynamicClientRevision(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-undo me-1"></i> 退回修改 (產生修改迴圈)</button>' +
+            '</div>';
+          } 
+          // 💡 標準的提交按鈕
+          else {
+            html += '<button class="btn btn-primary btn-sm mt-3 fw-bold shadow-sm" id="btn_submit_' + step.step + '" ' + btnDisabled + ' onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 提交並推進到下一關</button>';
+          }
         }
 
         html += '</div>';
+
       } else if (!isStepAssigned && isDeptHead) {
         html += '<div class="alert alert-warning p-2 mt-2 mb-0 d-flex justify-content-between align-items-center">' +
           '<span><i class="fas fa-exclamation-circle me-1"></i> 請部門主管分配執行同事</span>' +
@@ -1155,7 +1219,7 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
             curS.checklistItems = payload.updatedChecklist;
           }
           var nextS = targetD.workflow.find(function(s){ return s.step > parseFloat(stepNumber) && s.status !== 'Completed'; });
-          
+
           if (nextS) {
             targetD.currentStep = nextS.step;
             var isNextClientStep = nextS.dept.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('client') || nextS.name.toLowerCase().includes('review');
@@ -1202,23 +1266,56 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     }
   }).api_updateWorkflowState(jobNumber, deliverableId, payload);
 }
+  // 🎯 需覆蓋替換的區塊 ----------------------------------
+  // 初始化 Modal (加在文件準備好的時候)
+  document.addEventListener("DOMContentLoaded", function() {
+    var sdEl = document.getElementById('stepDeadlineModal');
+    if (sdEl && typeof bootstrap !== 'undefined') stepDeadlineModalInstance = new bootstrap.Modal(sdEl);
+  });
+
   function openStepDeadlineModal(deliverableId, stepNumber, currentDeadline) {
-    if (typeof openQuickShiftDeadlineModal === 'function') {
-      openQuickShiftDeadlineModal(deliverableId, stepNumber, currentDeadline);
-    } else {
-      var cleanCurDeadline = formatDateOnly(currentDeadline);
-      var newDate = prompt("請選擇新的關卡死線 (YYYY-MM-DD)：", cleanCurDeadline);
-      if (newDate) {
-        google.script.run.withSuccessHandler(function(res) {
-          if (res && res.success) {
-            showAlert("🎉 關卡死線更新成功！", "success");
-            openWorkflow(currentProjectData.jobNumber);
-          } else {
-            showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
-          }
-        }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim());
-      }
+    activeStepDeadlineTarget = { deliverableId: deliverableId, stepNumber: stepNumber };
+    var cleanCurDeadline = (currentDeadline === '稍後補充') ? '' : formatDateOnly(currentDeadline);
+    activeStepDeadlineTarget.isTBD = (currentDeadline === '稍後補充' || currentDeadline.includes('稍後'));
+    
+    document.getElementById('sd_deadlineInput').value = cleanCurDeadline;
+    
+    // 將當前修改的關卡名稱顯示在彈窗上
+    var targetD = (currentProjectData.workflowData.deliverables || []).find(function(d){ return d.id === deliverableId; });
+    if (targetD) {
+      var targetS = targetD.workflow.find(function(s){ return s.step === stepNumber; });
+      if (targetS) document.getElementById('sd_stepName').innerText = 'Step ' + targetS.step + ': ' + targetS.name;
     }
+
+    if (!stepDeadlineModalInstance) {
+      var sdEl = document.getElementById('stepDeadlineModal');
+      if (sdEl) stepDeadlineModalInstance = new bootstrap.Modal(sdEl);
+    }
+    if (stepDeadlineModalInstance) stepDeadlineModalInstance.show();
+  }
+
+  function confirmStepDeadline() {
+    var newDate = document.getElementById('sd_deadlineInput').value;
+    if (!newDate) return showAlert("⚠️ 請選擇新的死線日期！", "warning");
+
+    var cascade = false;
+    if (activeStepDeadlineTarget.isTBD) {
+      cascade = confirm('💡 系統偵測到此關卡原為「稍後補充 (TBD)」。\n\n是否要將此任務底下【所有】尚未設定日期的關卡，一次性同步更新為 ' + newDate + '？\n\n(按 [確定] = 批量同步，按 [取消] = 僅更新這單一個關卡)');
+    }
+
+    var btn = document.querySelector('#stepDeadlineModal .btn-warning');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 處理中...'; }
+
+    google.script.run.withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save me-1"></i> 確認更新'; }
+      if (res && res.success) {
+        showAlert("🎉 關卡死線更新成功！", "success");
+        if (stepDeadlineModalInstance) stepDeadlineModalInstance.hide();
+        openWorkflow(currentProjectData.jobNumber);
+      } else {
+        showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
+      }
+    }).api_updateStepDeadline(activeStepDeadlineTarget.deliverableId, activeStepDeadlineTarget.stepNumber, newDate.trim(), cascade);
   }
 
   function promptDynamicClientRevision(deliverableId, stepNumber) {
