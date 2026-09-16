@@ -1298,6 +1298,7 @@ function submitNewProject(e) {
     var template = selectEl ? selectEl.value : '';
     var name = row.querySelector('.deliv-name') ? row.querySelector('.deliv-name').value.trim() : '';
     
+    // 🎯 需覆蓋替換的區塊 ----------------------------------
     var startDateInput = row.querySelector('.deliv-start-date');
     var deadlineInput = row.querySelector('.deliv-deadline');
     var tbdBox = row.querySelector('.deliv-tbd');
@@ -1307,8 +1308,9 @@ function submitNewProject(e) {
     var dStartDate = isTBD ? '稍後補充' : (startDateInput ? startDateInput.value : '');
     var dDeadline = isTBD ? '稍後補充' : (deadlineInput ? deadlineInput.value : '');
 
+    // 💡 關鍵修復：從 select 的 selectedIndex 動態抓取 data-json，確保多子項目能各自套用不同範本
     var templateJson = '';
-    if (selectEl && selectEl.selectedIndex >= 0) {
+    if (selectEl && selectEl.options.length > 0 && selectEl.selectedIndex >= 0) {
       templateJson = selectEl.options[selectEl.selectedIndex].getAttribute('data-json') || '';
     }
 
@@ -1316,7 +1318,7 @@ function submitNewProject(e) {
       deliverables.push({ 
         templateName: template, 
         name: name,
-        templateJson: templateJson,
+        templateJson: templateJson, // 寫入獨立 JSON
         tentativeStartDate: dStartDate,
         deadline: dDeadline,
         isTBD: isTBD
@@ -1358,30 +1360,7 @@ function submitNewProject(e) {
     .api_createProject(payload);
 }
 
-// ==========================================
-// 💡 [智能同步版] 修改死線 (詢問是否批量覆蓋 TBD 關卡)
-// ==========================================
-function openStepDeadlineModal(deliverableId, stepNumber, currentDeadline) {
-  var cleanCurDeadline = (currentDeadline === '稍後補充') ? '' : formatDateOnly(currentDeadline);
-  var newDate = prompt("請選擇新的關卡死線 (YYYY-MM-DD)：", cleanCurDeadline);
-  
-  if (newDate) {
-    var cascade = false;
-    // 💡 智能提示：如果是 TBD 狀態，詢問是否要批量同步
-    if (currentDeadline === '稍後補充' || currentDeadline.includes('稍後')) {
-      cascade = confirm('💡 系統偵測到此關卡原為「稍後補充 (TBD)」。\n\n是否要將此任務底下【所有】尚未設定日期的關卡，一次性同步更新為 ' + newDate + '？\n\n(按 [確定] = 批量同步，按 [取消] = 僅更新這單一個關卡)');
-    }
 
-    google.script.run.withSuccessHandler(function(res) {
-      if (res && res.success) {
-        showAlert("🎉 死線更新成功！", "success");
-        openWorkflow(currentProjectData.jobNumber);
-      } else {
-        showAlert("❌ 更新失敗: " + (res ? res.message : "未知錯誤"), "danger");
-      }
-    }).api_updateStepDeadline(deliverableId, stepNumber, newDate.trim(), cascade);
-  }
-}
 
 
 function unlockBtn(btn, originalText) {
@@ -1770,12 +1749,16 @@ function renderNotifications(notifs) {
 
     // 2. 專案詳情即時監聽器 (防遞迴與舊快照自動過濾)
     window.listenProjectRealtime = function(jobNumber) {
+      // 🎯 需覆蓋替換的區塊 ----------------------------------
       if (!jobNumber || !realDB) return;
       if (window.activeRealtimeRef) window.activeRealtimeRef.off();
 
       let isProjectInitial = true; 
-
-      window.activeRealtimeRef = realDB.ref('projects/' + jobNumber);
+      
+      // 💡 關鍵修復 6：Firebase 監聽也必須去掉 -P 尾巴！否則 P3 的監聽器永遠收不到 A21 母專案的廣播！
+      let cleanJobNum = String(jobNumber).split('-P')[0];
+      window.activeRealtimeRef = realDB.ref('projects/' + cleanJobNum);
+      
       window.activeRealtimeRef.on('value', function(snapshot) {
         if (isProjectInitial) {
           isProjectInitial = false;
@@ -1794,22 +1777,30 @@ function renderNotifications(notifs) {
           isSomeoneElse = (String(data.updatedBy).toLowerCase() !== String(currentUser.email).toLowerCase());
         }
 
+        // 🎯 需覆蓋替換的區塊 ----------------------------------
         if (isSomeoneElse) {
-          if (typeof currentProjectData !== 'undefined' && currentProjectData && currentProjectData.jobNumber === jobNumber) {
+          var modalEl = document.getElementById('workflowModal');
+          var isModalOpen = modalEl && modalEl.classList.contains('show');
+          var isSameProject = currentProjectData && currentProjectData.jobNumber === jobNumber;
+
+          if (isModalOpen && isSameProject) {
+            // 💡 拔除 Firebase 暴君權力：如果使用者正看著專案，只顯示橫幅提示，【絕不】干擾畫面！
+            var banner = document.getElementById('wf_syncBanner');
+            if (banner) banner.style.display = 'block';
+
+            // 默默把最新資料存到背景變數，並只局部刷新 Log (絕對不重繪輸入框)
             google.script.run.withSuccessHandler(function(res) {
               if (res && res.success) {
-                currentProjectData = res.data;
-                if (typeof renderDeliverableTabs === 'function') {
-                  renderDeliverableTabs(res.data.workflowData.deliverables || []);
+                if (res.data.auditLog && typeof renderAuditLog === 'function') {
+                  currentProjectData.auditLog = res.data.auditLog;
+                  renderAuditLog(res.data.auditLog, activeDeliverableId);
                 }
               }
             }).api_getProjectWorkflow(jobNumber);
-          } else if (typeof openWorkflow === 'function') {
-            openWorkflow(jobNumber);
-          }
 
-          if (typeof showAlert === 'function') {
-            showAlert('⚡ 同事 ' + (data.updatedByName || data.updatedBy) + ' 剛剛更新了此專案，已為您自動載入最新畫面！', 'info');
+          } else {
+            // 💡 如果視窗沒打開，就直接觸發全局重整（更新大看板數據）
+            window.dispatchEvent(new Event('refreshAllViews'));
           }
         }
       });
