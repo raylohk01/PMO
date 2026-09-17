@@ -499,8 +499,8 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
     }).api_getTemplates();
   }
 
-  // ==========================================
-// 💡 載入專案回收箱列表 (已移除「永久刪除」按鈕)
+// ==========================================
+// 💡 載入專案回收箱列表 (支援 P 碼與唯讀檢視)
 // ==========================================
 function loadRecycleBinView() {
   google.script.run.withSuccessHandler(function(res) {
@@ -509,19 +509,22 @@ function loadRecycleBinView() {
     if(!tbody) return;
 
     if(res.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">回收箱目前沒有專案。</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">回收箱目前沒有專案。</td></tr>';
       return;
     }
 
     var html = '';
     res.data.forEach(function(p) {
       var safeJobNum = String(p.jobNumber).replace(/'/g, "\\'");
+      // 💡 加入檢視按鈕與任務名稱
       html += '<tr>' +
-        '<td><strong>' + p.jobNumber + '</strong></td>' +
+        '<td><strong class="text-danger">' + p.jobNumber + '</strong></td>' +
         '<td>' + p.client + '</td>' +
+        '<td><span class="badge bg-light text-dark border">' + p.taskName + '</span></td>' +
         '<td>' + p.pmName + '</td>' +
         '<td class="text-end pe-3">' +
-          '<button class="btn btn-sm btn-outline-success" onclick="restoreProject(\'' + safeJobNum + '\')"><i class="fas fa-undo me-1"></i> 還原專案</button>' +
+          '<button class="btn btn-sm btn-outline-primary me-2" onclick="window.openWorkflow(\'' + safeJobNum + '\')"><i class="fas fa-eye me-1"></i> 檢視</button>' +
+          '<button class="btn btn-sm btn-success" onclick="restoreProject(\'' + safeJobNum + '\')"><i class="fas fa-undo me-1"></i> 還原</button>' +
         '</td>' +
       '</tr>';
     });
