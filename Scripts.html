@@ -1948,5 +1948,43 @@ function setUrgentAlertTimer() {
   showAlert('⏰ 系統將在 2 小時後再次提醒您。', 'info');
 }
 
+// ==========================================
+// 💡 智慧日誌即時刷新外掛 (獨立運作，完全不干擾原有函數)
+// ==========================================
+window.refreshProjectLogUI = function() {
+    var logArea = document.getElementById('wf_auditLogArea');
+    
+    if (logArea) {
+        // 防止重複出現轉圈圈
+        if (!logArea.innerHTML.includes('fa-spinner')) {
+            // 瞬間在最上方插入轉圈圈提示
+            var loadingHtml = '<li class="list-group-item text-center fw-bold text-primary small py-2 bg-light animate__animated animate__fadeIn"><i class="fas fa-spinner fa-spin me-2"></i>正在同步最新日誌...</li>';
+            logArea.insertAdjacentHTML('afterbegin', loadingHtml);
+        }
+    }
+
+    if (!currentProjectData || !currentProjectData.jobNumber) return;
+    var cleanJobNum = String(currentProjectData.jobNumber).split('-P')[0];
+    
+    // 背景默默索取最新日誌，並精準局部替換
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && res.data && res.data.auditLog) {
+        currentProjectData.auditLog = res.data.auditLog;
+        if (typeof renderAuditLog === 'function') {
+           renderAuditLog(currentProjectData.auditLog, activeDeliverableId);
+        }
+      }
+    }).api_getProjectWorkflow(cleanJobNum);
+};
+
+// 💡 綁定到系統原有的全域更新廣播 (包含 Firebase 的瞬間推播)
+window.addEventListener('refreshAllViews', function() {
+    var modalEl = document.getElementById('workflowModal');
+    // 只要你開著專案視窗，做完任何操作的瞬間，就會自動觸發局部刷新 Log！
+    if (modalEl && modalEl.classList.contains('show')) {
+        window.refreshProjectLogUI();
+    }
+});
+
 
 </script>

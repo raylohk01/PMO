@@ -522,7 +522,7 @@ function api_updateStepDeadline(deliverableId, stepNumber, newDeadline, cascade)
 }
 
 // ==========================================
-// 💡 [UX 優化版] 我的任務看板數據 (保證啟動後留在「進行中」區域)
+// 💡 [UX 優化版] 我的任務看板數據 (精準修復個人交棒與追蹤邏輯)
 // ==========================================
 function api_getDashboardData(simEmail) {
   try {
@@ -532,7 +532,7 @@ function api_getDashboardData(simEmail) {
     const userRole = user ? user.role : 'Member';
     const userDept = user ? user.department : '';
 
-    // 💡 預先載入所有同事的部門對應表 (供主管看板判定使用)
+    // 預先載入所有同事的部門對應表
     let cachedDeptMap = {};
     const uSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
     if (uSheet) {
@@ -607,7 +607,7 @@ function api_getDashboardData(simEmail) {
 
             let isMyTask = false;
             let isUpcomingForUser = false;
-            let isTrackingForUser = false; // 💡 新增：是否為追蹤狀態
+            let isTrackingForUser = false; 
 
             const isSuperManager = ['Admin', 'Management', 'Head of PM'].includes(userRole);
             const isProjectPM = pmName && pmName.toLowerCase() === userName.toLowerCase();
@@ -620,24 +620,21 @@ function api_getDashboardData(simEmail) {
               let pastMatch = false; 
 
               if (userRole === 'Team Head') {
-                // 主管除了看自己部門，也要看被自己部門「接手」的 Client 關卡
                 activeMatch = activeSteps.some(s => s.dept === userDept || (String(s.dept).toLowerCase().includes('client') && s.assignee && cachedDeptMap && cachedDeptMap[s.assignee] === userDept));
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.dept === userDept);
                 pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.dept === userDept && s.status === 'Completed');
               } else {
-                // 個人看板：只要 assignee 是我，這關就是我的 Active 任務！不管它是不是 Client 關卡。
                 activeMatch = activeSteps.some(s => s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
                 futureMatch = d.workflow && d.workflow.some(s => s.step > d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase());
                 pastMatch = d.workflow && d.workflow.some(s => s.step < d.currentStep && s.assignee && s.assignee.toLowerCase() === userName.toLowerCase() && s.status === 'Completed');
               }
 
-              // 💡 互斥邏輯修復：若正在處理或未來要處理，就不算在「純追蹤」
               if (activeMatch || futureMatch) {
                 isMyTask = true;
                 if (!activeMatch && futureMatch) isUpcomingForUser = true;
               } else if (pastMatch) {
                 isMyTask = true;
-                isTrackingForUser = true; // 真的沒事了，才進入追蹤
+                isTrackingForUser = true; 
               }
             }
 
@@ -674,44 +671,36 @@ function api_getDashboardData(simEmail) {
               deadline: effectiveDeadlineStr, daysLeft: daysLeft,
               currentStepName: currentStepName, assignee: currentAssignee,
               pmName: pmName, salesName: salesName,
-              isTracking: isTrackingForUser // 💡 新增屬性
+              isTracking: isTrackingForUser 
             };
 
             let isPaused = d.status === 'Paused' || pStatus.includes('pause');
-            
             let isProjectStarted = d.status !== 'Pending Start' && d.status !== 'Not Started';
             let isActive = primaryActiveStep && (primaryActiveStep.status === 'In Progress' || (isProjectStarted && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start')));
-            
-            // 💡 只有按下發送按鈕 (Reviewing) 才算真正交棒！沒按下前都算在 Active (進行中)
             let isClientReviewing = primaryActiveStep && String(primaryActiveStep.dept).toLowerCase().includes('client') && primaryActiveStep.reviewStatus === 'Reviewing';
             
+            // 💡 關鍵修復：拔除原本一刀切的 else if (isActive) 強制抹除邏輯
             if (isClientReviewing && isActive) {
                isActive = false;
                isTrackingForUser = true;
                item.isTracking = true;
-            } else if (isActive) {
-               // 💡 強力互斥：只要是進行中，就絕對不可能是追蹤中！
-               isTrackingForUser = false;
-               item.isTracking = false;
-            }
+            } 
 
-            // 💡 終極防護：主管或 PM 視角
+            // 💡 終極防護：只有在「PM / 主管」的上帝視角下，專案進行中才絕對不算追蹤中。
+            // (一般執行成員如 Ming 則不受此限，順利保留 Tracking 狀態)
             if ((isSuperManager || isProjectPM) && isActive && !isClientReviewing) {
                isTrackingForUser = false;
                isUpcomingForUser = false;
                item.isTracking = false;
             }
 
-            // 💡 [修復版] 分流邏輯：精準區分待啟動、進行中與追蹤中
             if (isPaused) {
               result.paused.push(item);
             } else if (isTrackingForUser) {
               result.tracking.push(item); 
             } else if (isUpcomingForUser || d.status === 'Pending Start' || d.status === 'Not Started' || (d.currentStep === 1 && (primaryActiveStep.status === 'Pending Start' || primaryActiveStep.status === 'Pending'))) {
-              // 💡 待啟動/即將到來：只有「全案未啟動 (Step 1)」或「我的關卡在未來」，才進入 Upcoming。
               result.upcoming.push(item); 
             } else if (isActive || (d.currentStep > 1 && (primaryActiveStep.status === 'Pending' || primaryActiveStep.status === 'Pending Start'))) {
-              // 💡 進行中：只要走過了 Step 1，就算當前關卡缺負責人 (Pending)，也絕對是「進行中」！
               if (daysLeft < 0) result.overdue.push(item);
               else if (daysLeft <= 3) result.dueSoon.push(item);
               else result.onTrack.push(item);
@@ -733,7 +722,7 @@ function api_getDashboardData(simEmail) {
     result.overdue.sort(sortByDeadline);
     result.dueSoon.sort(sortByDeadline);
     result.onTrack.sort(sortByDeadline);
-    result.tracking.sort(sortByDeadline); // 💡 新增
+    result.tracking.sort(sortByDeadline); 
     result.upcoming.sort(sortByDeadline);
     result.paused.sort(sortByDeadline);
 
@@ -1960,8 +1949,13 @@ function api_startClientReviewStep(jobNumber, deliverableId, stepNumber) {
   }
 }
 
-// 💡 補齊 API：動態插入新關卡步驟
+// ==========================================
+// 💡 Phase 4：動態插入新關卡步驟 (修復模式繼承 Bug)
+// ==========================================
 function api_insertWorkflowStep(jobNumber, deliverableId, insertAfterStep, newStepObj) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) { return { success: false, message: '系統忙碌中，請稍候' }; }
+
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
     if (!sheet) throw new Error('找不到 Projects 工作表');
@@ -1972,7 +1966,7 @@ function api_insertWorkflowStep(jobNumber, deliverableId, insertAfterStep, newSt
 
     let rowIndex = -1;
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).trim().toLowerCase()) {
+      if (String(data[i][idxJobNum >= 0 ? idxJobNum : 0]).trim().toLowerCase() === String(jobNumber).split('-P')[0].trim().toLowerCase()) {
         rowIndex = i + 1;
         break;
       }
@@ -1993,34 +1987,50 @@ function api_insertWorkflowStep(jobNumber, deliverableId, insertAfterStep, newSt
     let targetD = (wfData.deliverables || []).find(d => d.id === deliverableId);
     if (!targetD) throw new Error('找不到該子項目');
 
+    // 💡 關鍵修復：把前端傳來的 mode 與 checklistItems 寫進來！
     const insertedStep = {
       step: 0,
       name: newStepObj.name,
       dept: newStepObj.dept,
+      mode: newStepObj.mode || 'STANDARD',
+      parallelGroup: newStepObj.parallelGroup || '',
       status: 'Pending',
-      fields: newStepObj.fields || ['URL']
+      fields: newStepObj.fields || ['URL'],
+      checklistItems: newStepObj.checklistItems || []
     };
 
     const targetIdx = parseInt(insertAfterStep);
     targetD.workflow.splice(targetIdx, 0, insertedStep);
+    
+    // 重新排序並校正
     targetD.workflow.forEach((s, idx) => { s.step = idx + 1; });
 
     const timeStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd HH:mm");
-    const userName = Session.getActiveUser().getEmail().split('@')[0];
+    const userEmail = Session.getActiveUser().getEmail();
+    const userName = userEmail.split('@')[0];
 
     logData.unshift({
       timestamp: timeStr,
       user: userName,
       action: 'Insert Step',
-      details: `動態插入了關卡 Step ${targetIdx + 1}: [${newStepObj.name}] (${newStepObj.dept})`
+      details: `動態插入了關卡 Step ${targetIdx + 1}: [${newStepObj.name}] (${newStepObj.dept})`,
+      deliverableId: deliverableId
     });
 
     sheet.getRange(rowIndex, wfCol).setValue(JSON.stringify(wfData));
     sheet.getRange(rowIndex, logCol).setValue(JSON.stringify(logData));
 
-    return { success: true, message: '成功插入新關卡！' };
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+    
+    if (typeof notifyFirebaseUpdate === 'function') notifyFirebaseUpdate(jobNumber, userEmail, userName, true, wfData);
+
+    // 💡 關鍵修復：回傳 updatedWorkflowData 讓前端原地渲染
+    return { success: true, message: '成功插入新關卡！', updatedWorkflowData: wfData };
   } catch (e) {
     return { success: false, message: e.message };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
   }
 }
 
