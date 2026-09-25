@@ -2128,32 +2128,88 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     var assignee = document.getElementById('dp_assigneeSelect').value;
     if(!assignee) return showAlert('⚠️ 請先選擇負責人員！', 'warning');
 
+    var btn = document.getElementById('dp_btnConfirm');
+    if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 處理中...'; }
+    window.isUpdatingProject = true; // 💡 鎖定防閃爍
+
+    // ----------------------------------------------------
+    // 狀況 A：更換專案整體 PM
+    // ----------------------------------------------------
     if (isPMChangeMode) {
       google.script.run.withSuccessHandler(function(res) {
+        if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rocket me-1"></i> 確認指派'; }
         if(res && res.success) {
-          showAlert('🎉 PM 更換成功！', 'success');
           if(dispatchModalInstance) dispatchModalInstance.hide();
-          openWorkflow(currentProjectData.jobNumber);
+          
+          // 💡 局部無感刷新：連動更新右上角專案資訊
+          currentProjectData.pmName = assignee;
+          var pmLabel = document.getElementById('wf_pmName');
+          if (pmLabel) pmLabel.innerText = assignee;
+          
+          // 💡 如果後端有回傳新資料，瞬間重繪卡片
+          if (res.updatedWorkflowData) {
+            currentProjectData.workflowData = res.updatedWorkflowData;
+            renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+          } else {
+            openWorkflow(currentProjectData.jobNumber); // 安全備案
+          }
+          
+          // 💡 觸發 Log 轉圈圈
+          if (typeof window.refreshProjectLogUI === 'function') window.refreshProjectLogUI();
+          else showAlert('🎉 PM 更換成功！', 'success');
+
+          setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+          setTimeout(function() { window.isUpdatingProject = false; }, 4000);
+          
           if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
-        } else { showAlert('❌ 更換失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
+        } else { 
+          window.isUpdatingProject = false;
+          showAlert('❌ 更換失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); 
+        }
       }).api_reassignPM(currentProjectData.jobNumber, assignee);
       return;
     }
 
-    if(!currentDispatchTarget) return showAlert('⚠️ 無效的操作標的', 'warning');
+    if(!currentDispatchTarget) {
+      window.isUpdatingProject = false;
+      return showAlert('⚠️ 無效的操作標的', 'warning');
+    }
 
-    var btn = document.getElementById('dp_btnConfirm');
-    if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 派案中...'; }
-    window.isUpdatingProject = true; // 💡 鎖定防閃爍
-
+    // ----------------------------------------------------
+    // 狀況 B：單一關卡（或 PM 關卡）派案
+    // ----------------------------------------------------
     google.script.run.withSuccessHandler(function(res) {
       if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rocket me-1"></i> 確認指派'; }
       if(res && res.success) {
-        showAlert('🎉 ' + res.message, 'success');
         if(dispatchModalInstance) dispatchModalInstance.hide();
-        openWorkflow(currentProjectData.jobNumber); 
-        window.dispatchEvent(new Event('refreshAllViews'));
+        
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          
+          // 💡 連動判斷：如果是指派給 PM，專案概況裡的 PM 也要跟著變
+          if (currentDispatchTarget.dept === 'PM') {
+             currentProjectData.pmName = assignee;
+             var pmLabel = document.getElementById('wf_pmName');
+             if (pmLabel) pmLabel.innerText = assignee;
+          }
+          
+          // 💡 原地瞬間重繪卡片，沒有白屏！
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        } else {
+          openWorkflow(currentProjectData.jobNumber); // 安全備案
+        }
+        
+        // 💡 觸發 Log 轉圈圈
+        if (typeof window.refreshProjectLogUI === 'function') {
+            window.refreshProjectLogUI();
+        } else {
+            showAlert('🎉 ' + res.message, 'success');
+        }
+
+        setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+        setTimeout(function() { window.isUpdatingProject = false; }, 4000);
       } else {
+        window.isUpdatingProject = false;
         showAlert('❌ 指派失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_dispatchWorkflowStep(
