@@ -160,6 +160,115 @@ function switchSection(sectionId) {
     }).api_saveDepartment({ name: name, colorHex: colorHex });
   }
 
+  // ==========================================
+  // 💡 通知控制矩陣儲存邏輯 (Notification Settings)
+  // ==========================================
+  function saveNotificationSettings() {
+    var btn = document.querySelector('#notificationConfigBlock .btn-success');
+    var originalBtnHTML = '<i class="fas fa-save me-1"></i> 儲存通知設定';
+    if (btn) {
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 儲存中...';
+      btn.disabled = true;
+    }
+
+    // 收集 7 大觸發事件的推播與 Email 狀態
+    var notifSettings = {
+      newTask: {
+        push: document.getElementById('push_newTask') ? document.getElementById('push_newTask').checked : true,
+        email: document.getElementById('email_newTask') ? document.getElementById('email_newTask').checked : true
+      },
+      overdue: {
+        push: document.getElementById('push_overdue') ? document.getElementById('push_overdue').checked : true,
+        email: document.getElementById('email_overdue') ? document.getElementById('email_overdue').checked : true
+      },
+      rejected: {
+        push: document.getElementById('push_rejected') ? document.getElementById('push_rejected').checked : true,
+        email: document.getElementById('email_rejected') ? document.getElementById('email_rejected').checked : false
+      },
+      approved: {
+        push: document.getElementById('push_approved') ? document.getElementById('push_approved').checked : false,
+        email: document.getElementById('email_approved') ? document.getElementById('email_approved').checked : false
+      },
+      stageAssigned: {
+        push: document.getElementById('push_stage_assigned') ? document.getElementById('push_stage_assigned').checked : true,
+        email: document.getElementById('email_stage_assigned') ? document.getElementById('email_stage_assigned').checked : false
+      },
+      dailyTodo: {
+        push: document.getElementById('push_daily_todo') ? document.getElementById('push_daily_todo').checked : false,
+        email: document.getElementById('email_daily_todo') ? document.getElementById('email_daily_todo').checked : true
+      },
+      deptSummary: {
+        push: document.getElementById('push_dept_summary') ? document.getElementById('push_dept_summary').checked : false,
+        email: document.getElementById('email_dept_summary') ? document.getElementById('email_dept_summary').checked : true
+      }
+    };
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) {
+          btn.innerHTML = originalBtnHTML;
+          btn.disabled = false;
+        }
+        if (res && res.success) {
+          showAlert('🎉 通知觸發矩陣設定已成功儲存！', 'success');
+        } else {
+          showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        }
+      })
+      .withFailureHandler(function(err) {
+        if (btn) {
+          btn.innerHTML = originalBtnHTML;
+          btn.disabled = false;
+        }
+        showAlert('❌ 系統網路崩潰: ' + err.message, 'danger');
+      })
+      .api_saveNotificationSettings(notifSettings);
+  }
+
+  function loadNotificationSettingsUI() {
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && res.data) {
+        var d = res.data;
+        // 任務派發
+        if (d.newTask) {
+          if (document.getElementById('push_newTask')) document.getElementById('push_newTask').checked = d.newTask.push;
+          if (document.getElementById('email_newTask')) document.getElementById('email_newTask').checked = d.newTask.email;
+        }
+        // 任務逾期
+        if (d.overdue) {
+          if (document.getElementById('push_overdue')) document.getElementById('push_overdue').checked = d.overdue.push;
+          if (document.getElementById('email_overdue')) document.getElementById('email_overdue').checked = d.overdue.email;
+        }
+        // 退回修改
+        if (d.rejected) {
+          if (document.getElementById('push_rejected')) document.getElementById('push_rejected').checked = d.rejected.push;
+          if (document.getElementById('email_rejected')) document.getElementById('email_rejected').checked = d.rejected.email;
+        }
+        // 關卡過關
+        if (d.approved) {
+          if (document.getElementById('push_approved')) document.getElementById('push_approved').checked = d.approved.push;
+          if (document.getElementById('email_approved')) document.getElementById('email_approved').checked = d.approved.email;
+        }
+        // 指定同事
+        if (d.stageAssigned) {
+          if (document.getElementById('push_stage_assigned')) document.getElementById('push_stage_assigned').checked = d.stageAssigned.push;
+          if (document.getElementById('email_stage_assigned')) document.getElementById('email_stage_assigned').checked = d.stageAssigned.email;
+        }
+        // 每日工作清單
+        if (d.dailyTodo) {
+          if (document.getElementById('push_daily_todo')) document.getElementById('push_daily_todo').checked = d.dailyTodo.push;
+          if (document.getElementById('email_daily_todo')) document.getElementById('email_daily_todo').checked = d.dailyTodo.email;
+        }
+        // 每天部門匯總
+        if (d.deptSummary) {
+          if (document.getElementById('push_dept_summary')) document.getElementById('push_dept_summary').checked = d.deptSummary.push;
+          if (document.getElementById('email_dept_summary')) document.getElementById('email_dept_summary').checked = d.deptSummary.email;
+        }
+      }
+    }).api_getNotificationSettings();
+  }
+
+
   function getDeptColor(deptName) { return globalDepartments[deptName] || '#6c757d'; }
 
   function initDashboard(user) {
@@ -398,6 +507,7 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
     if (canEdit) {
       loadTemplateAdminView();
       loadRecycleBinView();
+      loadNotificationSettingsUI(); // 👇 加入這一行
     }
 
     google.script.run.withSuccessHandler(function(res) {

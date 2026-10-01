@@ -94,7 +94,142 @@
   </div>
 </div>
 
-<!-- 3. 部門與標籤顏色設定 (已移至最下方) -->
+<!-- ========================================== -->
+<!-- 3. 推送與通知控制矩陣 (Notification Matrix) -->
+<!-- ========================================== -->
+<div id="notificationConfigBlock" class="mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="text-secondary mb-0"><i class="fas fa-bell me-2"></i> 通知觸發控制矩陣</h3>
+    <button class="btn btn-success fw-bold" onclick="saveNotificationSettings()"><i class="fas fa-save me-1"></i> 儲存通知設定</button>
+  </div>
+  <div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 text-center">
+          <thead class="table-dark">
+            <tr>
+              <th class="text-start ps-4">觸發事件 (Trigger Event)</th>
+              <th><i class="fas fa-mobile-alt me-1"></i> 即時推播 (Web Push)</th>
+              <th><i class="fas fa-envelope me-1"></i> Email 通知</th>
+              <th class="text-start">預設策略建議</th>
+            </tr>
+          </thead>
+          <tbody id="notificationTableBody">
+            <!-- 任務派發 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold">1. 新任務派發 (Assigned)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="push_newTask" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="email_newTask" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">確保負責人第一時間收到，建議雙開</td>
+            </tr>
+            <!-- 逾期提醒 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold text-danger">2. 任務逾期警報 (Overdue)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input border-danger shadow-sm" type="checkbox" id="push_overdue" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input border-danger shadow-sm" type="checkbox" id="email_overdue" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">最高緊急層級，雙管齊下強力提醒</td>
+            </tr>
+            <!-- 退回修改 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold text-warning">3. 遭退回修改 (Rejected)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="push_rejected" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="email_rejected" style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">溝通頻率高，建議僅開推播減少信件轟炸</td>
+            </tr>
+            <!-- 關卡過關 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold text-success">4. 關卡順利通過 (Approved)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="push_approved" style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="email_approved" style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">非需處理事項，預設關閉以防過度干擾</td>
+            </tr>
+
+            <!-- 5. 指定同事 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold text-info">5. 任務到達專屬關卡 (Stage Assigned)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="push_stage_assigned" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="email_stage_assigned" style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">接手處理的關鍵節點，建議開啟推播以加速推進</td>
+            </tr>
+            <!-- 6. 每日工作清單 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold text-primary">6. 每日工作清單 (Daily To-Do)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="push_daily_todo" style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="email_daily_todo" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">晨間例行派送，建議使用 Email 方便整批閱讀與規劃</td>
+            </tr>
+            <!-- 7. 每天部門匯總 -->
+            <tr>
+              <td class="text-start ps-4 fw-bold" style="color: #6f42c1;">7. 每天部門匯總 (Dept. Summary)</td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="push_dept_summary" style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td>
+                <div class="form-check form-switch d-flex justify-content-center">
+                  <input class="form-check-input shadow-sm" type="checkbox" id="email_dept_summary" checked style="transform: scale(1.3);">
+                </div>
+              </td>
+              <td class="text-muted small text-start">由部門主管接收，統整行動與逾期項目，建議僅 Email</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 4. 部門與標籤顏色設定 (已移至最下方) -->
 <div id="deptConfigBlock" class="mb-5">
   <h3 class="text-secondary mb-3"><i class="fas fa-palette me-2"></i> 部門與標籤顏色設定</h3>
   <div class="card shadow-sm border-0">
@@ -118,7 +253,7 @@
   </div>
 </div>
 
-<!-- 4. 範本編輯 Modal -->
+<!-- 5. 範本編輯 Modal -->
 <div class="modal fade" id="templateEditModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content shadow-lg">
