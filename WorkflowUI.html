@@ -221,47 +221,148 @@
   </div>
 </div>
 
-<!-- 🚀 動態插入關卡 Modal -->
+<!-- 🚀 動態追加新子項目 Modal (Add Sub-Project) -->
+<div class="modal fade" id="appendDeliverableModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content shadow-lg border-0">
+      <div class="modal-header bg-primary text-white py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-layer-group me-1"></i> 事後追加新任務 (Sub-Project)</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <div class="alert alert-info small mb-3">
+          <i class="fas fa-info-circle me-1"></i> 您可以在專案啟動後，無縫追加新的子項目 (例如加開 P4 篇章)。
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">任務名稱</label>
+          <input type="text" class="form-control form-control-sm fw-bold border-primary" id="ad_name" placeholder="例如：加發 Facebook 貼文">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">套用工作流範本</label>
+          <select class="form-select form-select-sm" id="ad_templateSelect">
+            <option value="">載入範本中...</option>
+          </select>
+        </div>
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label small text-muted mb-1">預計開始日</label>
+            <input type="date" class="form-control form-control-sm" id="ad_startDate">
+          </div>
+          <div class="col-6">
+            <label class="form-label small text-muted mb-1 text-danger">任務死線</label>
+            <input type="date" class="form-control form-control-sm border-danger" id="ad_deadline">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary btn-sm fw-bold" id="ad_btnConfirm" onclick="confirmAppendDeliverable()"><i class="fas fa-plus me-1"></i> 確認追加</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 🚀 動態追加新子項目 Modal (Add Sub-Project) -->
+<div class="modal fade" id="appendDeliverableModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content shadow-lg border-0">
+      <div class="modal-header bg-primary text-white py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-layer-group me-1"></i> 事後追加新任務 (Sub-Project)</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <div class="alert alert-info small mb-3">
+          <i class="fas fa-info-circle me-1"></i> 您可以在專案啟動後，無縫追加新的子項目 (例如加開 P4 篇章)。
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">任務名稱</label>
+          <input type="text" class="form-control form-control-sm fw-bold border-primary" id="ad_name" placeholder="例如：加發 Facebook 貼文">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">套用工作流範本</label>
+          <select class="form-select form-select-sm" id="ad_templateSelect">
+            <option value="">載入範本中...</option>
+          </select>
+        </div>
+        <div class="row g-2">
+          <div class="col-6">
+            <label class="form-label small text-muted mb-1">預計開始日</label>
+            <input type="date" class="form-control form-control-sm" id="ad_startDate">
+          </div>
+          <div class="col-6">
+            <label class="form-label small text-muted mb-1 text-danger">任務死線</label>
+            <input type="date" class="form-control form-control-sm border-danger" id="ad_deadline">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary btn-sm fw-bold" id="ad_btnConfirm" onclick="confirmAppendDeliverable()"><i class="fas fa-plus me-1"></i> 確認追加</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 🚀 動態插入新關卡步驟 Modal (Rich UI 升級版) -->
 <div class="modal fade" id="insertStepModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
   <div class="modal-dialog">
-    <div class="modal-content shadow">
+    <div class="modal-content shadow-lg border-0">
       <div class="modal-header bg-info text-white py-2">
         <h5 class="modal-title fs-6"><i class="fas fa-plus-circle me-1"></i> 動態插入新關卡步驟</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-light">
-        <div class="mb-3">
-          <label class="form-label small text-muted">插入位置</label>
-          <select class="form-select form-select-sm" id="ins_positionSelect"></select>
+        <div class="mb-2">
+          <label class="form-label small text-muted mb-1">插入位置</label>
+          <select class="form-select form-select-sm border-info" id="ins_positionSelect"></select>
         </div>
-        <div class="mb-3">
-          <label class="form-label small text-muted">關卡名稱</label>
-          <input type="text" class="form-control form-control-sm" id="ins_stepName" placeholder="例如: Design 美編設計 / 額外審核">
+        <div class="row g-2 mb-2">
+          <div class="col-7">
+            <label class="form-label small text-muted mb-1">關卡名稱</label>
+            <input type="text" class="form-control form-control-sm fw-bold" id="ins_stepName" placeholder="例如: 額外審核">
+          </div>
+          <div class="col-5">
+            <label class="form-label small text-muted mb-1">負責部門</label>
+            <select class="form-select form-select-sm" id="ins_deptSelect">
+              <option value="Editorial">Editorial</option><option value="Design">Design</option>
+              <option value="Creative">Creative</option><option value="AdOps">AdOps</option>
+              <option value="Client">Client</option><option value="PM" selected>PM</option>
+            </select>
+          </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label small text-muted">負責部門</label>
-          <select class="form-select form-select-sm" id="ins_deptSelect">
-            <option value="Design">Design</option>
-            <option value="Editorial">Editorial</option>
-            <option value="Creative">Creative</option>
-            <option value="AdOps">AdOps</option>
-            <option value="Client">Client</option>
-            <option value="PM">PM</option>
-            <option value="Sales">Sales</option>
-          </select>
+        <div class="row g-2 mb-3">
+          <div class="col-7">
+            <label class="form-label small text-muted mb-1">關卡模式</label>
+            <select class="form-select form-select-sm" id="ins_modeSelect" onchange="toggleInsertStepMode(this.value)">
+              <option value="STANDARD">🚀 標準推進關卡</option>
+              <option value="CHECKLIST">☑️ Check List 關卡</option>
+              <option value="APPROVAL_PREV">🤝 繼承審批 (上一關人員)</option>
+              <option value="APPROVAL_PM">👑 PM 強制審批</option>
+              <option value="FILE_ONLY">📁 文件上傳關卡</option>
+            </select>
+          </div>
+          <div class="col-5">
+            <label class="form-label small text-muted mb-1">並行群組 (選填)</label>
+            <input type="text" class="form-control form-control-sm" id="ins_group" placeholder="如 A (相同則並行)">
+          </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label small text-muted">需填寫欄位 (用逗號隔開)</label>
-          <input type="text" class="form-control form-control-sm" id="ins_fields" value="URL" placeholder="欄位名稱">
+        <div id="ins_fieldsArea">
+          <label class="form-label small text-muted mb-1">需填寫欄位 (用逗號隔開)</label>
+          <input type="text" class="form-control form-control-sm" id="ins_fields" value="URL" placeholder="例如: 附件網址, 備註">
+        </div>
+        <div id="ins_checklistArea" style="display: none;">
+          <label class="form-label small text-muted mb-1">檢查項目 (用逗號隔開)</label>
+          <input type="text" class="form-control form-control-sm border-success" id="ins_checklistItems" value="項目一, 項目二" placeholder="例如: 確認文字, 確認圖檔">
         </div>
       </div>
       <div class="modal-footer bg-white py-2">
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-        <button type="button" class="btn btn-info text-white btn-sm fw-bold" onclick="confirmInsertStep()"><i class="fas fa-check me-1"></i> 確認插入關卡</button>
+        <button type="button" class="btn btn-info text-white btn-sm fw-bold" id="ins_btnConfirm" onclick="confirmInsertStep()"><i class="fas fa-check me-1"></i> 確認插入關卡</button>
       </div>
     </div>
   </div>
 </div>
+
 
 <!-- 🚀 客戶退回修改專用 Modal (舊版 PM 專用) -->
 <div class="modal fade" id="clientRevisionModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
@@ -321,6 +422,36 @@
       <div class="modal-footer bg-white py-2">
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
         <button type="button" class="btn btn-danger btn-sm fw-bold" id="dyn_cr_btnConfirm" onclick="confirmDynamicClientRevision()"><i class="fas fa-undo me-1"></i> 確認退回並產生修改迴圈</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 🚀 動態永久刪除關卡 Modal (Remove Step) -->
+<div class="modal fade" id="removeStepModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" style="z-index: 1060;">
+  <div class="modal-dialog">
+    <div class="modal-content shadow-lg border-0">
+      <div class="modal-header bg-danger text-white py-2">
+        <h5 class="modal-title fs-6"><i class="fas fa-trash-alt me-1"></i> 永久刪除關卡 (Remove Step)</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body bg-light">
+        <div class="alert alert-danger small mb-3 border-danger">
+          <i class="fas fa-exclamation-triangle me-1"></i> <strong>危險操作！</strong> 您即將永久刪除此關卡。<br>
+          刪除後，後續的關卡編號將會自動向前遞補，且此操作將被強制寫入活動日誌。
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">即將刪除的關卡：</label>
+          <input type="text" class="form-control form-control-sm fw-bold bg-white text-danger" id="rm_stepInfo" disabled>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold text-dark">請輸入刪除原因以確認執行：</label>
+          <textarea class="form-control form-control-sm border-danger" id="rm_reasonInput" rows="2" placeholder="例如：客戶要求簡化流程 / PM 調整..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer bg-white py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-danger btn-sm fw-bold" id="rm_btnConfirm" onclick="confirmRemoveStep()"><i class="fas fa-trash-alt me-1"></i> 確認永久刪除</button>
       </div>
     </div>
   </div>
@@ -531,6 +662,77 @@
       });
     }
   });
+
+  // ==========================================
+// 💡 [極致零閃爍版] 開啟專案工作流視窗
+// ==========================================
+window.openWorkflow = function(jobNumber) {
+  window.isUpdatingProject = false; 
+
+  if (typeof listenProjectRealtime === 'function') listenProjectRealtime(jobNumber);
+  
+  try {
+    var modalEl = document.getElementById('workflowModal');
+    if (!modalEl) return showAlert('❌ 錯誤：系統找不到 workflowModal HTML 標籤！', 'danger');
+    
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+      workflowModalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    }
+
+    document.getElementById('wf_jobNumber').innerText = jobNumber;
+    if (document.getElementById('wf_infoJobNumber')) document.getElementById('wf_infoJobNumber').innerText = jobNumber;
+    
+    workflowModalInstance.show();
+
+    var cleanJobNum = String(jobNumber).split('-P')[0];
+    var pIndexMatch = String(jobNumber).match(/-P(\d+)/);
+    var targetIndex = pIndexMatch ? parseInt(pIndexMatch[1]) - 1 : -1;
+
+    document.getElementById('wf_deliverableTabs').innerHTML = '<li class="nav-item"><a class="nav-link active">讀取中...</a></li>';
+    document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="text-center text-muted py-5 mt-4"><i class="fas fa-spinner fa-spin fa-2x mb-3"></i><br>正在同步雲端最新進度...</div>';
+
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success) {
+        if (window.isUpdatingProject) {
+          console.warn("🚫 拒絕 DOM 重繪：使用者已按下操作按鈕！");
+          return; 
+        }
+
+        currentProjectData = res.data;
+
+        document.getElementById('wf_clientName').innerText = res.data.client || '未設定';
+        document.getElementById('wf_pmName').innerText = res.data.pmName || '未設定';
+        if (document.getElementById('wf_salesName')) document.getElementById('wf_salesName').innerText = res.data.salesPerson || res.data.sales || '未設定';
+        if (document.getElementById('wf_mainDeadline')) document.getElementById('wf_mainDeadline').innerText = formatDateOnly(res.data.mainDeadline);
+
+        var isSuperManager = currentUser && (['Admin', 'Management'].includes(currentUser.role) || (currentUser.role === 'Team Head' && currentUser.department === 'PM'));
+        var dropdownEl = document.getElementById('projectManageDropdown');
+        if (dropdownEl) dropdownEl.style.display = isSuperManager ? 'inline-block' : 'none';
+
+        var btnChangePM = document.getElementById('btn_changePM');
+        if (btnChangePM) btnChangePM.style.display = isSuperManager ? 'inline-block' : 'none';
+
+        var btnEditJobNumber = document.getElementById('btn_editJobNumber');
+        if (btnEditJobNumber) btnEditJobNumber.style.display = isSuperManager || (currentUser && res.data.pmName === currentUser.name) ? 'inline-block' : 'none';
+
+        if (targetIndex >= 0 && res.data.workflowData.deliverables && res.data.workflowData.deliverables.length > targetIndex) {
+            activeDeliverableId = res.data.workflowData.deliverables[targetIndex].id;
+        }
+
+        renderDeliverableTabs(res.data.workflowData.deliverables || []);
+        renderAuditLog(res.data.auditLog || [], activeDeliverableId);
+
+      } else {
+        if (!currentProjectData) {
+          document.getElementById('wf_dynamicContentArea').innerHTML = '<div class="alert alert-danger">讀取失敗：' + (res ? res.message : '未知錯誤') + '</div>';
+        }
+      }
+    }).api_getProjectWorkflow(cleanJobNum); 
+
+  } catch (err) {
+    showAlert('❌ 開啟視窗時發生錯誤: ' + err.message, 'danger');
+  }
+};
 
 // ==========================================
 // 💡 [極致零閃爍版] 開啟專案工作流視窗
@@ -780,8 +982,9 @@ window.openWorkflow = function(jobNumber) {
     return precedingSteps.every(function(s) { return s.status === 'Completed'; });
   }
 
+
 // ==========================================
-// 💡 [終極修復版] 關卡內容渲染 (Checklist 1對1配對 + 繼承審批自動帶人 + 恢復完成補充按鈕 + 催辦防呆變灰)
+// 💡 [終極修復版] 關卡內容渲染 (Auto-Save綁定與防呆刪除)
 // ==========================================
 function renderDeliverableContent(deliverable) {
   var container = document.getElementById('wf_dynamicContentArea');
@@ -896,7 +1099,12 @@ function renderDeliverableContent(deliverable) {
     var rollbackBtn = (isCompleted && canManageWorkflow && !isProjectCompleted) ?
       '<button class="btn btn-xs btn-outline-warning ms-1 py-0 px-1" style="font-size:0.75em;" onclick="promptRollbackStep(' + step.step + ')" title="退回此關"><i class="fas fa-undo me-1"></i>退回此關</button>' : '';
 
-    // 💡 關鍵修復：未指派負責人的關卡，催辦按鈕變灰且不可點擊
+    // 💡 Phase 4：動態刪除關卡 (首尾不可刪，完成不可刪)
+    var isFirstStep = (index === 0);
+    var isLastStep = (index === deliverable.workflow.length - 1);
+    var removeStepBtn = (!isFirstStep && !isLastStep && !isCompleted && !isProjectCompleted && canManageWorkflow) ?
+      '<button class="btn btn-xs btn-outline-danger ms-1 py-0 px-1" style="font-size:0.75em;" onclick="promptRemoveStep(\'' + deliverable.id + '\', ' + step.step + ')" title="永久刪除此關卡"><i class="fas fa-trash-alt me-1"></i>刪除此關</button>' : '';
+
     var nudgeBtn = '';
     if (isCurrent && canManageWorkflow) {
       if (isStepAssigned || isClientStep || stepMode === 'APPROVAL_PM') {
@@ -906,31 +1114,25 @@ function renderDeliverableContent(deliverable) {
       }
     }
 
-    // 卡片標頭列
     html += '<div class="d-flex mb-4 position-relative" style="z-index: 2;">' +
       '<div class="rounded-circle ' + iconColor + ' text-white d-flex justify-content-center align-items-center flex-shrink-0 mt-1 shadow-sm" style="width: 40px; height: 40px; border: 3px solid white;"><i class="fas ' + icon + '"></i></div>' +
       '<div class="card flex-grow-1 ms-3 ' + cardBorder + '">' +
         '<div class="card-body p-3">' +
           '<div class="d-flex justify-content-between align-items-center mb-2">' +
             '<h6 class="mb-0 fw-bold ' + (isCurrent ? 'text-primary' : (isCompleted ? 'text-success' : 'text-secondary')) + '">' +
-              stepDisplayLabel + ': ' + step.name + ' <span class="badge bg-secondary bg-opacity-10 text-dark border ms-1" style="font-size:0.7em;">' + getStepModeName(stepMode) + '</span>' + delayBadge + assigneeBadge + reassignBtn + rollbackBtn + nudgeBtn +
+              stepDisplayLabel + ': ' + step.name + ' <span class="badge bg-secondary bg-opacity-10 text-dark border ms-1" style="font-size:0.7em;">' + getStepModeName(stepMode) + '</span>' + delayBadge + assigneeBadge + reassignBtn + rollbackBtn + removeStepBtn + nudgeBtn +
             '</h6>' +
-            // 🎯 需覆蓋替換的區塊 (把 stepDeadlineEditBtn 加進去) ----
             '<div>' +
               '<span class="badge bg-light text-dark border me-1">' + step.dept + '</span>' +
               (effectiveDeadline ? '<span class="badge bg-outline-secondary border text-muted"><i class="fas fa-clock"></i> ' + effectiveDeadline + '</span>' : '') +
-              stepDeadlineEditBtn + // 💡 關鍵修復：把小鉛筆按鈕補回死線日期的右邊！
+              stepDeadlineEditBtn + 
             '</div></div>';
+            
     if(isCompleted) {
       html += '<div class="bg-light p-2 rounded mb-2 border-start border-3 border-success small text-success">' +
         '<i class="fas fa-check-circle me-1"></i> 已於 ' + (step.completedAt || '稍早') + ' 完成。' +
       '</div>';
-    }
-
-    // 🎯 需覆蓋替換的區塊 (將顯示條件嚴格改回 isCompleted) ----
-    // 💡 關鍵修復：將唯讀展示區塊嚴格限制在「已完成」狀態。
-    // 退回狀態 (isCurrent) 時，所有歷史紀錄將直接轉化為下方的可編輯輸入框！
-    if (isCompleted) {
+      
       if (stepMode === 'CHECKLIST') {
         var items = step.checklistItems || [];
         html += '<div class="bg-light p-2 rounded mt-2 border small">';
@@ -961,7 +1163,6 @@ function renderDeliverableContent(deliverable) {
       }
     }
 
-    // 恢復所有完成與進行中關卡的「➕ 補充資料 / 連結」按鈕！
     if((isCompleted || isCurrent) && canAppendData) {
       html += '<div class="mt-2 text-end">' +
         '<button class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.78em;" onclick="toggleAppendPanel(\'' + deliverable.id + '\', ' + step.step + ')">' +
@@ -974,42 +1175,47 @@ function renderDeliverableContent(deliverable) {
           '<input type="text" id="append_content_' + deliverable.id + '_' + step.step + '" class="form-control form-control-sm" placeholder="內容或 URL...">' +
         '</div>' +
         '<div class="text-end">' +
-          '<button class="btn btn-xs btn-primary py-0 px-2" style="font-size: 0.8em;" onclick="submitAppendData(\'' + deliverable.id + '\', ' + step.step + ')">儲存補充</button>' +
+          '<button id="btn_append_' + deliverable.id + '_' + step.step + '" class="btn btn-xs btn-primary py-0 px-2" style="font-size: 0.8em;" onclick="submitAppendData(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-save me-1"></i>儲存補充</button>' +
         '</div>' +
       '</div>';
     }
 
-    // 💡 1. 進行中關卡 (Active Step) 互動填寫區
     if(isCurrent && !isProjectCompleted) {
       if(isMyTurn) {
         html += '<div class="bg-light p-3 rounded mt-2 border border-primary border-opacity-25">';
         
-        // 💡 關鍵修復：退回關卡時，把原本填過的資料帶回輸入框！
         var getSavedVal = function(key) {
           return (step.submittedData && step.submittedData[key]) ? step.submittedData[key] : '';
         };
 
-        // ▲▲▲ 替換為以下這段新代碼 ▲▲▲
+        // 💡 Auto-Save 觸發字串 (打字停頓 2 秒，或失去焦點)
+        var autoSaveEvents = 'onkeyup="window.triggerAutoSave(\'' + deliverable.id + '\', ' + step.step + ')" onblur="window.executeAutoSave(\'' + deliverable.id + '\', ' + step.step + ')"';
+        var autoSaveCheckEvent = 'window.executeAutoSave(\'' + deliverable.id + '\', ' + step.step + ');';
+
         if (stepMode === 'CHECKLIST') {
           var items = step.checklistItems || ['預設檢查項目'];
           html += '<h6 class="fw-bold text-info mb-3"><i class="fas fa-tasks me-1"></i> 請確認完成以下檢查清單 (需 100% 勾選並填寫補充資料)：</h6>';
           
-          // 💡 關鍵修復：把小數點轉成底線
           var safeStepId = String(step.step).replace('.', '_');
 
           items.forEach(function(item, iIdx) {
             var checkId = 'chk_' + safeStepId + '_' + iIdx;
             var savedVal = getSavedVal(item);
+            
+            // 💡 關鍵修復：判斷資料庫中是否有值，如果有，就把 Checkbox 設為 checked
+            var isChecked = (savedVal === '✅ 已確認' || savedVal.includes('✅')) ? 'checked' : ''; 
+            
             html += '<div class="bg-white p-2 rounded border mb-2 ms-1 shadow-sm">' +
               '<div class="form-check mb-1">' +
-                '<input class="form-check-input chk-item-' + safeStepId + '" type="checkbox" id="' + checkId + '" onchange="validateChecklistCompletion(\'' + step.step + '\')">' +
+                // 💡 把 isChecked 變數放進標籤中
+                '<input class="form-check-input chk-item-' + safeStepId + '" type="checkbox" id="' + checkId + '" ' + isChecked + ' onchange="validateChecklistCompletion(\'' + step.step + '\'); ' + autoSaveCheckEvent + '">' +
                 '<label class="form-check-label small fw-bold text-dark cursor-pointer ms-1" for="' + checkId + '">' + item + '</label>' +
               '</div>' +
-              '<input type="text" class="form-control form-control-sm border-light-subtle chk-input-' + safeStepId + '" data-label="' + item + '" value="' + savedVal + '" placeholder="補充資料 / 連結 (選填)">' +
+              // 💡 加入 Auto-save
+              '<input type="text" class="form-control form-control-sm border-light-subtle chk-input-' + safeStepId + '" data-label="' + item + '" value="' + savedVal + '" placeholder="補充資料 / 連結 (選填)" ' + autoSaveEvents + '>' +
             '</div>';
           });
 
-          // 💡 關鍵升級：將非預設 Checklist 的「過往額外補充紀錄」，也自動轉成輸入框讓使用者編輯！
           var extraFields = [];
           if (step.submittedData) {
             for (var key in step.submittedData) {
@@ -1017,10 +1223,11 @@ function renderDeliverableContent(deliverable) {
             }
           }
           if (extraFields.length > 0) {
-            html += '<div class="mt-3 border-top pt-2"><h6 class="fw-bold text-secondary mb-2"><i class="fas fa-history me-1"></i> 過往額外補充紀錄：</h6>';
+            html += '<div class="mt-3 border-top pt-2"><h6 class="fw-bold text-secondary mb-2"><i class="fas fa-history me-1"></i> 最近補充紀錄：</h6>';
             extraFields.forEach(function(f) {
               var savedVal = getSavedVal(f);
-              html += '<div class="mb-2"><label class="form-label small fw-bold text-dark">' + f + '</label><input type="text" data-label="' + f + '" class="form-control form-control-sm" value="' + savedVal + '" placeholder="請填寫內容或貼上網址..."></div>';
+              // 💡 加入 Auto-save
+              html += '<div class="mb-2"><label class="form-label small fw-bold text-dark">' + f + '</label><input type="text" data-label="' + f + '" class="form-control form-control-sm" value="' + savedVal + '" placeholder="請填寫內容或貼上網址..." ' + autoSaveEvents + '></div>';
             });
             html += '</div>';
           }
@@ -1029,16 +1236,12 @@ function renderDeliverableContent(deliverable) {
             '<button id="btn_add_chk_' + step.step + '" class="btn btn-xs btn-outline-info py-0 px-2" style="font-size:0.75em;" onclick="addDynamicChecklistItem(' + step.step + ')"><i class="fas fa-plus"></i> 現場新增檢查項</button>' +
           '</div>';
         }
-
-        // 🎯 需覆蓋替換的區塊 ----------------------------------
-        // 🤝 / 👑 審批模式渲染
         else if (stepMode === 'APPROVAL_PREV' || stepMode === 'APPROVAL_PM') {
           html += '<div class="alert alert-warning mb-3 small"><i class="fas fa-user-check me-1"></i> 此關卡為<strong>審批關卡</strong>，請審閱內容後進行決策：</div>';
           
           if (isPMClientReviewStep && step.reviewStatus !== 'Reviewing') {
-            html += '<button class="btn btn-info btn-sm mb-2 fw-bold text-white shadow-sm" onclick="startClientReview(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 正式發送給客戶審批 (開始計時)</button>';
+            html += '<button class="btn btn-info btn-sm mt-3 fw-bold text-white shadow-sm" onclick="startClientReview(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 正式發送給客戶審批 (開始計時)</button>';
           } else {
-            // 💡 統一：無論是 Client 還是內部審批，只要是審批關卡，退回就一律走「動態修改迴圈」！
             let passText = isClientStep ? '✅ 客戶確認通過' : '✅ 審批通過 (推進下一關)';
             html += '<div class="d-flex gap-2 mb-2">' +
               '<button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> ' + passText + '</button>' +
@@ -1046,7 +1249,6 @@ function renderDeliverableContent(deliverable) {
             '</div>';
           }
         }
-        // 🚀 STANDARD / FILE_ONLY 附帶欄位
         else {
           var activeFields = [];
           if (step.fields) {
@@ -1055,7 +1257,6 @@ function renderDeliverableContent(deliverable) {
               if (!activeFields.includes(cleanF)) activeFields.push(cleanF);
             });
           }
-          // 💡 關鍵升級：把過去用「➕ 補充資料」新增的鍵值也加進來，變成可以編輯的輸入框
           if (step.submittedData) {
             for (var key in step.submittedData) {
               if (key !== '客戶意見' && !activeFields.includes(key)) {
@@ -1068,32 +1269,32 @@ function renderDeliverableContent(deliverable) {
             html += '<div class="mt-2 border-top pt-2">';
             activeFields.forEach(function(cleanF) {
               var savedVal = getSavedVal(cleanF);
-              html += '<div class="mb-2"><label class="form-label small fw-bold text-dark">' + cleanF + '</label><input type="text" data-label="' + cleanF + '" class="form-control form-control-sm" value="' + savedVal + '" placeholder="請填寫內容或貼上網址..."></div>';
+              // 💡 加入 Auto-save
+              html += '<div class="mb-2"><label class="form-label small fw-bold text-dark">' + cleanF + '</label><input type="text" data-label="' + cleanF + '" class="form-control form-control-sm" value="' + savedVal + '" placeholder="請填寫內容或貼上網址..." ' + autoSaveEvents + '></div>';
             });
             html += '</div>';
           }
         }
 
-        // 🎯 需覆蓋替換的區塊 (加入 Client 專屬的迴圈按鈕邏輯) ----
         var btnDisabled = (stepMode === 'CHECKLIST') ? 'disabled' : '';
         
         if (stepMode !== 'APPROVAL_PREV' && stepMode !== 'APPROVAL_PM') {
-          // 💡 關鍵修復：如果是 PM 負責的 Client Review，必須先按發送開始計時
           if (isPMClientReviewStep && step.reviewStatus !== 'Reviewing') {
             html += '<button class="btn btn-info btn-sm mt-3 fw-bold text-white shadow-sm" onclick="startClientReview(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 正式發送給客戶審批 (開始計時)</button>';
           } 
-          // 💡 關鍵修復：如果是 Client 關卡，必須顯示動態迴圈的退回按鈕！
           else if (isClientStep) {
             html += '<div class="d-flex gap-2 mt-3">' +
               '<button class="btn btn-success btn-sm fw-bold shadow-sm" onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-check-circle me-1"></i> 客戶確認通過</button>' +
               '<button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" onclick="promptDynamicClientRevision(\'' + deliverable.id + '\', ' + step.step + ')"><i class="fas fa-undo me-1"></i> 退回修改 (產生修改迴圈)</button>' +
             '</div>';
           } 
-          // 💡 標準的提交按鈕
           else {
             html += '<button class="btn btn-primary btn-sm mt-3 fw-bold shadow-sm" id="btn_submit_' + step.step + '" ' + btnDisabled + ' onclick="submitWorkflowAction(\'' + deliverable.id + '\', \'SUBMIT\', ' + step.step + ')"><i class="fas fa-paper-plane me-1"></i> 提交並推進到下一關</button>';
           }
         }
+
+        // 💡 Auto-save 的低調提示 UI
+        html += '<div id="autosave_status_' + step.step + '" class="text-end text-muted small mt-2" style="height: 20px; font-weight: bold; transition: 0.3s; opacity: 0;"></div>';
 
         html += '</div>';
 
@@ -1107,7 +1308,6 @@ function renderDeliverableContent(deliverable) {
         html += '<div class="alert alert-info py-2 px-3 mb-0 mt-2 small border-0"><i class="fas fa-hourglass-half me-2"></i> 等待 <strong>' + (step.assignee || step.dept) + '</strong> 處理中...</div>';
       }
     } 
-    // 💡 2. 未到關卡 (Future Steps)
     else if (!isCompleted && !isProjectCompleted) {
       var preAssignTextNotice = step.assignee ? '<span class="badge bg-info text-dark ms-2"><i class="fas fa-user-check me-1"></i>已提前指派: ' + step.assignee + '</span>' : '';
       html += '<div class="d-flex justify-content-between align-items-center mt-2">';
@@ -1157,35 +1357,306 @@ function validateChecklistCompletion(stepNum) {
   }
 }
 
-// 💡 輔助函數：現場動態新增 Checklist 項目 (精準定位防錯位)
+// 💡 輔助函數：現場動態新增 Checklist 項目 (精準定位防錯位 + 自動儲存)
 function addDynamicChecklistItem(stepNum) {
   var newItem = prompt("請輸入新增的檢查項目名稱：");
   if (newItem && newItem.trim()) {
     var checkId = 'chk_' + stepNum + '_' + new Date().getTime();
-    var html = '<div class="bg-white p-2 rounded border mb-2 ms-1 shadow-sm">' +
+    
+    // 💡 掛載自動儲存事件
+    var autoSaveEvents = 'onkeyup="window.triggerAutoSave(\'' + activeDeliverableId + '\', ' + stepNum + ')" onblur="window.executeAutoSave(\'' + activeDeliverableId + '\', ' + stepNum + ')"';
+    var autoSaveCheckEvent = 'window.executeAutoSave(\'' + activeDeliverableId + '\', ' + stepNum + ');';
+
+    var html = '<div class="bg-white p-2 rounded border mb-2 ms-1 shadow-sm animate__animated animate__fadeIn">' +
       '<div class="form-check mb-1">' +
-        '<input class="form-check-input chk-item-' + stepNum + '" type="checkbox" id="' + checkId + '" onchange="validateChecklistCompletion(' + stepNum + ')">' +
+        '<input class="form-check-input chk-item-' + stepNum + '" type="checkbox" id="' + checkId + '" onchange="validateChecklistCompletion(' + stepNum + '); ' + autoSaveCheckEvent + '">' +
         '<label class="form-check-label small fw-bold text-dark cursor-pointer ms-1" for="' + checkId + '">' + newItem.trim() + ' <span class="badge bg-info text-dark">現場新增</span></label>' +
       '</div>' +
-      '<input type="text" class="form-control form-control-sm border-light-subtle chk-input-' + stepNum + '" data-label="' + newItem.trim() + '" placeholder="補充資料 / 連結 (選填)">' +
+      '<input type="text" class="form-control form-control-sm border-light-subtle chk-input-' + stepNum + '" data-label="' + newItem.trim() + '" placeholder="補充資料 / 連結 (選填)" ' + autoSaveEvents + '>' +
     '</div>';
     
-    // 精準找到按鈕的父容器，把新項目插在上面
     var btnContainer = document.getElementById('btn_add_chk_' + stepNum).parentElement;
     if (btnContainer) {
       btnContainer.insertAdjacentHTML('beforebegin', html);
       validateChecklistCompletion(stepNum);
+      
+      // 新增完畢後，強制觸發一次背景儲存
+      window.executeAutoSave(activeDeliverableId, stepNum);
     }
   }
 }
 
 // ==========================================
-// 💡 [防閃退版] 樂觀更新與提交推進 (清除 input_1 雜訊)
+// 💡 Phase 4: 無感自動儲存 (Auto-Save) 引擎
 // ==========================================
-window.isUpdatingProject = false; 
+var autoSaveTimers = {}; 
+var isSystemSubmitting = false; 
 
+window.triggerAutoSave = function(deliverableId, stepNumber) {
+  if (isSystemSubmitting) return; 
+
+  var statusEl = document.getElementById('autosave_status_' + stepNumber);
+  if (statusEl) {
+    statusEl.innerHTML = '<i class="fas fa-pen fa-xs"></i> 正在輸入...';
+    statusEl.style.opacity = '1';
+    statusEl.className = 'text-end text-secondary small mt-2';
+  }
+
+  if (autoSaveTimers[stepNumber]) clearTimeout(autoSaveTimers[stepNumber]);
+  autoSaveTimers[stepNumber] = setTimeout(function() {
+    executeAutoSave(deliverableId, stepNumber);
+  }, 2000);
+};
+
+window.executeAutoSave = function(deliverableId, stepNumber) {
+  if (isSystemSubmitting) return;
+
+  var container = document.getElementById('btn_submit_' + stepNumber) ? document.getElementById('btn_submit_' + stepNumber).parentElement : null;
+  if (!container) return;
+
+  var statusEl = document.getElementById('autosave_status_' + stepNumber);
+  if (statusEl) {
+    statusEl.innerHTML = '<i class="fas fa-cloud-upload-alt fa-xs"></i> 低調儲存中...';
+    statusEl.className = 'text-end text-primary small mt-2';
+    statusEl.style.opacity = '1'; // 💡 關鍵修復：強制讓提示顯現
+  }
+
+  var inputs = {};
+  var dynamicChecklistItems = []; 
+  var safeStepId = String(stepNumber).replace('.', '_');
+  
+  var chkInputs = container.querySelectorAll('.chk-input-' + safeStepId);
+  chkInputs.forEach(function(el) {
+    var cleanName = el.getAttribute('data-label');
+    if (cleanName && !dynamicChecklistItems.includes(cleanName)) dynamicChecklistItems.push(cleanName);
+  });
+
+  var textInputs = container.querySelectorAll('input[type="text"]');
+  textInputs.forEach(function(el) {
+    var label = el.getAttribute('data-label') || (el.previousElementSibling ? el.previousElementSibling.innerText : '補充資料');
+    var val = el.value ? el.value.trim() : '';
+    if (dynamicChecklistItems.includes(label)) {
+      inputs[label] = val || (document.getElementById('chk_' + safeStepId + '_' + dynamicChecklistItems.indexOf(label))?.checked ? '✅ 已確認' : '');
+    } else if (val) {
+      inputs[label] = val; 
+    }
+  });
+
+  var payload = { inputs: inputs, updatedChecklist: dynamicChecklistItems };
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success) {
+      currentProjectData.workflowData = res.updatedWorkflowData;
+      if (statusEl) {
+        statusEl.innerHTML = '<i class="fas fa-check text-success"></i> <span class="text-success">已儲存</span>';
+        setTimeout(function() { statusEl.style.opacity = '0'; }, 1500); 
+      }
+    }
+  }).api_saveStepProgress(currentProjectData.jobNumber, deliverableId, stepNumber, payload);
+};
+
+// ==========================================
+// 💡 Phase 4: 動態刪除關卡 (統一改用 Bootstrap Modal)
+// ==========================================
+var activeRemoveStepTarget = null;
+var removeStepModalInstance = null;
+
+// 初始化刪除 Modal
+document.addEventListener("DOMContentLoaded", function() {
+  var rmEl = document.getElementById('removeStepModal');
+  if (rmEl && typeof bootstrap !== 'undefined') removeStepModalInstance = new bootstrap.Modal(rmEl);
+});
+
+function promptRemoveStep(deliverableId, stepNumber) {
+  var targetD = (currentProjectData.workflowData.deliverables || []).find(d => d.id === deliverableId);
+  if (!targetD) return;
+  var targetS = targetD.workflow.find(s => s.step === stepNumber);
+  if (!targetS) return;
+
+  activeRemoveStepTarget = { dId: deliverableId, step: stepNumber };
+  
+  // 將關卡資訊填入 Modal 唯讀欄位
+  var infoInput = document.getElementById('rm_stepInfo');
+  if (infoInput) infoInput.value = `Step ${stepNumber} - ${targetS.name} (${targetS.dept})`;
+  
+  // 清空原因輸入框
+  var reasonInput = document.getElementById('rm_reasonInput');
+  if (reasonInput) reasonInput.value = 'PM 調整流程';
+
+  if (!removeStepModalInstance) {
+    var rmEl = document.getElementById('removeStepModal');
+    if (rmEl) removeStepModalInstance = new bootstrap.Modal(rmEl);
+  }
+  if (removeStepModalInstance) removeStepModalInstance.show();
+}
+
+function confirmRemoveStep() {
+  var reason = document.getElementById('rm_reasonInput').value.trim();
+  if (!reason) return showAlert('⚠️ 請填寫刪除原因！', 'warning');
+
+  var btn = document.getElementById('rm_btnConfirm');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 刪除中...'; }
+  window.isUpdatingProject = true;
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-trash-alt me-1"></i> 確認永久刪除'; }
+    if (res && res.success) {
+      showAlert('🎉 ' + res.message, 'success');
+      if (removeStepModalInstance) removeStepModalInstance.hide();
+      currentProjectData.workflowData = res.updatedWorkflowData;
+      renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+      setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+      setTimeout(function() { window.isUpdatingProject = false; }, 4000);
+    } else {
+      window.isUpdatingProject = false;
+      showAlert('❌ 刪除失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+    }
+  }).api_removeWorkflowStep(currentProjectData.jobNumber, activeRemoveStepTarget.dId, activeRemoveStepTarget.step, reason);
+}
+
+// ==========================================
+// 💡 Phase 4: 事後追加新任務 (Sub-Project)
+// ==========================================
+var appendDeliverableModalInstance = null;
+function openAppendDeliverableModal() {
+  if (!currentProjectData) return;
+  var el = document.getElementById('appendDeliverableModal');
+  if (el && typeof bootstrap !== 'undefined' && !appendDeliverableModalInstance) {
+    appendDeliverableModalInstance = new bootstrap.Modal(el);
+  }
+  
+  document.getElementById('ad_name').value = '';
+  document.getElementById('ad_startDate').value = currentProjectData.tentativeDate || new Date().toISOString().split('T')[0];
+  document.getElementById('ad_deadline').value = currentProjectData.mainDeadline || new Date().toISOString().split('T')[0];
+  
+  var selectEl = document.getElementById('ad_templateSelect');
+  selectEl.innerHTML = '<option value="">讀取範本中...</option>';
+  
+  if (appendDeliverableModalInstance) appendDeliverableModalInstance.show();
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success) {
+      var html = '<option value="" disabled selected>請選擇工作流範本...</option>';
+      res.data.forEach(function(t) {
+        html += '<option value="' + t.name + '" data-json=\'' + t.json + '\'>' + t.name + '</option>';
+      });
+      selectEl.innerHTML = html;
+    }
+  }).api_getTemplates();
+}
+
+function confirmAppendDeliverable() {
+  var name = document.getElementById('ad_name').value.trim();
+  var selectEl = document.getElementById('ad_templateSelect');
+  var templateName = selectEl.value;
+  var templateJson = selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].getAttribute('data-json') : '';
+  var startDate = document.getElementById('ad_startDate').value;
+  var deadline = document.getElementById('ad_deadline').value;
+
+  if (!name || !templateName || !deadline) return showAlert('⚠️ 請填寫完整任務資訊與範本！', 'warning');
+
+  var btn = document.getElementById('ad_btnConfirm');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 追加中...'; }
+  window.isUpdatingProject = true;
+
+  var payload = {
+    name: name,
+    templateName: templateName,
+    templateJson: templateJson,
+    tentativeStartDate: startDate,
+    deadline: deadline,
+    pm: currentProjectData.pmName
+  };
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus me-1"></i> 確認追加'; }
+    if (res && res.success) {
+      showAlert('🎉 ' + res.message, 'success');
+      if (appendDeliverableModalInstance) appendDeliverableModalInstance.hide();
+      currentProjectData.workflowData = res.updatedWorkflowData;
+      activeDeliverableId = currentProjectData.workflowData.deliverables[currentProjectData.workflowData.deliverables.length - 1].id;
+      renderDeliverableTabs(currentProjectData.workflowData.deliverables);
+      setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+      setTimeout(function() { window.isUpdatingProject = false; }, 4000);
+    } else {
+      window.isUpdatingProject = false;
+      showAlert('❌ 追加失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+    }
+  }).api_appendDeliverable(currentProjectData.jobNumber, payload);
+}
+
+// 💡 升級版插入關卡前端邏輯
+function toggleInsertStepMode(mode) {
+  var fa = document.getElementById('ins_fieldsArea');
+  var ca = document.getElementById('ins_checklistArea');
+  if (mode === 'CHECKLIST') {
+    fa.style.display = 'block';
+    ca.style.display = 'block';
+  } else if (mode === 'STANDARD' || mode === 'FILE_ONLY') {
+    fa.style.display = 'block';
+    ca.style.display = 'none';
+  } else {
+    fa.style.display = 'none';
+    ca.style.display = 'none';
+  }
+}
+
+function confirmInsertStep() {
+  var insertAfterStep = document.getElementById('ins_positionSelect').value;
+  var stepName = document.getElementById('ins_stepName').value.trim();
+  var dept = document.getElementById('ins_deptSelect').value;
+  var mode = document.getElementById('ins_modeSelect') ? document.getElementById('ins_modeSelect').value : 'STANDARD';
+  var group = document.getElementById('ins_group') ? document.getElementById('ins_group').value.trim() : '';
+  var fieldsStr = document.getElementById('ins_fields') ? document.getElementById('ins_fields').value.trim() : 'URL';
+  var chkStr = document.getElementById('ins_checklistItems') ? document.getElementById('ins_checklistItems').value.trim() : '檢查項目 1';
+
+  if (!stepName) return showAlert('⚠️ 請輸入關卡名稱！', 'warning');
+
+  var btn = document.getElementById('ins_btnConfirm');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 處理中...'; }
+  window.isUpdatingProject = true;
+
+  var fields = fieldsStr ? fieldsStr.split(',').map(function(f){ return f.trim(); }) : ['URL'];
+  var chkItems = chkStr ? chkStr.split(',').map(function(f){ return f.trim(); }) : ['檢查項目 1'];
+
+  var payload = { 
+    name: stepName, 
+    dept: dept, 
+    mode: mode, 
+    parallelGroup: group,
+    fields: fields,
+    checklistItems: chkItems
+  };
+
+  google.script.run.withSuccessHandler(function(res) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check me-1"></i> 確認插入關卡'; }
+    if (res && res.success) {
+      showAlert('🎉 關卡插入成功！', 'success');
+      if (typeof insertStepModalInstance !== 'undefined' && insertStepModalInstance) insertStepModalInstance.hide();
+      
+      if (res.updatedWorkflowData) {
+        currentProjectData.workflowData = res.updatedWorkflowData;
+        renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+      } else {
+        openWorkflow(currentProjectData.jobNumber);
+      }
+      setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+      setTimeout(function() { window.isUpdatingProject = false; }, 4000);
+    } else {
+      window.isUpdatingProject = false;
+      showAlert('❌ 插入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+    }
+  }).api_insertWorkflowStep(currentProjectData.jobNumber, activeDeliverableId, insertAfterStep, payload);
+}
+
+// ==========================================
+// 💡 [防閃退版] 樂觀更新與提交推進 (含 Auto-Save 攔截防撞與正確解鎖)
+// ==========================================
 function submitWorkflowAction(deliverableId, actionType, stepNumber) {
-  // 🛡️ 瞬間啟動無敵防護罩！從這一刻起，拒絕所有 Firebase 與 Google 背景重繪！
+  // 💡 Auto-save 攔截防撞！
+  isSystemSubmitting = true;
+  if (autoSaveTimers[stepNumber]) clearTimeout(autoSaveTimers[stepNumber]);
+
   window.isUpdatingProject = true; 
 
   var jobNumber = currentProjectData.jobNumber;
@@ -1226,7 +1697,6 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     if (dynamicChecklistItems.length > 0) payload.updatedChecklist = dynamicChecklistItems;
   }
 
-  // 🚀 樂觀更新 (Optimistic UI)：前端直接變臉，不浪費 0.1 秒
   if (currentProjectData && currentProjectData.workflowData) {
     var targetD = (currentProjectData.workflowData.deliverables || []).find(function(d){ return d.id === deliverableId; });
     if (targetD) {
@@ -1263,39 +1733,52 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
           }
         }
       }
-      // 💡 樂觀原地重繪卡片內容！這就是你按下去瞬間變化的原因！
       renderDeliverableContent(targetD); 
     }
   }
 
-  // 鎖定所有按鈕防止連點
+  // 🔒 推進時鎖定所有按鈕，防止狂點造成資料庫衝撞
   var allBtns = document.querySelectorAll('#wf_dynamicContentArea button');
   allBtns.forEach(function(b) { b.disabled = true; });
 
-  // 背景將資料傳給後端寫入
-  google.script.run.withSuccessHandler(function(res) {
-    if(res && res.success) {
-      if (res.updatedWorkflowData) {
-        currentProjectData.workflowData = res.updatedWorkflowData;
-        // 🛡️ 絕對禁止呼叫 renderDeliverableTabs！我們不拆房子重蓋，避免閃爍！
+  google.script.run
+    .withSuccessHandler(function(res) {
+      // 🔓 💡 關鍵修復：後端儲存完畢後，立刻解鎖畫面上的所有按鈕！
+      var currentBtns = document.querySelectorAll('#wf_dynamicContentArea button');
+      currentBtns.forEach(function(b) { b.disabled = false; });
+
+      if(res && res.success) {
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+        }
+        if (res.auditLog && typeof renderAuditLog === 'function') {
+          currentProjectData.auditLog = res.auditLog; 
+          renderAuditLog(res.auditLog, deliverableId); 
+        }
+        
+        if (typeof loadIndividualView === 'function') loadIndividualView(currentUser.email, null, true);
+        setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500); 
+        setTimeout(function() { window.isUpdatingProject = false; isSystemSubmitting = false; }, 5000);
+      } else {
+        window.isUpdatingProject = false;
+        isSystemSubmitting = false;
+        showAlert('❌ 操作失敗：' + (res ? res.message : '未知錯誤'), 'danger');
+        if (typeof openWorkflow === 'function') openWorkflow(jobNumber);
       }
-      if (res.auditLog && typeof renderAuditLog === 'function') {
-        currentProjectData.auditLog = res.auditLog; 
-        renderAuditLog(res.auditLog, deliverableId); 
-      }
+    })
+    .withFailureHandler(function(err) {
+      // 🔓 💡 關鍵修復：萬一網路斷線導致失敗，也必須解鎖按鈕
+      var currentBtns = document.querySelectorAll('#wf_dynamicContentArea button');
+      currentBtns.forEach(function(b) { b.disabled = false; });
       
-      if (typeof loadIndividualView === 'function') loadIndividualView(currentUser.email, null, true);
-      setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500); 
-      
-      // 🛡️ 寫入成功後，延長無敵狀態到 5 秒，確保 Firebase 與背景都不會背刺！
-      setTimeout(function() { window.isUpdatingProject = false; }, 5000);
-    } else {
-      window.isUpdatingProject = false; // 失敗了才解鎖
-      showAlert('❌ 操作失敗：' + (res ? res.message : '未知錯誤'), 'danger');
-      if (typeof openWorkflow === 'function') openWorkflow(jobNumber);
-    }
-  }).api_updateWorkflowState(jobNumber, deliverableId, payload);
+      window.isUpdatingProject = false;
+      isSystemSubmitting = false;
+      showAlert('❌ 系統連線異常: ' + err.message, 'danger');
+    })
+    .api_updateWorkflowState(jobNumber, deliverableId, payload);
 }
+
+
 
   // 🎯 需覆蓋替換的區塊 ----------------------------------
   // 初始化 Modal (加在文件準備好的時候)
@@ -1645,32 +2128,88 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     var assignee = document.getElementById('dp_assigneeSelect').value;
     if(!assignee) return showAlert('⚠️ 請先選擇負責人員！', 'warning');
 
+    var btn = document.getElementById('dp_btnConfirm');
+    if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 處理中...'; }
+    window.isUpdatingProject = true; // 💡 鎖定防閃爍
+
+    // ----------------------------------------------------
+    // 狀況 A：更換專案整體 PM
+    // ----------------------------------------------------
     if (isPMChangeMode) {
       google.script.run.withSuccessHandler(function(res) {
+        if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rocket me-1"></i> 確認指派'; }
         if(res && res.success) {
-          showAlert('🎉 PM 更換成功！', 'success');
           if(dispatchModalInstance) dispatchModalInstance.hide();
-          openWorkflow(currentProjectData.jobNumber);
+          
+          // 💡 局部無感刷新：連動更新右上角專案資訊
+          currentProjectData.pmName = assignee;
+          var pmLabel = document.getElementById('wf_pmName');
+          if (pmLabel) pmLabel.innerText = assignee;
+          
+          // 💡 如果後端有回傳新資料，瞬間重繪卡片
+          if (res.updatedWorkflowData) {
+            currentProjectData.workflowData = res.updatedWorkflowData;
+            renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+          } else {
+            openWorkflow(currentProjectData.jobNumber); // 安全備案
+          }
+          
+          // 💡 觸發 Log 轉圈圈
+          if (typeof window.refreshProjectLogUI === 'function') window.refreshProjectLogUI();
+          else showAlert('🎉 PM 更換成功！', 'success');
+
+          setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+          setTimeout(function() { window.isUpdatingProject = false; }, 4000);
+          
           if(typeof loadIndividualView === 'function' && currentUser) loadIndividualView(currentUser.email);
-        } else { showAlert('❌ 更換失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); }
+        } else { 
+          window.isUpdatingProject = false;
+          showAlert('❌ 更換失敗: ' + (res ? res.message : '未知錯誤'), 'danger'); 
+        }
       }).api_reassignPM(currentProjectData.jobNumber, assignee);
       return;
     }
 
-    if(!currentDispatchTarget) return showAlert('⚠️ 無效的操作標的', 'warning');
+    if(!currentDispatchTarget) {
+      window.isUpdatingProject = false;
+      return showAlert('⚠️ 無效的操作標的', 'warning');
+    }
 
-    var btn = document.getElementById('dp_btnConfirm');
-    if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 派案中...'; }
-    window.isUpdatingProject = true; // 💡 鎖定防閃爍
-
+    // ----------------------------------------------------
+    // 狀況 B：單一關卡（或 PM 關卡）派案
+    // ----------------------------------------------------
     google.script.run.withSuccessHandler(function(res) {
       if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rocket me-1"></i> 確認指派'; }
       if(res && res.success) {
-        showAlert('🎉 ' + res.message, 'success');
         if(dispatchModalInstance) dispatchModalInstance.hide();
-        openWorkflow(currentProjectData.jobNumber); 
-        window.dispatchEvent(new Event('refreshAllViews'));
+        
+        if (res.updatedWorkflowData) {
+          currentProjectData.workflowData = res.updatedWorkflowData;
+          
+          // 💡 連動判斷：如果是指派給 PM，專案概況裡的 PM 也要跟著變
+          if (currentDispatchTarget.dept === 'PM') {
+             currentProjectData.pmName = assignee;
+             var pmLabel = document.getElementById('wf_pmName');
+             if (pmLabel) pmLabel.innerText = assignee;
+          }
+          
+          // 💡 原地瞬間重繪卡片，沒有白屏！
+          renderDeliverableTabs(currentProjectData.workflowData.deliverables || []);
+        } else {
+          openWorkflow(currentProjectData.jobNumber); // 安全備案
+        }
+        
+        // 💡 觸發 Log 轉圈圈
+        if (typeof window.refreshProjectLogUI === 'function') {
+            window.refreshProjectLogUI();
+        } else {
+            showAlert('🎉 ' + res.message, 'success');
+        }
+
+        setTimeout(function() { window.dispatchEvent(new Event('refreshAllViews')); }, 1500);
+        setTimeout(function() { window.isUpdatingProject = false; }, 4000);
       } else {
+        window.isUpdatingProject = false;
         showAlert('❌ 指派失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
       }
     }).api_dispatchWorkflowStep(
@@ -1776,21 +2315,91 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   }
 
-  function submitAppendData(deliverableId, stepNumber) {
-    var title = document.getElementById('append_title_' + deliverableId + '_' + stepNumber).value.trim();
-    var content = document.getElementById('append_content_' + deliverableId + '_' + stepNumber).value.trim();
+function submitAppendData(deliverableId, stepNumber) {
+    var titleInput = document.getElementById('append_title_' + deliverableId + '_' + stepNumber);
+    var contentInput = document.getElementById('append_content_' + deliverableId + '_' + stepNumber);
+    var title = titleInput.value.trim();
+    var content = contentInput.value.trim();
 
     if(!title || !content) return showAlert('⚠️ 請填寫項目名稱與內容/網址！', 'warning');
-    window.isUpdatingProject = true; // 💡 鎖定防閃爍
+    
+    // 💡 抓取按鈕並上鎖，顯示轉圈圈
+    var btn = document.getElementById('btn_append_' + deliverableId + '_' + stepNumber);
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>處理中...';
+    }
 
-    google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success) {
-        showAlert('🎉 補充資料成功！', 'success');
-        openWorkflow(currentProjectData.jobNumber);
-      } else {
-        showAlert('❌ 失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-      }
-    }).api_appendStepData(currentProjectData.jobNumber, deliverableId, stepNumber, title, content);
+    window.isUpdatingProject = true; // 鎖定防閃爍
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save me-1"></i>儲存補充'; }
+        if(res && res.success) {
+          
+          // 💡 1. 局部無感刷新：找出該關卡的「過往補充紀錄」區塊
+          var currentStepContainer = document.getElementById('btn_submit_' + stepNumber) ? document.getElementById('btn_submit_' + stepNumber).parentElement : null;
+          if (!currentStepContainer && btn) {
+              currentStepContainer = btn.closest('.card-body');
+          }
+          
+          if (currentStepContainer) {
+              // 尋找是否已經有「過往紀錄」的區塊
+              var historyArea = currentStepContainer.querySelector('.border-top.pt-2');
+              
+              var newRowHtml = '<div class="mb-2 animate__animated animate__fadeInDown" style="background-color: #f8f9fa; padding: 5px; border-radius: 4px; border-left: 3px solid #0d6efd;">' +
+                                 '<label class="form-label small fw-bold text-dark mb-0">' + title + ' <span class="badge bg-success ms-1">剛剛新增</span></label>' +
+                                 '<div class="small mt-1 ms-1">' + formatClickableText(content) + '</div>' +
+                               '</div>';
+
+              if (historyArea) {
+                  // 如果已經有紀錄，直接插在最頂端（標題的正下方）
+                  var titleEl = historyArea.querySelector('h6');
+                  if (titleEl) {
+                      titleEl.insertAdjacentHTML('afterend', newRowHtml);
+                  } else {
+                      historyArea.insertAdjacentHTML('afterbegin', newRowHtml);
+                  }
+              } else {
+                  // 如果原本沒有任何補充紀錄，就原地生出一個新區塊
+                  var newHistoryHtml = '<div class="mt-3 border-top pt-2"><h6 class="fw-bold text-secondary mb-2"><i class="fas fa-history me-1"></i> 最近補充紀錄：</h6>' + newRowHtml + '</div>';
+                  
+                  // 把它安插在「補充面板」的正上方
+                  var panel = document.getElementById('append_panel_' + deliverableId + '_' + stepNumber);
+                  if (panel) panel.insertAdjacentHTML('beforebegin', newHistoryHtml);
+              }
+          }
+          
+          // 💡 2. 隱藏輸入面板，清空文字
+          var panel = document.getElementById('append_panel_' + deliverableId + '_' + stepNumber);
+          if (panel) panel.style.display = 'none';
+          titleInput.value = '';
+          contentInput.value = '';
+          
+          // 💡 3. 右側 Log 同步自動刷新
+          if (typeof window.refreshProjectLogUI === 'function') {
+              window.refreshProjectLogUI();
+          } else {
+              showAlert('🎉 補充資料成功！', 'success');
+          }
+          
+          // 💡 4. 背景更新本機快取，防止切換頁籤遺失
+          if (res.updatedWorkflowData) {
+              currentProjectData.workflowData = res.updatedWorkflowData;
+          }
+          
+          setTimeout(function() { window.isUpdatingProject = false; }, 1000);
+        } else {
+          window.isUpdatingProject = false;
+          showAlert('❌ 失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        }
+      })
+      .withFailureHandler(function(err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save me-1"></i>儲存補充'; }
+        window.isUpdatingProject = false;
+        showAlert('❌ 系統連線異常: ' + err.message, 'danger');
+      })
+      .api_appendStepData(currentProjectData.jobNumber, deliverableId, stepNumber, title, content);
   }
 
 
@@ -1923,31 +2532,7 @@ function submitWorkflowAction(deliverableId, actionType, stepNumber) {
     if (insertStepModalInstance) insertStepModalInstance.show();
   }
 
-  function confirmInsertStep() {
-    var insertAfterStep = document.getElementById('ins_positionSelect').value;
-    var stepName = document.getElementById('ins_stepName').value.trim();
-    var dept = document.getElementById('ins_deptSelect').value;
-    var fieldsStr = document.getElementById('ins_fields').value.trim();
-
-    if (!stepName) return showAlert('⚠️ 請輸入關卡名稱！', 'warning');
-
-    var fields = fieldsStr ? fieldsStr.split(',').map(function(f){ return f.trim(); }) : ['URL'];
-
-    google.script.run.withSuccessHandler(function(res) {
-      if (res && res.success) {
-        showAlert('🎉 關卡插入成功！', 'success');
-        if (insertStepModalInstance) insertStepModalInstance.hide();
-        openWorkflow(currentProjectData.jobNumber);
-      } else {
-        showAlert('❌ 插入失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
-      }
-    }).api_insertWorkflowStep(
-      currentProjectData.jobNumber, 
-      activeDeliverableId, 
-      insertAfterStep, 
-      { name: stepName, dept: dept, fields: fields }
-    );
-  }
+ 
 
 // ==========================================
 // 💡 修改專案編號 (Job Number) 彈窗與提交邏輯
