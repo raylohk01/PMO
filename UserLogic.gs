@@ -810,7 +810,7 @@ function api_getProjectWorkflow(jobNumber) {
 }
 
 // ==========================================
-// 💡 修正 api_dispatchWorkflowStep (全 PM 關卡雙向同步修復)
+// 💡 修正 api_dispatchWorkflowStep (全 PM 關卡雙向同步修復與通知觸發)
 // ==========================================
 function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee) {
   try {
@@ -858,6 +858,8 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
               // (1) 無論在哪一個 PM 關卡點擊更換，一律同步更新 Projects 表內的 pmName 欄位
               if (isPMDept && idxPM >= 0) {
                 sheet.getRange(i + 1, idxPM + 1).setValue(assignee);
+                // 💡 [新增] 確保 targetD.pmName 也在記憶體中同步，供後續發送通知使用
+                targetD.pmName = assignee; 
               }
 
               // (2) 若更換的是 PM 關卡，將專案內所有屬於 PM 的關卡負責人同步更新為新 PM
@@ -873,8 +875,7 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                 targetS.assignee = assignee;
               }
 
-              // 🎯 需覆蓋替換的區塊 (更換負責人時，自動同步後續繼承審批關卡) ----
-              // 💡 關鍵修復：若緊接著的下一關為「繼承審批 (APPROVAL_PREV)」，自動將其負責人同步更換為新 assignee
+              // (3) 自動同步後續繼承審批關卡
               let targetIdx = targetD.workflow.findIndex(s => s.step === targetS.step);
               if (targetIdx >= 0 && targetIdx + 1 < targetD.workflow.length) {
                 let nextS = targetD.workflow[targetIdx + 1];
@@ -904,14 +905,12 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
                 let cellStrLog = String(data[i][idxAudit] || '').trim();
                 if (cellStrLog.startsWith('[')) { try { logs = JSON.parse(cellStrLog); } catch(e) {} }
 
-                // 🎯 需覆蓋替換的區塊 (加上 deliverableId 屬性) ----
                 let actionText = isPMDept 
                   ? `將專案 PM 及所有 PM 關卡負責人由 [${oldAssignee}] 更換為 [${assignee}]`
                   : (oldAssignee === '未指派'
                      ? `將 Step ${targetS.step} [${targetS.name}] 指派給 [${assignee}]`
                      : `將 Step ${targetS.step} 的負責人由 [${oldAssignee}] 更換為 [${assignee}]`);
 
-                // 💡 關鍵修復：加入 deliverableId
                 logs.unshift({ timestamp: nowStr, user: activeUser, action: 'Dispatch Task', details: actionText, deliverableId: deliverableId });
                 sheet.getRange(i + 1, idxAudit + 1).setValue(JSON.stringify(logs));
               }
@@ -919,9 +918,22 @@ function api_dispatchWorkflowStep(jobNumber, deliverableId, stepNumber, assignee
               if (typeof notifyFirebaseUpdate === 'function') {
                 notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true, wfData);
               }
-              // 💡 關鍵修復 5：動態判斷成功訊息，不再永遠顯示更換 PM 成功！
+              
+              let debugMsg = "";
+              
+              // ✅ 測試期間：解除自我指派攔截，並捕捉 Debug 訊息！
+              if (assignee !== '未指派' && typeof triggerSmartNotification === 'function') {
+                let pushTitle = isPMDept ? "專案負責人更換" : `新任務派發：${targetS.name}`;
+                let pushMsg = isPMDept ? `您已被指派為專案 [${jobNumber}] 的負責 PM！` : `專案 [${jobNumber}] 的 [${targetS.name}] 已指派給您處理。`;
+                
+                let pushDebug = triggerSmartNotification('newTask', assignee, pushTitle, pushMsg);
+                if (pushDebug && pushDebug.log) {
+                  debugMsg = `<hr><div style="font-size:0.85em; text-align:left; line-height:1.2;"><b>🛠️ Push Debug:</b><br>${pushDebug.log}</div>`;
+                }
+              } 
+
               let successMsg = isPMDept ? '派案與 PM 資料同步成功！' : '指派成功！';
-              return { success: true, message: successMsg, updatedWorkflowData: wfData };
+              return { success: true, message: successMsg + debugMsg, updatedWorkflowData: wfData };
             }
           }
         }
@@ -1001,7 +1013,17 @@ function api_reassignPM(jobNumber, newPM) {
           notifyFirebaseUpdate(jobNumber, userEmail, activeUser, true);
         }
 
-        return { success: true, message: 'PM 更換成功，所有 PM 關卡已自動同步！' };
+        let debugMsg = "";
+        // 💡 測試推播：無條件觸發通知，並強制捕捉 Debug 訊息！
+        if (newPM !== '未指派' && typeof triggerSmartNotification === 'function') {
+          let pushDebug = triggerSmartNotification('newTask', newPM, "專案負責人更換", `您已被指派為專案 [${jobNumber}] 的負責 PM！`);
+          if (pushDebug && pushDebug.log) {
+            debugMsg = `<hr><div style="font-size:0.85em; text-align:left; line-height:1.2;"><b>🛠️ Push Debug:</b><br>${pushDebug.log}</div>`;
+          }
+        }
+
+        // 💡 把 debugMsg 黏在成功的 message 裡面一起彈出來！
+        return { success: true, message: 'PM 更換成功！' + debugMsg };
       }
     }
     throw new Error('找不到專案 ' + jobNumber);
@@ -2512,18 +2534,17 @@ function api_updateProjectDeadline(jobNumber, newDeadline) {
           let wfData = JSON.parse(cellStr);
           if (wfData && wfData.deliverables) {
             wfData.deliverables.forEach(d => {
-              // 如果子項目的死線本來是「稍後補充」，就跟著主死線一起更新！
-              if (d.mainDeadline === '稍後補充' || !d.mainDeadline) {
-                d.mainDeadline = newDeadline;
-                if (d.workflow) {
-                  d.workflow.forEach(s => {
-                    // 同步更新底下尚未完成的 TBD 關卡
-                    if (s.status !== 'Completed' && (s.keyDate === '稍後補充' || s.deadline === '稍後補充')) {
-                      s.keyDate = newDeadline;
-                      s.deadline = newDeadline;
-                    }
-                  });
-                }
+              // 💡 無條件強制同步：只要改了總死線，子項目死線一律跟著變！
+              d.mainDeadline = newDeadline;
+              
+              if (d.workflow) {
+                d.workflow.forEach(s => {
+                  // 底下的關卡則維持：只同步更新尚未完成的 TBD 關卡
+                  if (s.status !== 'Completed' && (s.keyDate === '稍後補充' || s.deadline === '稍後補充')) {
+                    s.keyDate = newDeadline;
+                    s.deadline = newDeadline;
+                  }
+                });
               }
             });
             // 存回 JSON
@@ -2556,6 +2577,9 @@ function api_updateProjectDeadline(jobNumber, newDeadline) {
 
       sheet.getRange(rowIndex, idxLog + 1).setValue(JSON.stringify(logArray));
     }
+
+    // ✅ 補上強制落盤指令：這行能打破 Google 的快取，確保畫面立刻抓到新日期！
+    SpreadsheetApp.flush();
 
     // 4. 發送更新廣播
     if (typeof notifyFirebaseUpdate === 'function') {
@@ -2719,6 +2743,23 @@ function api_submitWorkflowStep(jobNumber, deliverableId, stepNumber, formData, 
     }
     throw new Error('找不到該專案或關卡資料');
   } catch (e) {
+    // 📢 觸發通知：5. 任務到達專屬關卡 (通知下一關的人)
+                if (nextStepIdx < targetD.workflow.length) {
+                  let nextStepObj = targetD.workflow[nextStepIdx];
+                  if (nextStepObj.assignee && nextStepObj.assignee !== '未指派') {
+                    triggerSmartNotification('stageAssigned', nextStepObj.assignee, 
+                      `任務到達：${nextStepObj.name}`, 
+                      `專案 [${jobNumber}] 已推進至您的關卡，請開始處理。`
+                    );
+                  }
+                } else {
+                  // 📢 觸發通知：4. 關卡/全案順利通過 (通知 PM)
+                  triggerSmartNotification('approved', targetD.pmName || 'PM', 
+                    `專案完工：${jobNumber}`, 
+                    `專案 [${jobNumber}] 的所有關卡皆已順利通過並完成！`
+                  );
+                }
+
     return { success: false, message: e.message };
   }
 }
@@ -3717,6 +3758,15 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
               SpreadsheetApp.flush();
               lock.releaseLock();
 
+              // 📢 觸發通知：3. 遭退回修改
+              if (targetS.assignee && targetS.assignee !== '未指派') {
+                triggerSmartNotification('rejected', targetS.assignee, 
+                  `專案退回修改：${targetS.name}`, 
+                  `專案 [${jobNumber}] 遭到退回。意見：${reason}`
+                );
+              }
+
+
               if (typeof notifyFirebaseUpdate === 'function') {
                 notifyFirebaseUpdate(jobNumber, Session.getActiveUser().getEmail(), Session.getActiveUser().getEmail().split('@')[0], true, wfData);
               }
@@ -3732,5 +3782,263 @@ function api_rollbackWorkflowStep(jobNumber, deliverableId, targetStepNumber, re
     return { success: false, message: e.message };
   } finally {
     if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+// ==========================================
+// 💡 儲存與讀取全域通知設定 (Notification Matrix)
+// ==========================================
+function api_saveNotificationSettings(settingsObj) {
+  try {
+    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SystemSettings');
+    if (!sheet) {
+      sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet('SystemSettings');
+      sheet.appendRow(['SettingKey', 'SettingValue']);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    
+    // 尋找是否已經有 NotificationMatrix 這筆設定
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === 'NotificationMatrix') {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    const jsonStr = JSON.stringify(settingsObj);
+
+    if (rowIndex > 0) {
+      sheet.getRange(rowIndex, 2).setValue(jsonStr); // 覆蓋舊設定
+    } else {
+      sheet.appendRow(['NotificationMatrix', jsonStr]); // 新增設定
+    }
+
+    return { success: true, message: '通知設定已儲存' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function getNotificationSettings() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('SystemSettings');
+    if (!sheet) return null;
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === 'NotificationMatrix') {
+        return JSON.parse(String(data[i][1] || '{}'));
+      }
+    }
+  } catch(e) {
+    console.error('讀取通知設定失敗:', e);
+  }
+  return null;
+}
+
+function api_getNotificationSettings() {
+  return { success: true, data: getNotificationSettings() };
+}
+
+// ==========================================
+// 💡 OneSignal Web Push 推播發射器 (Debug 追蹤版)
+// ==========================================
+function sendPushNotification(title, message, targetEmail, targetUrl) {
+  const onesignalAppId = "c39a9cd6-0893-4ea8-b7bc-ae5ff7f6662e";
+  // 💡 安全升級：從 GAS 保險箱把金鑰拿出來，程式碼裡面不再有明碼！
+  const restApiKey = PropertiesService.getScriptProperties().getProperty('ONESIGNAL_REST_API_KEY'); 
+
+  const defaultUrl = ScriptApp.getService().getUrl();
+
+  const payload = {
+    app_id: onesignalAppId,
+    headings: { "en": title, "zh-Hant": title },
+    contents: { "en": message, "zh-Hant": message },
+    url: targetUrl || defaultUrl,
+    include_external_user_ids: [targetEmail] // 強制指定發給這個 Email
+  };
+
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    headers: { "Authorization": "Basic " + restApiKey },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch("https://onesignal.com/api/v1/notifications", options);
+    // 直接把 OneSignal 回答的 JSON 字串傳回去給前端看！
+    return response.getContentText(); 
+  } catch(e) {
+    return "Error: " + e.message;
+  }
+}
+
+// ==========================================
+// 💡 智慧通知分發中心 (Debug 收集版)
+// ==========================================
+function triggerSmartNotification(eventType, targetUser, title, message) {
+  if (!targetUser || targetUser === '未指派' || targetUser === 'System') return { log: '無效的使用者' };
+  
+  const settings = getNotificationSettings() || {};
+  const eventConfig = { push: true, email: settings[eventType] ? settings[eventType].email : false }; 
+  const targetUrl = ScriptApp.getService().getUrl();
+
+  let realEmail = targetUser;
+  if (!realEmail.includes('@')) {
+    try {
+      const uSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+      if (uSheet) {
+        const data = uSheet.getDataRange().getValues();
+        const idxName = data[0].map(h => String(h).trim().toLowerCase()).findIndex(h => h === 'name' || h === '姓名' || h === 'username');
+        const idxEmail = data[0].map(h => String(h).trim().toLowerCase()).findIndex(h => h === 'email');
+        if (idxName >= 0 && idxEmail >= 0) {
+          for (let i = 1; i < data.length; i++) {
+            if (String(data[i][idxName]).trim() === String(targetUser).trim()) {
+              realEmail = String(data[i][idxEmail]).trim();
+              break;
+            }
+          }
+        }
+      }
+    } catch(e) {}
+    if (!realEmail.includes('@')) realEmail = targetUser.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() + '@hk01.com';
+  }
+
+  let debugLog = `[對象] ${realEmail}`;
+
+  if (eventConfig.email && typeof sendSystemEmail === 'function') {
+    sendSystemEmail(realEmail, `[HK01 PMO] ${title}`, title, message);
+  }
+  
+  if (eventConfig.push && typeof sendPushNotification === 'function') {
+    let pushRes = sendPushNotification(title, message, realEmail, targetUrl);
+    debugLog += `<br>[OneSignal 回應] ${pushRes}`; // 💡 捕捉 API 回應
+  }
+
+  return { log: debugLog }; // 💡 將結果打包回傳給呼叫它的地方
+}
+
+// ==========================================
+// 💡 系統每日定時自動機器人 (處理逾期、每日清單、部門匯總)
+// ==========================================
+function system_DailyAutomatedTasks() {
+  const settings = getNotificationSettings() || {};
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Projects');
+  if (!sheet) return;
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+  const idxJobNum = headers.findIndex(h => h.includes('jobnumber') || h === 'jobno');
+  const idxStatus = headers.findIndex(h => h === 'status' || h === 'project_status');
+
+  // 準備資料分發容器
+  let userTasks = {}; // 存放個人的任務 { 'ming': { overdue: [], todo: [] } }
+  let deptTasks = {}; // 存放部門的任務 { 'Editorial': { overdue: [], active: [] } }
+
+  const today = new Date();
+  const todayStr = Utilities.formatDate(today, "GMT+8", "yyyy-MM-dd");
+
+  // --- 1. 巡邏所有專案，把任務分類歸戶 ---
+  for (let i = 1; i < data.length; i++) {
+    const pStatus = idxStatus >= 0 ? String(data[i][idxStatus] || '').trim() : '';
+    if (pStatus === 'Completed' || pStatus === 'Recycle Bin' || pStatus === 'Deleted' || pStatus === 'Cancelled') continue;
+
+    const jobNumber = idxJobNum >= 0 ? String(data[i][idxJobNum] || '').trim() : '';
+
+    for (let c = 0; c < data[i].length; c++) {
+      let cellStr = String(data[i][c] || '');
+      if (cellStr.includes('deliverables')) {
+        try {
+          let wfData = JSON.parse(cellStr);
+          (wfData.deliverables || []).forEach(d => {
+            if (d.status === 'Completed' || d.status === 'Deleted') return;
+
+            (d.workflow || []).forEach(s => {
+              if (s.status === 'In Progress') {
+                 let assignee = s.assignee && s.assignee !== '未指派' ? s.assignee : '未指派';
+                 let dept = s.dept || '未指定';
+                 let deadline = s.keyDate || s.deadline || d.mainDeadline;
+
+                 let isOverdue = (deadline && deadline !== '稍後補充') ? (deadline < todayStr) : false;
+                 let taskInfo = `[${jobNumber}] ${d.name} - ${s.name} (死線: ${deadline})`;
+
+                 // 歸戶到個人
+                 if (assignee !== '未指派') {
+                   if (!userTasks[assignee]) userTasks[assignee] = { overdue: [], todo: [] };
+                   if (isOverdue) userTasks[assignee].overdue.push(taskInfo);
+                   else userTasks[assignee].todo.push(taskInfo);
+                 }
+
+                 // 歸戶到部門
+                 if (!deptTasks[dept]) deptTasks[dept] = { overdue: [], active: [] };
+                 if (isOverdue) deptTasks[dept].overdue.push(taskInfo);
+                 else deptTasks[dept].active.push(taskInfo);
+
+                 // 📢 [觸發事件 2] 任務逾期警報 (獨立發送 Web Push)
+                 if (isOverdue) {
+                   let overdueConfig = settings['overdue'] || { push: false, email: false };
+                   if (overdueConfig.push && assignee !== '未指派') {
+                     let targetEmail = assignee.includes('@') ? assignee : assignee + '@hk01.com';
+                     if (typeof sendPushNotification === 'function') {
+                       sendPushNotification(`🚨 任務逾期警告: ${jobNumber}`, `您的任務 [${s.name}] 已逾期，請盡快登入處理！`, targetEmail);
+                     }
+                   }
+                 }
+              }
+            });
+          });
+        } catch(e) {}
+      }
+    }
+  }
+
+  // --- 2. [觸發事件 6] 發送每日工作清單 (Email) ---
+  let todoConfig = settings['dailyTodo'] || { push: false, email: false };
+  if (todoConfig.email) {
+    Object.keys(userTasks).forEach(user => {
+      let uData = userTasks[user];
+      if (uData.todo.length > 0 || uData.overdue.length > 0) {
+        let msg = `早安！您今天有 ${uData.todo.length} 項進行中的任務，以及 ${uData.overdue.length} 項逾期任務需要處理。<br><br>`;
+        if (uData.overdue.length > 0) msg += `<b style="color:#dc3545;">🚨 逾期任務：</b><br> - ` + uData.overdue.join('<br> - ') + `<br><br>`;
+        if (uData.todo.length > 0) msg += `<b style="color:#0dcaf0;">📝 進行中任務：</b><br> - ` + uData.todo.join('<br> - ') + `<br><br>`;
+        
+        let targetEmail = user.includes('@') ? user : user + '@hk01.com';
+        if (typeof sendSystemEmail === 'function') sendSystemEmail(targetEmail, `[HK01 PMO] 您的每日工作清單`, `個人每日工作清單`, msg);
+      }
+    });
+  }
+
+  // --- 3. [觸發事件 7] 發送每天部門匯總 (發給 Team Head) ---
+  let deptConfig = settings['deptSummary'] || { push: false, email: false };
+  if (deptConfig.email) {
+    const uSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+    let heads = [];
+    if (uSheet) {
+      const uData = uSheet.getDataRange().getValues();
+      const uHeaders = uData[0].map(h => String(h).trim().toLowerCase());
+      const idxRole = uHeaders.findIndex(h => h === 'role');
+      const idxDept = uHeaders.findIndex(h => h === 'department' || h === 'team');
+      const idxEmail = uHeaders.findIndex(h => h === 'email');
+      
+      for (let i = 1; i < uData.length; i++) {
+        if (String(uData[i][idxRole]).trim() === 'Team Head') {
+           heads.push({ email: uData[i][idxEmail], dept: uData[i][idxDept] });
+        }
+      }
+    }
+
+    heads.forEach(head => {
+      let dData = deptTasks[head.dept];
+      if (dData && (dData.active.length > 0 || dData.overdue.length > 0)) {
+        let msg = `主管早安！以下是 <b>${head.dept}</b> 部門今天的營運匯總：<br><br>`;
+        if (dData.overdue.length > 0) msg += `<b style="color:#dc3545;">🚨 部門逾期項目 (${dData.overdue.length} 件)：</b><br> - ` + dData.overdue.join('<br> - ') + `<br><br>`;
+        if (dData.active.length > 0) msg += `<b style="color:#0dcaf0;">🏃 進行中項目 (${dData.active.length} 件)：</b><br> - ` + dData.active.join('<br> - ') + `<br><br>`;
+        
+        if (typeof sendSystemEmail === 'function') sendSystemEmail(head.email, `[HK01 PMO] ${head.dept} 部門每日匯總`, `${head.dept} 部門營運匯總`, msg);
+      }
+    });
   }
 }
