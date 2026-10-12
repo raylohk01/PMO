@@ -34,7 +34,12 @@
       });
     }
 
-    fetchDepartmentsAndInit();
+    // 💡 關鍵修復：延遲 1.5 秒執行，給 Google 處理登入 Cookie 的緩衝時間，消滅原生「登入失敗」彈窗
+    setTimeout(function() {
+      fetchDepartmentsAndInit();
+    }, 1500);
+
+    
   });
 
 function switchSection(sectionId) {
@@ -160,6 +165,115 @@ function switchSection(sectionId) {
     }).api_saveDepartment({ name: name, colorHex: colorHex });
   }
 
+  // ==========================================
+  // 💡 通知控制矩陣儲存邏輯 (Notification Settings)
+  // ==========================================
+  function saveNotificationSettings() {
+    var btn = document.querySelector('#notificationConfigBlock .btn-success');
+    var originalBtnHTML = '<i class="fas fa-save me-1"></i> 儲存通知設定';
+    if (btn) {
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> 儲存中...';
+      btn.disabled = true;
+    }
+
+    // 收集 7 大觸發事件的推播與 Email 狀態
+    var notifSettings = {
+      newTask: {
+        push: document.getElementById('push_newTask') ? document.getElementById('push_newTask').checked : true,
+        email: document.getElementById('email_newTask') ? document.getElementById('email_newTask').checked : true
+      },
+      overdue: {
+        push: document.getElementById('push_overdue') ? document.getElementById('push_overdue').checked : true,
+        email: document.getElementById('email_overdue') ? document.getElementById('email_overdue').checked : true
+      },
+      rejected: {
+        push: document.getElementById('push_rejected') ? document.getElementById('push_rejected').checked : true,
+        email: document.getElementById('email_rejected') ? document.getElementById('email_rejected').checked : false
+      },
+      approved: {
+        push: document.getElementById('push_approved') ? document.getElementById('push_approved').checked : false,
+        email: document.getElementById('email_approved') ? document.getElementById('email_approved').checked : false
+      },
+      stageAssigned: {
+        push: document.getElementById('push_stage_assigned') ? document.getElementById('push_stage_assigned').checked : true,
+        email: document.getElementById('email_stage_assigned') ? document.getElementById('email_stage_assigned').checked : false
+      },
+      dailyTodo: {
+        push: document.getElementById('push_daily_todo') ? document.getElementById('push_daily_todo').checked : false,
+        email: document.getElementById('email_daily_todo') ? document.getElementById('email_daily_todo').checked : true
+      },
+      deptSummary: {
+        push: document.getElementById('push_dept_summary') ? document.getElementById('push_dept_summary').checked : false,
+        email: document.getElementById('email_dept_summary') ? document.getElementById('email_dept_summary').checked : true
+      }
+    };
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) {
+          btn.innerHTML = originalBtnHTML;
+          btn.disabled = false;
+        }
+        if (res && res.success) {
+          showAlert('🎉 通知觸發矩陣設定已成功儲存！', 'success');
+        } else {
+          showAlert('❌ 儲存失敗: ' + (res ? res.message : '未知錯誤'), 'danger');
+        }
+      })
+      .withFailureHandler(function(err) {
+        if (btn) {
+          btn.innerHTML = originalBtnHTML;
+          btn.disabled = false;
+        }
+        showAlert('❌ 系統網路崩潰: ' + err.message, 'danger');
+      })
+      .api_saveNotificationSettings(notifSettings);
+  }
+
+  function loadNotificationSettingsUI() {
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && res.data) {
+        var d = res.data;
+        // 任務派發
+        if (d.newTask) {
+          if (document.getElementById('push_newTask')) document.getElementById('push_newTask').checked = d.newTask.push;
+          if (document.getElementById('email_newTask')) document.getElementById('email_newTask').checked = d.newTask.email;
+        }
+        // 任務逾期
+        if (d.overdue) {
+          if (document.getElementById('push_overdue')) document.getElementById('push_overdue').checked = d.overdue.push;
+          if (document.getElementById('email_overdue')) document.getElementById('email_overdue').checked = d.overdue.email;
+        }
+        // 退回修改
+        if (d.rejected) {
+          if (document.getElementById('push_rejected')) document.getElementById('push_rejected').checked = d.rejected.push;
+          if (document.getElementById('email_rejected')) document.getElementById('email_rejected').checked = d.rejected.email;
+        }
+        // 關卡過關
+        if (d.approved) {
+          if (document.getElementById('push_approved')) document.getElementById('push_approved').checked = d.approved.push;
+          if (document.getElementById('email_approved')) document.getElementById('email_approved').checked = d.approved.email;
+        }
+        // 指定同事
+        if (d.stageAssigned) {
+          if (document.getElementById('push_stage_assigned')) document.getElementById('push_stage_assigned').checked = d.stageAssigned.push;
+          if (document.getElementById('email_stage_assigned')) document.getElementById('email_stage_assigned').checked = d.stageAssigned.email;
+        }
+        // 每日工作清單
+        if (d.dailyTodo) {
+          if (document.getElementById('push_daily_todo')) document.getElementById('push_daily_todo').checked = d.dailyTodo.push;
+          if (document.getElementById('email_daily_todo')) document.getElementById('email_daily_todo').checked = d.dailyTodo.email;
+        }
+        // 每天部門匯總
+        if (d.deptSummary) {
+          if (document.getElementById('push_dept_summary')) document.getElementById('push_dept_summary').checked = d.deptSummary.push;
+          if (document.getElementById('email_dept_summary')) document.getElementById('email_dept_summary').checked = d.deptSummary.email;
+        }
+      }
+    }).api_getNotificationSettings();
+  }
+
+
   function getDeptColor(deptName) { return globalDepartments[deptName] || '#6c757d'; }
 
   function initDashboard(user) {
@@ -170,7 +284,14 @@ function switchSection(sectionId) {
     var userName = user.name || user.email || 'User';
     var userRole = user.role || 'Member';
     var userDept = user.department || 'General';
-    document.getElementById('userInfo').innerHTML = '<i class="fas fa-user-circle"></i> ' + userName + ' (' + userRole + ' - ' + userDept + ')';
+    
+    // 💡 新增：生成動態訂閱按鈕 (加入時間戳記，徹底擊碎瀏覽器快取)
+    var timeStamp = new Date().getTime();
+    var subscribeUrl = 'https://hk01-pmo-realtime.web.app/?email=' + encodeURIComponent(user.email) + '&v=' + timeStamp;
+    var subscribeBtn = '<a href="' + subscribeUrl + '" target="_blank" class="btn btn-sm btn-warning ms-3 fw-bold shadow-sm" style="border-radius: 20px; color: #000;"><i class="fas fa-bell me-1"></i> 訂閱手機推播</a>';
+    
+    // 將按鈕與原本的使用者資訊接合
+    document.getElementById('userInfo').innerHTML = '<i class="fas fa-user-circle"></i> ' + userName + ' (' + userRole + ' - ' + userDept + ')' + subscribeBtn;
 
     document.getElementById('individualSection').style.display = 'block';
     loadIndividualView(user.email);
@@ -398,6 +519,7 @@ function loadIndividualView(simEmail, targetSection, isSilent) {
     if (canEdit) {
       loadTemplateAdminView();
       loadRecycleBinView();
+      loadNotificationSettingsUI(); // 👇 加入這一行
     }
 
     google.script.run.withSuccessHandler(function(res) {
@@ -643,15 +765,7 @@ function loadRecycleBinView() {
   }
 
 // ==========================================
-// 💡 [範本編輯器修復版] 支援上移/下移、邊界鎖定與並行群組自動鄰近排序
-// ==========================================
-
-// ==========================================
-// 💡 [範本編輯器升級版] 支援關卡模式 (Step Mode) 與 Checklist
-// ==========================================
-
-// ==========================================
-// 💡 [範本編輯器升級版] 支援 Checklist + 補充資料欄位
+// 💡 [範本編輯器升級版] 支援 Checklist + 補充資料欄位 + 顏色自訂與必填設定
 // ==========================================
 function renderTemplateStepCards() {
   var container = document.getElementById('tmpl_stepsContainer');
@@ -683,9 +797,12 @@ function renderTemplateStepCards() {
     var isLastStep = (idx === totalSteps - 1);
     var isLockedStep = isFirstStep || isLastStep;
 
-    var badgeClass = isLastStep ? 'bg-dark text-warning border border-warning' : 'bg-primary';
+    // 💡 顏色自訂與樣式處理
+    var stepColor = step.color || (isLastStep ? '#343a40' : '#0d6efd'); // 預設深色或藍色
+    var badgeStyle = 'background-color: ' + stepColor + '; color: #ffffff;';
+    var customBorder = 'border-left: 4px solid ' + stepColor + ';';
     var stepIcon = isLastStep ? '<i class="fas fa-flag-checkered me-1"></i>' : '';
-    var cardBorder = isLastStep ? 'border-dark border-2 shadow' : 'border shadow-sm';
+    
     var readOnlyAttr = (isLastStep && !canEditFinal) ? 'readonly title="僅 Management 可修改最終結案關卡"' : '';
     var disabledAttr = (isLastStep && !canEditFinal) ? 'disabled title="僅 Management 可修改最終結案關卡"' : '';
     var bgClass = isLastStep ? 'bg-light' : 'bg-white';
@@ -716,7 +833,7 @@ function renderTemplateStepCards() {
 
     var fieldsHtml = '';
     
-    // 💡 1. 處理 Checklist 區塊
+    // Checklist 區塊 (保持不變)
     if (stepMode === 'CHECKLIST') {
       fieldsHtml += '<div class="mb-3 bg-light p-2 rounded border">' +
         '<div class="d-flex justify-content-between align-items-center mb-1">' +
@@ -738,9 +855,9 @@ function renderTemplateStepCards() {
       fieldsHtml += '</div>';
     }
 
-    // 💡 2. 處理填寫/補充欄位區塊 (STANDARD, FILE_ONLY, 或 CHECKLIST 附帶的欄位)
+    // 💡 處理填寫/補充欄位區塊 (加入必填核取方塊與物件相容邏輯)
     if (stepMode === 'STANDARD' || stepMode === 'FILE_ONLY' || stepMode === 'CHECKLIST') {
-      var fieldTitle = stepMode === 'CHECKLIST' ? '此關卡需填寫之補充資料 / 網址 (選填)' : (stepMode === 'STANDARD' ? '此關卡需填寫欄位' : '要求上傳之文件/連結');
+      var fieldTitle = stepMode === 'CHECKLIST' ? '此關卡需填寫之補充資料 / 網址' : (stepMode === 'STANDARD' ? '此關卡需填寫欄位' : '要求上傳之文件/連結');
       fieldsHtml += '<div class="bg-white p-2 rounded border">' +
         '<div class="d-flex justify-content-between align-items-center mb-1">' +
           '<small class="fw-bold text-muted"><i class="fas fa-tasks me-1"></i> ' + fieldTitle + '</small>' +
@@ -748,10 +865,18 @@ function renderTemplateStepCards() {
         '</div>';
           
       (step.fields || []).forEach(function(field, fIdx) {
+        // 💡 智慧相容：如果舊資料是字串，自動解析；新資料則是物件
+        var fName = typeof field === 'object' ? field.name : field;
+        var fReq = typeof field === 'object' ? field.required : false;
+
         fieldsHtml += 
-        '<div class="input-group input-group-sm mb-1">' +
+        '<div class="input-group input-group-sm mb-1 shadow-sm">' +
           '<span class="input-group-text"><i class="fas fa-pen"></i></span>' +
-          '<input type="text" class="form-control" value="' + field + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value)" placeholder="欄位名稱 (如: Brief_URL / 備註)" ' + readOnlyAttr + '>' +
+          '<input type="text" class="form-control" value="' + fName + '" onchange="updateStepField(' + idx + ', ' + fIdx + ', this.value, null)" placeholder="欄位名稱 (如: Brief_URL / 備註)" ' + readOnlyAttr + '>' +
+          '<div class="input-group-text bg-light px-2">' +
+            '<input class="form-check-input mt-0 me-1 border-secondary" type="checkbox" ' + (fReq ? 'checked' : '') + ' onchange="updateStepField(' + idx + ', ' + fIdx + ', null, this.checked)" ' + disabledAttr + ' title="設定為必填">' +
+            '<small class="text-secondary fw-bold" style="cursor:default;">必填</small>' +
+          '</div>' +
           '<button class="btn btn-outline-danger" type="button" onclick="removeStepField(' + idx + ', ' + fIdx + ')" ' + disabledAttr + '><i class="fas fa-trash"></i></button>' +
         '</div>';
       });
@@ -765,11 +890,11 @@ function renderTemplateStepCards() {
     }
 
     html += 
-    '<div class="card mb-3 ' + cardBorder + '">' +
+    '<div class="card mb-3 shadow-sm" style="' + customBorder + '">' +
       '<div class="card-body p-3 ' + bgClass + '">' +
         '<div class="d-flex justify-content-between align-items-center mb-2">' +
           '<div>' +
-            '<span class="badge ' + badgeClass + ' fs-6 me-2">' + stepIcon + 'Step ' + stepNum + (isLastStep ? ' (最終把關)' : '') + '</span>' +
+            '<span class="badge fs-6 me-2 shadow-sm" style="' + badgeStyle + '">' + stepIcon + 'Step ' + stepNum + (isLastStep ? ' (最終把關)' : '') + '</span>' +
             (!isLockedStep ? (moveUpBtn + moveDownBtn) : '') +
           '</div>' +
           '<div>' + removeBtn + '</div>' +
@@ -779,7 +904,7 @@ function renderTemplateStepCards() {
             '<label class="form-label small text-muted mb-1">關卡名稱</label>' +
             '<input type="text" class="form-control form-control-sm fw-bold ' + (isLastStep ? 'text-primary' : '') + '" value="' + step.name + '" onchange="currentTemplateSteps[' + idx + '].name = this.value" placeholder="關卡名稱" ' + readOnlyAttr + '>' +
           '</div>' +
-          '<div class="col-md-3">' +
+          '<div class="col-md-2">' +
             '<label class="form-label small text-muted mb-1">負責部門</label>' +
             '<select class="form-select form-select-sm" onchange="currentTemplateSteps[' + idx + '].dept = this.value" ' + disabledAttr + '>' +
               deptOptions +
@@ -791,9 +916,13 @@ function renderTemplateStepCards() {
               modeOptions +
             '</select>' +
           '</div>' +
-          '<div class="col-md-3">' +
-            '<label class="form-label small text-muted mb-1"><i class="fas fa-project-diagram text-info"></i> 並行群組</label>' +
-            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 A (相同則並行)" ' + readOnlyAttr + '>' +
+          '<div class="col-md-2">' +
+            '<label class="form-label small text-muted mb-1" title="相同英文代表並行"><i class="fas fa-project-diagram text-info"></i> 並行群組</label>' +
+            '<input type="text" class="form-control form-control-sm" value="' + parallelGroupVal + '" onchange="currentTemplateSteps[' + idx + '].parallelGroup = this.value.trim()" placeholder="如 A" ' + readOnlyAttr + '>' +
+          '</div>' +
+          '<div class="col-md-2">' +
+            '<label class="form-label small text-muted mb-1"><i class="fas fa-palette"></i> 關卡顏色</label>' +
+            '<input type="color" class="form-control form-control-sm color-picker p-0 w-100" style="height: 29px; border-radius: 4px; cursor: pointer;" value="' + stepColor + '" onchange="currentTemplateSteps[' + idx + '].color = this.value; renderTemplateStepCards();" ' + disabledAttr + '>' +
           '</div>' +
         '</div>' +
         fieldsHtml +
@@ -818,7 +947,7 @@ function moveTemplateStep(index, direction) {
   renderTemplateStepCards();
 }
 
-  // 💡 新增關卡：固定插入在倒數第二位置 (即最終關卡之前)
+// 💡 新增關卡：固定插入在倒數第二位置
 function addTemplateStep() {
   var insertIdx = currentTemplateSteps.length > 0 ? currentTemplateSteps.length - 1 : 0;
 
@@ -826,7 +955,8 @@ function addTemplateStep() {
     step: 0,
     name: '新關卡步驟',
     dept: 'Editorial',
-    fields: ['URL']
+    color: '#0d6efd',
+    fields: [{ name: 'URL', required: false }] // 預設使用物件格式
   });
 
   currentTemplateSteps.forEach(function(s, i){ s.step = i + 1; });
@@ -840,24 +970,20 @@ function addTemplateStep() {
   }
 
   function addStepField(stepIdx) {
-    if(!currentTemplateSteps[stepIdx].fields) currentTemplateSteps[stepIdx].fields = [];
-    currentTemplateSteps[stepIdx].fields.push('New_Field');
-    renderTemplateStepCards();
-  }
+  if(!currentTemplateSteps[stepIdx].fields) currentTemplateSteps[stepIdx].fields = [];
+  currentTemplateSteps[stepIdx].fields.push({ name: 'New_Field', required: false });
+  renderTemplateStepCards();
+}
 
-  // 💡 切換關卡模式
 function changeStepMode(stepIdx, newMode) {
   var step = currentTemplateSteps[stepIdx];
   step.mode = newMode;
   
-  // 模式切換時，確保對應的資料結構存在
   if (newMode === 'CHECKLIST' && !step.checklistItems) {
     step.checklistItems = ['新檢查項目'];
   } else if (newMode === 'STANDARD' || newMode === 'FILE_ONLY') {
-    if (!step.fields) step.fields = ['URL'];
+    if (!step.fields) step.fields = [{ name: 'URL', required: false }];
   }
-  
-  // 重新渲染畫面
   renderTemplateStepCards();
 }
 
@@ -881,9 +1007,17 @@ function removeChecklistItem(stepIdx, itemIdx) {
   renderTemplateStepCards();
 }
 
-  function updateStepField(stepIdx, fieldIdx, val) {
-    currentTemplateSteps[stepIdx].fields[fieldIdx] = val;
-  }
+  // 💡 智慧更新欄位：動態轉換為物件
+function updateStepField(stepIdx, fieldIdx, nameVal, reqVal) {
+  var field = currentTemplateSteps[stepIdx].fields[fieldIdx];
+  var fName = typeof field === 'object' ? field.name : field;
+  var fReq = typeof field === 'object' ? field.required : false;
+
+  if (nameVal !== null) fName = nameVal;
+  if (reqVal !== null) fReq = reqVal;
+
+  currentTemplateSteps[stepIdx].fields[fieldIdx] = { name: fName, required: fReq };
+}
 
   function removeStepField(stepIdx, fieldIdx) {
     currentTemplateSteps[stepIdx].fields.splice(fieldIdx, 1);
@@ -1686,8 +1820,11 @@ function renderNotifications(notifs) {
     // 如果是未讀的普通通知，給個淡淡的藍色底色做區別
     if (isUnread && !bgClass) bgClass = 'bg-primary bg-opacity-10'; 
 
+    var extractedJobNum = n.title.match(/\[(.*?)\]/) ? n.title.match(/\[(.*?)\]/)[1] : '';
+    var safeJobNum = extractedJobNum || n.jobNumber || '';
+
     html += 
-      '<a href="#" class="list-group-item list-group-item-action py-3 border-bottom ' + bgClass + '" onclick="if(typeof openWorkflow === \'function\') { openWorkflow(\'' + (n.title.match(/\[(.*?)\]/) ? n.title.match(/\[(.*?)\]/)[1] : '') + '\'); }">' +
+      '<a href="#" class="list-group-item list-group-item-action py-3 border-bottom ' + bgClass + '" onclick="handleNotificationClick(\'' + safeJobNum + '\')">' +
         '<div class="d-flex w-100 justify-content-between align-items-center mb-1">' +
           '<strong class="text-' + n.color + '"><i class="fas ' + n.icon + ' me-1"></i> ' + n.title + '</strong>' +
           '<small class="text-muted" style="font-size: 0.75em;">' + timeStr + '</small>' +
@@ -1832,30 +1969,41 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 });
 
-// ==========================================
-// 🚨 智慧緊急彈窗與計時器邏輯 (Local Storage)
-// ==========================================
-
 // 攔截通知並判斷是否彈出
 function checkAndShowUrgentAlerts(notifs) {
   // 🛑【測試模式開關】若測試完畢，請改回 false
   var TEST_MODE = false; 
 
-  // 💡 1. 讀取已經被使用者點擊「X」隱藏的通知 ID 紀錄
   var dismissedAlerts = JSON.parse(localStorage.getItem('pmo_dismissed_alerts') || '[]');
+
+  // 💡 1. 讀取 2 小時冷卻期與被暫休的通知名單
+  var now = new Date().getTime();
+  var snoozeUntil = parseInt(localStorage.getItem('pmo_snooze_until') || '0');
+  var snoozedAlerts = JSON.parse(localStorage.getItem('pmo_snoozed_alerts') || '[]');
+
+  // 如果 2 小時已過，清空暫休名單
+  if (snoozeUntil > 0 && now > snoozeUntil) {
+    snoozedAlerts = [];
+    localStorage.removeItem('pmo_snooze_until');
+    localStorage.removeItem('pmo_snoozed_alerts');
+  }
 
   var urgentItems = notifs.filter(function(n) {
     if (!n.isUrgent && !TEST_MODE) return false;
     
-    // 💡 2. 產生這筆通知的唯一識別碼 (專案編號_通知類型_發生時間)
-    // 把空格或特殊符號濾掉避免 HTML ID 報錯
+    // 產生這筆通知的唯一識別碼
     var safeTime = String(n.rawTime || n.time).replace(/[^a-zA-Z0-9]/g, ''); 
     n.uniqueId = (n.jobNumber || 'NA') + '_' + n.type + '_' + safeTime;
     
-    // 💡 3. 如果這個 ID 已經在「被隱藏」的黑名單中，就過濾掉不顯示
+    // 2. 若已經被永久打叉 (X)，不顯示
     if (dismissedAlerts.includes(n.uniqueId)) return false;
     
-    return true;
+    // 3. 💡 智能過濾：若仍在 2 小時冷卻期內，且是「已經看過的舊通知」，就不顯示
+    if (snoozeUntil > now && snoozedAlerts.includes(n.uniqueId)) {
+        return false;
+    }
+    
+    return true; // 如果是新來的通知，就會順利通過這關！
   });
   
   if (urgentItems.length === 0) {
@@ -1870,26 +2018,20 @@ function checkAndShowUrgentAlerts(notifs) {
     }
   }
 
-  var now = new Date().getTime();
-  
-  if (!TEST_MODE) {
-    var muteUntil = localStorage.getItem('pmo_mute_until');
-    if (muteUntil && now < parseInt(muteUntil)) return;
+  // 檢查今天是否按了「今天不再顯示」(全天靜音)
+  var muteUntil = localStorage.getItem('pmo_mute_until');
+  if (muteUntil && now < parseInt(muteUntil)) return;
 
-    var lastAlertTime = localStorage.getItem('pmo_last_alert_time');
-    if (lastAlertTime && (now - parseInt(lastAlertTime) < 7200000)) return;
-  }
+  // 💡 把這次準備要顯示的「通知 ID」全部記下來 (給稍後提醒按鈕使用)
+  window.currentDisplayedAlertIds = urgentItems.map(function(item) { return item.uniqueId; });
 
-  // 4. 繪製緊急卡片 (加入右上角的 X 按鈕)
+  // 繪製緊急卡片
   var listHtml = '';
-  // 💡 解除限制：有多少緊急任務就顯示多少，視窗會自動出現捲軸
   urgentItems.forEach(function(item) {
-
     listHtml += 
       '<div class="list-group-item list-group-item-action p-3 position-relative" id="urgent_item_' + item.uniqueId + '">' +
         '<div class="d-flex w-100 justify-content-between align-items-start mb-1">' +
           '<strong class="text-' + item.color + ' pe-4"><i class="fas ' + item.icon + ' me-1"></i>' + item.title + '</strong>' +
-          // 💡 這裡加上右上角的 X 按鈕
           '<button type="button" class="btn-close" style="font-size: 0.6em; margin-top: 3px;" onclick="dismissUrgentItem(\'' + item.uniqueId + '\')" title="關閉此通知 (不再顯示)"></button>' +
         '</div>' +
         '<p class="mb-2 small text-dark">' + item.message + '</p>' +
@@ -1904,7 +2046,6 @@ function checkAndShowUrgentAlerts(notifs) {
 
   if (urgentModalInstance) {
     urgentModalInstance.show();
-    if (!TEST_MODE) localStorage.setItem('pmo_last_alert_time', now);
   }
 }
 
@@ -1932,13 +2073,26 @@ function dismissUrgentItem(uniqueId) {
   }
 }
 
-// 點擊「進入處理」：關閉彈窗並自動打開專案
-function handleUrgentClick(jobNumber) {
+// 點擊「進入處理」：關閉彈窗並自動打開專案，若是系統匯總則跳回首頁
+window.handleUrgentClick = function(jobNumber) {
   if (urgentModalInstance) urgentModalInstance.hide();
-  if (jobNumber && typeof window.openWorkflow === 'function') {
+  if (!jobNumber || jobNumber === '系統匯總' || jobNumber === 'NA') {
+    switchSection('individualSection'); 
+  } else if (typeof window.openWorkflow === 'function') {
     window.openWorkflow(jobNumber);
   }
-}
+};
+
+// 💡 處理右側鈴鐺面板的點擊跳轉
+window.handleNotificationClick = function(jobNumber) {
+  if (!jobNumber || jobNumber === '系統匯總' || jobNumber === 'NA') {
+    var closeBtn = document.querySelector('[data-bs-dismiss="offcanvas"]');
+    if (closeBtn) closeBtn.click(); 
+    switchSection('individualSection'); 
+  } else if (typeof window.openWorkflow === 'function') {
+    window.openWorkflow(jobNumber);
+  }
+};
 
 // 點擊「今天不再顯示」：靜音至午夜
 function muteUrgentAlertsToday() {
@@ -1949,12 +2103,26 @@ function muteUrgentAlertsToday() {
   showAlert('🔇 已靜音，今天午夜前將不再彈出緊急提醒。', 'info');
 }
 
-// 點擊「2小時後提醒」或打叉：保持預設的 2 小時冷卻期
-function setUrgentAlertTimer() {
-  localStorage.removeItem('pmo_mute_until'); // 確保沒有被永久靜音
+// 點擊「稍後提醒 (2小時)」或打叉關閉
+window.setUrgentAlertTimer = function() {
+  localStorage.removeItem('pmo_mute_until'); // 確保沒有被全天靜音
   if (urgentModalInstance) urgentModalInstance.hide();
-  showAlert('⏰ 系統將在 2 小時後再次提醒您。', 'info');
-}
+  
+  // 💡 智能靜音：只把「剛才畫面上」的通知隱藏 2 小時
+  var now = new Date().getTime();
+  localStorage.setItem('pmo_snooze_until', now + 7200000); // 鎖定 2 小時
+  if (window.currentDisplayedAlertIds) {
+    // 把畫面上的通知 ID 存進冷卻名單
+    localStorage.setItem('pmo_snoozed_alerts', JSON.stringify(window.currentDisplayedAlertIds));
+  }
+  
+  showAlert('⏰ 系統將在 2 小時後再次提醒您現有事項。若有新緊急任務將即時彈出。', 'info');
+  
+  // 2 小時後自動喚醒掃描
+  setTimeout(function() {
+     if (typeof fetchNotifications === 'function') fetchNotifications();
+  }, 7200000);
+};
 
 // ==========================================
 // 💡 智慧日誌即時刷新外掛 (獨立運作，完全不干擾原有函數)
